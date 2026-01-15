@@ -1,5 +1,7 @@
 # Task: {{ISSUE_TITLE}}
 
+*{{CHAD_TAGLINE}}*
+
 You are working on GitHub issue #{{ISSUE_NUMBER}} from the {{REPO}} repository.
 
 > **IMPORTANT - TWO-PHASE WORKFLOW:**

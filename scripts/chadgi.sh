@@ -133,6 +133,16 @@ load_config() {
     TRUNCATE_LENGTH=$(parse_yaml_nested "output" "truncate_length" "$CONFIG_FILE")
     TRUNCATE_LENGTH="${TRUNCATE_LENGTH:-60}"
 
+    # Branding settings - Chad does what Chad wants
+    ISSUE_PREFIX=$(parse_yaml_nested "branding" "issue_prefix" "$CONFIG_FILE")
+    ISSUE_PREFIX="${ISSUE_PREFIX:-[CHAD]}"
+    CHAD_LABEL=$(parse_yaml_nested "branding" "label" "$CONFIG_FILE")
+    CHAD_LABEL="${CHAD_LABEL:-touched-by-chad}"
+    INCLUDE_FOOTER=$(parse_yaml_nested "branding" "include_footer" "$CONFIG_FILE")
+    INCLUDE_FOOTER="${INCLUDE_FOOTER:-true}"
+    CHAD_TAGLINE=$(parse_yaml_nested "branding" "tagline" "$CONFIG_FILE")
+    CHAD_TAGLINE="${CHAD_TAGLINE:-Chad does what Chad wants.}"
+
     # Iteration settings (the core ChadGI pattern)
     MAX_ITERATIONS=$(parse_yaml_nested "iteration" "max_iterations" "$CONFIG_FILE")
     MAX_ITERATIONS="${MAX_ITERATIONS:-5}"
@@ -175,6 +185,11 @@ set_defaults() {
     SHOW_TOOL_DETAILS="true"
     SHOW_COST="true"
     TRUNCATE_LENGTH="60"
+    # Branding defaults - Chad does what Chad wants
+    ISSUE_PREFIX="${ISSUE_PREFIX:-[CHAD]}"
+    CHAD_LABEL="${CHAD_LABEL:-touched-by-chad}"
+    INCLUDE_FOOTER="${INCLUDE_FOOTER:-true}"
+    CHAD_TAGLINE="${CHAD_TAGLINE:-Chad does what Chad wants.}"
     MAX_ITERATIONS="${MAX_ITERATIONS:-5}"
     COMPLETION_PROMISE="${COMPLETION_PROMISE:-COMPLETE}"
     READY_PROMISE="${READY_PROMISE:-READY_FOR_PR}"
@@ -233,6 +248,70 @@ PROGRESS_EOF
 }
 
 #------------------------------------------------------------------------------
+# Branding - Chad does what Chad wants
+#------------------------------------------------------------------------------
+
+# Generate the Chad footer (ASCII art + tagline)
+# Returns empty string if INCLUDE_FOOTER is not "true"
+get_chad_footer() {
+    local CONTEXT=${1:-issue}  # "issue" or "pr"
+
+    if [ "$INCLUDE_FOOTER" != "true" ]; then
+        echo ""
+        return
+    fi
+
+    local FOOTER_TEXT
+    if [ "$CONTEXT" = "pr" ]; then
+        FOOTER_TEXT="_${CHAD_TAGLINE} No humans mass-produced in the mass-production of this PR._"
+    else
+        FOOTER_TEXT="_${CHAD_TAGLINE} No humans were mass-produced in the making of this ticket._"
+    fi
+
+    cat << 'CHAD_EOF'
+
+---
+```
+⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋⠉⠈⠉⠉⠉⠉⠛⠻⢿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⡿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿
+⣿⣿⣿⣿⡏⣀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿
+⣿⣿⣿⢏⣴⣿⣷⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿
+⣿⣿⣟⣾⣿⡟⠁⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣷⢢⠀⠀⠀⠀⠀⠀⠀⢸⣿
+⣿⣿⣿⣿⣟⠀⡴⠄⠀⠀⠀⠀⠀⠀⠙⠻⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⣿
+⣿⣿⣿⠟⠻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠶⢴⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⣿
+⣿⣁⡀⠀⠀⢰⢠⣦⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡄⠀⣴⣶⣿⡄⣿
+⣿⡋⠀⠀⠀⠎⢸⣿⡆⠀⠀⠀⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⠗⢘⣿⣟⠛⠿⣼
+⣿⣿⠋⢀⡌⢰⣿⡿⢿⡀⠀⠀⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⡇⠀⢸⣿⣿⣧⢀⣼
+⣿⣿⣷⢻⠄⠘⠛⠋⠛⠃⠀⠀⠀⠀⠀⢿⣧⠈⠉⠙⠛⠋⠀⠀⠀⣿⣿⣿⣿⣿
+⣿⣿⣧⠀⠈⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠟⠀⠀⠀⠀⢀⢃⠀⠀⢸⣿⣿⣿⣿
+⣿⣿⡿⠀⠴⢗⣠⣤⣴⡶⠶⠖⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡸⠀⣿⣿⣿⣿
+⣿⣿⣿⡀⢠⣾⣿⠏⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠛⠉⠀⣿⣿⣿⣿
+⣿⣿⣿⣧⠈⢹⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿
+⣿⣿⣿⣿⡄⠈⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣦⣄⣀⣀⣀⣀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠙⣿⣿⡟⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠁⠀⠀⠹⣿⠃⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⢐⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⠿⠛⠉⠉⠁⠀⢻⣿⡇⠀⠀⠀⠀⠀⠀⢀⠈⣿⣿⡿⠉⠛⠛⠛⠉⠉
+⣿⡿⠋⠁⠀⠀⢀⣀⣠⡴⣸⣿⣇⡄⠀⠀⠀⠀⢀⡿⠄⠙⠛⠀⣀⣠⣤⣤⠄
+```
+CHAD_EOF
+    echo "$FOOTER_TEXT"
+}
+
+# Get label flag for gh commands (empty if no label configured)
+get_label_flag() {
+    if [ -n "$CHAD_LABEL" ]; then
+        echo "--label \"$CHAD_LABEL\""
+    else
+        echo ""
+    fi
+}
+
+#------------------------------------------------------------------------------
 # Template Processing
 #------------------------------------------------------------------------------
 
@@ -267,8 +346,31 @@ process_template() {
         -e "s|{{REVIEW_COLUMN}}|${REVIEW_COLUMN}|g" \
         -e "s|{{COMPLETION_PROMISE}}|${COMPLETION_PROMISE}|g" \
         -e "s|{{GITHUB_USERNAME}}|${GITHUB_USERNAME}|g" \
+        -e "s|{{ISSUE_PREFIX}}|${ISSUE_PREFIX}|g" \
+        -e "s|{{CHAD_LABEL}}|${CHAD_LABEL}|g" \
+        -e "s|{{CHAD_TAGLINE}}|${CHAD_TAGLINE}|g" \
         "$OUTPUT_FILE"
     rm -f "${OUTPUT_FILE}.bak"
+
+    # Handle CHAD_FOOTER (multiline ASCII art)
+    local CHAD_FOOTER
+    CHAD_FOOTER=$(get_chad_footer "issue")
+    if [ -n "$CHAD_FOOTER" ]; then
+        local FOOTER_FILE=$(mktemp)
+        echo "$CHAD_FOOTER" > "$FOOTER_FILE"
+        if command -v perl &> /dev/null; then
+            perl -i -pe 'BEGIN{open F,"'"$FOOTER_FILE"'";$r=join"",<F>;chomp $r}s/\{\{CHAD_FOOTER\}\}/$r/g' "$OUTPUT_FILE"
+        else
+            # Fallback: remove placeholder if perl not available
+            sed -i.bak 's/{{CHAD_FOOTER}}//g' "$OUTPUT_FILE"
+            rm -f "${OUTPUT_FILE}.bak"
+        fi
+        rm -f "$FOOTER_FILE"
+    else
+        # No footer - just remove the placeholder
+        sed -i.bak 's/{{CHAD_FOOTER}}//g' "$OUTPUT_FILE"
+        rm -f "${OUTPUT_FILE}.bak"
+    fi
 
     # Handle multi-line ISSUE_BODY using a temp file approach
     if [ -n "$ISSUE_BODY" ]; then
@@ -773,14 +875,24 @@ If you're still implementing features, continue working. Don't signal until ALL 
 
     > "$OUTPUT_FILE"
 
+    # Generate PR footer using branding config
+    local PR_FOOTER=""
+    if [ "$INCLUDE_FOOTER" = "true" ]; then
+        PR_FOOTER=$(get_chad_footer "pr")
+        # Escape for nested heredoc
+        PR_FOOTER=$(echo "$PR_FOOTER" | sed 's/`/\\`/g')
+    fi
+
     local PR_PROMPT="Excellent! All tests and build verification have passed.
+
+${CHAD_TAGLINE}
 
 Now please:
 1. Push the branch to origin
 2. Create a Pull Request targeting **${BASE_BRANCH}** using this EXACT format:
 
 \`\`\`bash
-gh pr create --base ${BASE_BRANCH} --title \"[CHAD] <your clear title summarizing the change>\" --body \"\$(cat <<'EOF'
+gh pr create --base ${BASE_BRANCH} --title \"${ISSUE_PREFIX} <your clear title summarizing the change>\" --body \"\$(cat <<'EOF'
 ## Summary
 <bullet points of what changed>
 
@@ -788,36 +900,7 @@ gh pr create --base ${BASE_BRANCH} --title \"[CHAD] <your clear title summarizin
 <how to verify this works>
 
 Closes #${ISSUE_NUMBER}
-
----
-\\\`\\\`\\\`
-⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋⠉⠈⠉⠉⠉⠉⠛⠻⢿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⡿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿
-⣿⣿⣿⣿⡏⣀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿
-⣿⣿⣿⢏⣴⣿⣷⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿
-⣿⣿⣟⣾⣿⡟⠁⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣷⢢⠀⠀⠀⠀⠀⠀⠀⢸⣿
-⣿⣿⣿⣿⣟⠀⡴⠄⠀⠀⠀⠀⠀⠀⠙⠻⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⣿
-⣿⣿⣿⠟⠻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠶⢴⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⣿
-⣿⣁⡀⠀⠀⢰⢠⣦⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡄⠀⣴⣶⣿⡄⣿
-⣿⡋⠀⠀⠀⠎⢸⣿⡆⠀⠀⠀⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⠗⢘⣿⣟⠛⠿⣼
-⣿⣿⠋⢀⡌⢰⣿⡿⢿⡀⠀⠀⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⡇⠀⢸⣿⣿⣧⢀⣼
-⣿⣿⣷⢻⠄⠘⠛⠋⠛⠃⠀⠀⠀⠀⠀⢿⣧⠈⠉⠙⠛⠋⠀⠀⠀⣿⣿⣿⣿⣿
-⣿⣿⣧⠀⠈⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠟⠀⠀⠀⠀⢀⢃⠀⠀⢸⣿⣿⣿⣿
-⣿⣿⡿⠀⠴⢗⣠⣤⣴⡶⠶⠖⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡸⠀⣿⣿⣿⣿
-⣿⣿⣿⡀⢠⣾⣿⠏⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠛⠉⠀⣿⣿⣿⣿
-⣿⣿⣿⣧⠈⢹⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿
-⣿⣿⣿⣿⡄⠈⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣦⣄⣀⣀⣀⣀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠙⣿⣿⡟⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠁⠀⠀⠹⣿⠃⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⢐⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⠿⠛⠉⠉⠁⠀⢻⣿⡇⠀⠀⠀⠀⠀⠀⢀⠈⣿⣿⡿⠉⠛⠛⠛⠉⠉
-⣿⡿⠋⠁⠀⠀⢀⣀⣠⡴⣸⣿⣇⡄⠀⠀⠀⠀⢀⡿⠄⠙⠛⠀⣀⣠⣤⣤⠄
-\\\`\\\`\\\`
-_Spawned by ChadGI. No humans mass-produced in the mass-production of this PR._
+${PR_FOOTER}
 EOF
 )\"
 \`\`\`
@@ -1039,9 +1122,21 @@ ${CLOSED_ISSUES}"
     elif [ -f "$GENERATE_TEMPLATE" ]; then
         process_template "$GENERATE_TEMPLATE" "$GEN_PROMPT_FILE"
     else
-        # Fallback inline prompt
+        # Fallback inline prompt - Chad does what Chad wants
+        local FALLBACK_FOOTER=""
+        if [ "$INCLUDE_FOOTER" = "true" ]; then
+            FALLBACK_FOOTER=$(get_chad_footer "issue")
+        fi
+
+        local LABEL_FLAG=""
+        if [ -n "$CHAD_LABEL" ]; then
+            LABEL_FLAG="--label \"$CHAD_LABEL\" \\\\"
+        fi
+
         cat > "$GEN_PROMPT_FILE" << GEN_PROMPT_EOF
 You are analyzing the $REPO repository to suggest 2-3 new improvement tasks.
+
+$CHAD_TAGLINE
 
 EXISTING TASKS (avoid duplicates - these are already in the project board):
 $EXISTING_ISSUES
@@ -1053,42 +1148,13 @@ Your task:
 
 For each issue:
 \`\`\`bash
-# Create the issue (title MUST start with [CHAD], include label and assignee)
+# Create the issue (title MUST start with $ISSUE_PREFIX, include label and assignee)
 ISSUE_URL=\$(gh issue create --repo $REPO \\
-  --title "[CHAD] <title>" \\
-  --label "touched-by-chad" \\
+  --title "$ISSUE_PREFIX <title>" \\
+  $LABEL_FLAG
   --assignee "$GITHUB_USERNAME" \\
   --body "<body>
-
----
-\\\`\\\`\\\`
-⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋⠉⠈⠉⠉⠉⠉⠛⠻⢿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⡿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿
-⣿⣿⣿⣿⡏⣀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿
-⣿⣿⣿⢏⣴⣿⣷⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿
-⣿⣿⣟⣾⣿⡟⠁⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣷⢢⠀⠀⠀⠀⠀⠀⠀⢸⣿
-⣿⣿⣿⣿⣟⠀⡴⠄⠀⠀⠀⠀⠀⠀⠙⠻⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⣿
-⣿⣿⣿⠟⠻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠶⢴⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⣿
-⣿⣁⡀⠀⠀⢰⢠⣦⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡄⠀⣴⣶⣿⡄⣿
-⣿⡋⠀⠀⠀⠎⢸⣿⡆⠀⠀⠀⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⠗⢘⣿⣟⠛⠿⣼
-⣿⣿⠋⢀⡌⢰⣿⡿⢿⡀⠀⠀⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⡇⠀⢸⣿⣿⣧⢀⣼
-⣿⣿⣷⢻⠄⠘⠛⠋⠛⠃⠀⠀⠀⠀⠀⢿⣧⠈⠉⠙⠛⠋⠀⠀⠀⣿⣿⣿⣿⣿
-⣿⣿⣧⠀⠈⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠟⠀⠀⠀⠀⢀⢃⠀⠀⢸⣿⣿⣿⣿
-⣿⣿⡿⠀⠴⢗⣠⣤⣴⡶⠶⠖⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡸⠀⣿⣿⣿⣿
-⣿⣿⣿⡀⢠⣾⣿⠏⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠛⠉⠀⣿⣿⣿⣿
-⣿⣿⣿⣧⠈⢹⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿
-⣿⣿⣿⣿⡄⠈⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣦⣄⣀⣀⣀⣀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠙⣿⣿⡟⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠁⠀⠀⠹⣿⠃⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⢐⣿⣿⣿⣿⣿⣿⣿⣿⣿
-⣿⣿⣿⣿⠿⠛⠉⠉⠁⠀⢻⣿⡇⠀⠀⠀⠀⠀⠀⢀⠈⣿⣿⡿⠉⠛⠛⠛⠉⠉
-⣿⡿⠋⠁⠀⠀⢀⣀⣠⡴⣸⣿⣇⡄⠀⠀⠀⠀⢀⡿⠄⠙⠛⠀⣀⣠⣤⣤⠄
-\\\`\\\`\\\`
-_Spawned by ChadGI. No humans were mass-produced in the making of this ticket._
+$FALLBACK_FOOTER
 " | grep -o 'https://[^ ]*')
 
 # Add to project board and move to Ready column
@@ -1112,6 +1178,7 @@ GEN_PROMPT_EOF
     fi
 
     log_success "New tasks generated and added to project board"
+    echo -e "${PURPLE}${CHAD_TAGLINE}${NC}"
 }
 
 #------------------------------------------------------------------------------
@@ -1130,7 +1197,6 @@ cat << 'EOF'
 
 EOF
 echo -e "${NC}"
-echo -e "${PURPLE}      Autonomous Task Worker${NC}\n"
 
 # Initialize session
 SESSION_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -1139,6 +1205,9 @@ TOTAL_COST=0
 
 # Load configuration
 load_config
+
+# Display tagline after config load
+echo -e "${PURPLE}      ${CHAD_TAGLINE}${NC}\n"
 
 # Cache template contents NOW before any branch switching
 # This ensures we use the template from our current branch, not main
@@ -1342,6 +1411,7 @@ PROMPT_EOF
 
     log_header "ISSUE #$ISSUE_NUMBER COMPLETED"
     echo -e "${GREEN}Total issues completed this session: $ISSUES_COMPLETED${NC}"
+    echo -e "${PURPLE}${CHAD_TAGLINE}${NC}"
     [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "0" ] && echo -e "${DIM}Total session cost: \$${TOTAL_COST}${NC}"
 
     log_info "Moving to next issue in ${POLL_INTERVAL} seconds..."
