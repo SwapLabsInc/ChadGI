@@ -74,6 +74,50 @@ parse_yaml_nested() {
     ' "$FILE" 2>/dev/null || echo ""
 }
 
+# Parse deeply nested YAML value (grandparent.parent.child format - 3 levels)
+parse_yaml_nested_deep() {
+    local GRANDPARENT=$1
+    local PARENT=$2
+    local KEY=$3
+    local FILE=$4
+    awk -v grandparent="$GRANDPARENT" -v parent="$PARENT" -v key="$KEY" '
+        $0 ~ "^"grandparent":" { in_grandparent=1; next }
+        in_grandparent && /^[a-z]/ { in_grandparent=0; in_parent=0 }
+        in_grandparent && $0 ~ "^  "parent":" { in_parent=1; next }
+        in_grandparent && in_parent && /^  [a-z]/ { in_parent=0 }
+        in_grandparent && in_parent && $0 ~ "^    "key":" {
+            gsub(/^    [a-z_]+: */, "");
+            gsub(/ *#.*/, "");
+            gsub(/"/, "");
+            print;
+            exit
+        }
+    ' "$FILE" 2>/dev/null || echo ""
+}
+
+# Parse events from notifications config (4 levels deep: notifications.slack.events.task_started)
+parse_yaml_nested_events() {
+    local GRANDPARENT=$1
+    local PARENT=$2
+    local KEY=$3
+    local FILE=$4
+    awk -v grandparent="$GRANDPARENT" -v parent="$PARENT" -v key="$KEY" '
+        $0 ~ "^"grandparent":" { in_grandparent=1; next }
+        in_grandparent && /^[a-z]/ { in_grandparent=0; in_parent=0; in_events=0 }
+        in_grandparent && $0 ~ "^  "parent":" { in_parent=1; next }
+        in_grandparent && in_parent && /^  [a-z]/ { in_parent=0; in_events=0 }
+        in_grandparent && in_parent && /^    events:/ { in_events=1; next }
+        in_grandparent && in_parent && in_events && /^    [a-z]/ { in_events=0 }
+        in_grandparent && in_parent && in_events && $0 ~ "^      "key":" {
+            gsub(/^      [a-z_]+: */, "");
+            gsub(/ *#.*/, "");
+            gsub(/"/, "");
+            print;
+            exit
+        }
+    ' "$FILE" 2>/dev/null || echo ""
+}
+
 # Load configuration from YAML file
 load_config() {
     if [ ! -f "$CONFIG_FILE" ]; then
@@ -176,6 +220,66 @@ load_config() {
     RETRY_JITTER=$(parse_yaml_nested "iteration" "retry_jitter" "$CONFIG_FILE")
     RETRY_JITTER="${RETRY_JITTER:-false}"
 
+    # Notification settings
+    NOTIFICATIONS_ENABLED=$(parse_yaml_nested "notifications" "enabled" "$CONFIG_FILE")
+    NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
+
+    # Rate limiting
+    NOTIFY_RATE_MIN_INTERVAL=$(parse_yaml_nested_deep "notifications" "rate_limit" "min_interval" "$CONFIG_FILE")
+    NOTIFY_RATE_MIN_INTERVAL="${NOTIFY_RATE_MIN_INTERVAL:-10}"
+    NOTIFY_RATE_BURST_LIMIT=$(parse_yaml_nested_deep "notifications" "rate_limit" "burst_limit" "$CONFIG_FILE")
+    NOTIFY_RATE_BURST_LIMIT="${NOTIFY_RATE_BURST_LIMIT:-5}"
+    NOTIFY_RATE_BURST_WINDOW=$(parse_yaml_nested_deep "notifications" "rate_limit" "burst_window" "$CONFIG_FILE")
+    NOTIFY_RATE_BURST_WINDOW="${NOTIFY_RATE_BURST_WINDOW:-60}"
+
+    # Slack notifications
+    SLACK_ENABLED=$(parse_yaml_nested_deep "notifications" "slack" "enabled" "$CONFIG_FILE")
+    SLACK_ENABLED="${SLACK_ENABLED:-false}"
+    SLACK_WEBHOOK_URL=$(parse_yaml_nested_deep "notifications" "slack" "webhook_url" "$CONFIG_FILE")
+    SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
+    SLACK_EVENT_TASK_STARTED=$(parse_yaml_nested_events "notifications" "slack" "task_started" "$CONFIG_FILE")
+    SLACK_EVENT_TASK_STARTED="${SLACK_EVENT_TASK_STARTED:-true}"
+    SLACK_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events "notifications" "slack" "task_completed" "$CONFIG_FILE")
+    SLACK_EVENT_TASK_COMPLETED="${SLACK_EVENT_TASK_COMPLETED:-true}"
+    SLACK_EVENT_TASK_FAILED=$(parse_yaml_nested_events "notifications" "slack" "task_failed" "$CONFIG_FILE")
+    SLACK_EVENT_TASK_FAILED="${SLACK_EVENT_TASK_FAILED:-true}"
+    SLACK_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events "notifications" "slack" "gigachad_merge" "$CONFIG_FILE")
+    SLACK_EVENT_GIGACHAD_MERGE="${SLACK_EVENT_GIGACHAD_MERGE:-true}"
+    SLACK_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "slack" "session_ended" "$CONFIG_FILE")
+    SLACK_EVENT_SESSION_ENDED="${SLACK_EVENT_SESSION_ENDED:-true}"
+
+    # Discord notifications
+    DISCORD_ENABLED=$(parse_yaml_nested_deep "notifications" "discord" "enabled" "$CONFIG_FILE")
+    DISCORD_ENABLED="${DISCORD_ENABLED:-false}"
+    DISCORD_WEBHOOK_URL=$(parse_yaml_nested_deep "notifications" "discord" "webhook_url" "$CONFIG_FILE")
+    DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
+    DISCORD_EVENT_TASK_STARTED=$(parse_yaml_nested_events "notifications" "discord" "task_started" "$CONFIG_FILE")
+    DISCORD_EVENT_TASK_STARTED="${DISCORD_EVENT_TASK_STARTED:-true}"
+    DISCORD_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events "notifications" "discord" "task_completed" "$CONFIG_FILE")
+    DISCORD_EVENT_TASK_COMPLETED="${DISCORD_EVENT_TASK_COMPLETED:-true}"
+    DISCORD_EVENT_TASK_FAILED=$(parse_yaml_nested_events "notifications" "discord" "task_failed" "$CONFIG_FILE")
+    DISCORD_EVENT_TASK_FAILED="${DISCORD_EVENT_TASK_FAILED:-true}"
+    DISCORD_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events "notifications" "discord" "gigachad_merge" "$CONFIG_FILE")
+    DISCORD_EVENT_GIGACHAD_MERGE="${DISCORD_EVENT_GIGACHAD_MERGE:-true}"
+    DISCORD_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "discord" "session_ended" "$CONFIG_FILE")
+    DISCORD_EVENT_SESSION_ENDED="${DISCORD_EVENT_SESSION_ENDED:-true}"
+
+    # Generic webhook notifications
+    GENERIC_WEBHOOK_ENABLED=$(parse_yaml_nested_deep "notifications" "generic" "enabled" "$CONFIG_FILE")
+    GENERIC_WEBHOOK_ENABLED="${GENERIC_WEBHOOK_ENABLED:-false}"
+    GENERIC_WEBHOOK_URL=$(parse_yaml_nested_deep "notifications" "generic" "webhook_url" "$CONFIG_FILE")
+    GENERIC_WEBHOOK_URL="${GENERIC_WEBHOOK_URL:-}"
+    GENERIC_EVENT_TASK_STARTED=$(parse_yaml_nested_events "notifications" "generic" "task_started" "$CONFIG_FILE")
+    GENERIC_EVENT_TASK_STARTED="${GENERIC_EVENT_TASK_STARTED:-true}"
+    GENERIC_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events "notifications" "generic" "task_completed" "$CONFIG_FILE")
+    GENERIC_EVENT_TASK_COMPLETED="${GENERIC_EVENT_TASK_COMPLETED:-true}"
+    GENERIC_EVENT_TASK_FAILED=$(parse_yaml_nested_events "notifications" "generic" "task_failed" "$CONFIG_FILE")
+    GENERIC_EVENT_TASK_FAILED="${GENERIC_EVENT_TASK_FAILED:-true}"
+    GENERIC_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events "notifications" "generic" "gigachad_merge" "$CONFIG_FILE")
+    GENERIC_EVENT_GIGACHAD_MERGE="${GENERIC_EVENT_GIGACHAD_MERGE:-true}"
+    GENERIC_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "generic" "session_ended" "$CONFIG_FILE")
+    GENERIC_EVENT_SESSION_ENDED="${GENERIC_EVENT_SESSION_ENDED:-true}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -223,6 +327,39 @@ set_defaults() {
     RETRY_BACKOFF="${RETRY_BACKOFF:-exponential}"
     RETRY_MAX_DELAY="${RETRY_MAX_DELAY:-60}"
     RETRY_JITTER="${RETRY_JITTER:-false}"
+
+    # Notification settings
+    NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
+    NOTIFY_RATE_MIN_INTERVAL="${NOTIFY_RATE_MIN_INTERVAL:-10}"
+    NOTIFY_RATE_BURST_LIMIT="${NOTIFY_RATE_BURST_LIMIT:-5}"
+    NOTIFY_RATE_BURST_WINDOW="${NOTIFY_RATE_BURST_WINDOW:-60}"
+
+    # Slack notifications
+    SLACK_ENABLED="${SLACK_ENABLED:-false}"
+    SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
+    SLACK_EVENT_TASK_STARTED="${SLACK_EVENT_TASK_STARTED:-true}"
+    SLACK_EVENT_TASK_COMPLETED="${SLACK_EVENT_TASK_COMPLETED:-true}"
+    SLACK_EVENT_TASK_FAILED="${SLACK_EVENT_TASK_FAILED:-true}"
+    SLACK_EVENT_GIGACHAD_MERGE="${SLACK_EVENT_GIGACHAD_MERGE:-true}"
+    SLACK_EVENT_SESSION_ENDED="${SLACK_EVENT_SESSION_ENDED:-true}"
+
+    # Discord notifications
+    DISCORD_ENABLED="${DISCORD_ENABLED:-false}"
+    DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
+    DISCORD_EVENT_TASK_STARTED="${DISCORD_EVENT_TASK_STARTED:-true}"
+    DISCORD_EVENT_TASK_COMPLETED="${DISCORD_EVENT_TASK_COMPLETED:-true}"
+    DISCORD_EVENT_TASK_FAILED="${DISCORD_EVENT_TASK_FAILED:-true}"
+    DISCORD_EVENT_GIGACHAD_MERGE="${DISCORD_EVENT_GIGACHAD_MERGE:-true}"
+    DISCORD_EVENT_SESSION_ENDED="${DISCORD_EVENT_SESSION_ENDED:-true}"
+
+    # Generic webhook notifications
+    GENERIC_WEBHOOK_ENABLED="${GENERIC_WEBHOOK_ENABLED:-false}"
+    GENERIC_WEBHOOK_URL="${GENERIC_WEBHOOK_URL:-}"
+    GENERIC_EVENT_TASK_STARTED="${GENERIC_EVENT_TASK_STARTED:-true}"
+    GENERIC_EVENT_TASK_COMPLETED="${GENERIC_EVENT_TASK_COMPLETED:-true}"
+    GENERIC_EVENT_TASK_FAILED="${GENERIC_EVENT_TASK_FAILED:-true}"
+    GENERIC_EVENT_GIGACHAD_MERGE="${GENERIC_EVENT_GIGACHAD_MERGE:-true}"
+    GENERIC_EVENT_SESSION_ENDED="${GENERIC_EVENT_SESSION_ENDED:-true}"
 }
 
 #------------------------------------------------------------------------------
@@ -293,6 +430,402 @@ log_retry_delay() {
     fi
 
     log_info "Retrying in ${DELAY} seconds (backoff: ${RETRY_BACKOFF}${JITTER_STR}, iteration ${ITERATION})"
+}
+
+#------------------------------------------------------------------------------
+# Webhook Notifications
+#------------------------------------------------------------------------------
+
+# Rate limiting state
+LAST_NOTIFICATION_TIME=0
+NOTIFICATION_BURST_COUNT=0
+NOTIFICATION_BURST_START=0
+
+# Check if rate limit allows sending a notification
+# Returns 0 if allowed, 1 if rate limited
+check_notification_rate_limit() {
+    local CURRENT_TIME=$(date +%s)
+
+    # Check minimum interval
+    local TIME_SINCE_LAST=$((CURRENT_TIME - LAST_NOTIFICATION_TIME))
+    if [ $TIME_SINCE_LAST -lt $NOTIFY_RATE_MIN_INTERVAL ]; then
+        log_info "Notification rate limited: ${TIME_SINCE_LAST}s since last (min: ${NOTIFY_RATE_MIN_INTERVAL}s)"
+        return 1
+    fi
+
+    # Check burst limit
+    local BURST_ELAPSED=$((CURRENT_TIME - NOTIFICATION_BURST_START))
+    if [ $BURST_ELAPSED -gt $NOTIFY_RATE_BURST_WINDOW ]; then
+        # Reset burst counter
+        NOTIFICATION_BURST_COUNT=0
+        NOTIFICATION_BURST_START=$CURRENT_TIME
+    fi
+
+    if [ $NOTIFICATION_BURST_COUNT -ge $NOTIFY_RATE_BURST_LIMIT ]; then
+        log_info "Notification rate limited: burst limit reached (${NOTIFICATION_BURST_COUNT}/${NOTIFY_RATE_BURST_LIMIT})"
+        return 1
+    fi
+
+    return 0
+}
+
+# Update rate limiting state after sending
+update_notification_rate_limit() {
+    LAST_NOTIFICATION_TIME=$(date +%s)
+    NOTIFICATION_BURST_COUNT=$((NOTIFICATION_BURST_COUNT + 1))
+    if [ $NOTIFICATION_BURST_START -eq 0 ]; then
+        NOTIFICATION_BURST_START=$LAST_NOTIFICATION_TIME
+    fi
+}
+
+# Send a generic webhook POST request
+# Usage: send_webhook <url> <json_payload> [headers...]
+send_webhook() {
+    local URL=$1
+    local PAYLOAD=$2
+    shift 2
+    local HEADERS=("$@")
+
+    if [ -z "$URL" ]; then
+        return 1
+    fi
+
+    # Build curl command
+    local CURL_CMD="curl -s -X POST -H 'Content-Type: application/json'"
+
+    # Add custom headers
+    for HEADER in "${HEADERS[@]}"; do
+        CURL_CMD="$CURL_CMD -H '$HEADER'"
+    done
+
+    # Add payload and URL
+    CURL_CMD="$CURL_CMD -d '$PAYLOAD' '$URL'"
+
+    # Execute (with timeout)
+    local RESPONSE
+    RESPONSE=$(timeout 10 bash -c "$CURL_CMD" 2>/dev/null)
+    local EXIT_CODE=$?
+
+    if [ $EXIT_CODE -eq 0 ]; then
+        return 0
+    else
+        log_warn "Webhook request failed (exit code: $EXIT_CODE)"
+        return 1
+    fi
+}
+
+# Send Slack notification
+# Usage: send_slack_notification <event_type> <title> <message> [color] [fields_json]
+send_slack_notification() {
+    local EVENT_TYPE=$1
+    local TITLE=$2
+    local MESSAGE=$3
+    local COLOR=${4:-"#36a64f"}
+    local FIELDS_JSON=${5:-"[]"}
+
+    if [ "$SLACK_ENABLED" != "true" ] || [ -z "$SLACK_WEBHOOK_URL" ]; then
+        return 0
+    fi
+
+    # Check event is enabled
+    case "$EVENT_TYPE" in
+        "task_started") [ "$SLACK_EVENT_TASK_STARTED" != "true" ] && return 0 ;;
+        "task_completed") [ "$SLACK_EVENT_TASK_COMPLETED" != "true" ] && return 0 ;;
+        "task_failed") [ "$SLACK_EVENT_TASK_FAILED" != "true" ] && return 0 ;;
+        "gigachad_merge") [ "$SLACK_EVENT_GIGACHAD_MERGE" != "true" ] && return 0 ;;
+        "session_ended") [ "$SLACK_EVENT_SESSION_ENDED" != "true" ] && return 0 ;;
+    esac
+
+    # Build Slack payload
+    local TIMESTAMP=$(date +%s)
+    local PAYLOAD=$(cat << SLACK_EOF
+{
+  "attachments": [
+    {
+      "color": "$COLOR",
+      "title": "$TITLE",
+      "text": "$MESSAGE",
+      "fields": $FIELDS_JSON,
+      "footer": "ChadGI | $CHAD_TAGLINE",
+      "ts": $TIMESTAMP
+    }
+  ]
+}
+SLACK_EOF
+)
+
+    if send_webhook "$SLACK_WEBHOOK_URL" "$PAYLOAD"; then
+        log_info "Slack notification sent: $EVENT_TYPE"
+        return 0
+    else
+        log_warn "Failed to send Slack notification"
+        return 1
+    fi
+}
+
+# Send Discord notification
+# Usage: send_discord_notification <event_type> <title> <message> [color] [fields_json]
+send_discord_notification() {
+    local EVENT_TYPE=$1
+    local TITLE=$2
+    local MESSAGE=$3
+    local COLOR=${4:-"3066993"}  # Discord uses decimal colors
+    local FIELDS_JSON=${5:-"[]"}
+
+    if [ "$DISCORD_ENABLED" != "true" ] || [ -z "$DISCORD_WEBHOOK_URL" ]; then
+        return 0
+    fi
+
+    # Check event is enabled
+    case "$EVENT_TYPE" in
+        "task_started") [ "$DISCORD_EVENT_TASK_STARTED" != "true" ] && return 0 ;;
+        "task_completed") [ "$DISCORD_EVENT_TASK_COMPLETED" != "true" ] && return 0 ;;
+        "task_failed") [ "$DISCORD_EVENT_TASK_FAILED" != "true" ] && return 0 ;;
+        "gigachad_merge") [ "$DISCORD_EVENT_GIGACHAD_MERGE" != "true" ] && return 0 ;;
+        "session_ended") [ "$DISCORD_EVENT_SESSION_ENDED" != "true" ] && return 0 ;;
+    esac
+
+    # Build Discord payload
+    local TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local PAYLOAD=$(cat << DISCORD_EOF
+{
+  "embeds": [
+    {
+      "title": "$TITLE",
+      "description": "$MESSAGE",
+      "color": $COLOR,
+      "fields": $FIELDS_JSON,
+      "footer": {
+        "text": "ChadGI | $CHAD_TAGLINE"
+      },
+      "timestamp": "$TIMESTAMP"
+    }
+  ]
+}
+DISCORD_EOF
+)
+
+    if send_webhook "$DISCORD_WEBHOOK_URL" "$PAYLOAD"; then
+        log_info "Discord notification sent: $EVENT_TYPE"
+        return 0
+    else
+        log_warn "Failed to send Discord notification"
+        return 1
+    fi
+}
+
+# Send generic webhook notification
+# Usage: send_generic_notification <event_type> <event_data_json>
+send_generic_notification() {
+    local EVENT_TYPE=$1
+    local EVENT_DATA=$2
+
+    if [ "$GENERIC_WEBHOOK_ENABLED" != "true" ] || [ -z "$GENERIC_WEBHOOK_URL" ]; then
+        return 0
+    fi
+
+    # Check event is enabled
+    case "$EVENT_TYPE" in
+        "task_started") [ "$GENERIC_EVENT_TASK_STARTED" != "true" ] && return 0 ;;
+        "task_completed") [ "$GENERIC_EVENT_TASK_COMPLETED" != "true" ] && return 0 ;;
+        "task_failed") [ "$GENERIC_EVENT_TASK_FAILED" != "true" ] && return 0 ;;
+        "gigachad_merge") [ "$GENERIC_EVENT_GIGACHAD_MERGE" != "true" ] && return 0 ;;
+        "session_ended") [ "$GENERIC_EVENT_SESSION_ENDED" != "true" ] && return 0 ;;
+    esac
+
+    # Build generic payload
+    local TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local PAYLOAD=$(cat << GENERIC_EOF
+{
+  "event": "$EVENT_TYPE",
+  "timestamp": "$TIMESTAMP",
+  "repo": "$REPO",
+  "source": "chadgi",
+  "data": $EVENT_DATA
+}
+GENERIC_EOF
+)
+
+    if send_webhook "$GENERIC_WEBHOOK_URL" "$PAYLOAD"; then
+        log_info "Generic webhook notification sent: $EVENT_TYPE"
+        return 0
+    else
+        log_warn "Failed to send generic webhook notification"
+        return 1
+    fi
+}
+
+# Send notification to all configured channels
+# Usage: notify_event <event_type> <title> <message> [slack_color] [discord_color] [event_data_json]
+notify_event() {
+    local EVENT_TYPE=$1
+    local TITLE=$2
+    local MESSAGE=$3
+    local SLACK_COLOR=${4:-"#36a64f"}
+    local DISCORD_COLOR=${5:-"3066993"}
+    local EVENT_DATA=${6:-"{}"}
+
+    # Skip if notifications disabled
+    if [ "$NOTIFICATIONS_ENABLED" != "true" ]; then
+        return 0
+    fi
+
+    # Check rate limit
+    if ! check_notification_rate_limit; then
+        return 0
+    fi
+
+    local SENT=false
+
+    # Escape message for JSON (basic escaping)
+    local ESCAPED_TITLE=$(echo "$TITLE" | sed 's/"/\\"/g' | tr '\n' ' ')
+    local ESCAPED_MESSAGE=$(echo "$MESSAGE" | sed 's/"/\\"/g' | tr '\n' ' ')
+
+    # Send to Slack
+    if [ "$SLACK_ENABLED" = "true" ] && [ -n "$SLACK_WEBHOOK_URL" ]; then
+        send_slack_notification "$EVENT_TYPE" "$ESCAPED_TITLE" "$ESCAPED_MESSAGE" "$SLACK_COLOR" "[]"
+        SENT=true
+    fi
+
+    # Send to Discord
+    if [ "$DISCORD_ENABLED" = "true" ] && [ -n "$DISCORD_WEBHOOK_URL" ]; then
+        send_discord_notification "$EVENT_TYPE" "$ESCAPED_TITLE" "$ESCAPED_MESSAGE" "$DISCORD_COLOR" "[]"
+        SENT=true
+    fi
+
+    # Send to generic webhook
+    if [ "$GENERIC_WEBHOOK_ENABLED" = "true" ] && [ -n "$GENERIC_WEBHOOK_URL" ]; then
+        send_generic_notification "$EVENT_TYPE" "$EVENT_DATA"
+        SENT=true
+    fi
+
+    # Update rate limit if we sent something
+    if [ "$SENT" = "true" ]; then
+        update_notification_rate_limit
+    fi
+}
+
+# Convenience functions for specific events
+notify_task_started() {
+    local ISSUE_NUM=$1
+    local TITLE=$2
+    local URL=$3
+
+    local TITLE_TEXT="Task Started: #${ISSUE_NUM}"
+    local MESSAGE="Working on: ${TITLE}\n${URL}"
+    local EVENT_DATA="{\"issue_number\": ${ISSUE_NUM}, \"title\": \"${TITLE}\", \"url\": \"${URL}\"}"
+
+    notify_event "task_started" "$TITLE_TEXT" "$MESSAGE" "#3498db" "3447003" "$EVENT_DATA"
+}
+
+notify_task_completed() {
+    local ISSUE_NUM=$1
+    local TITLE=$2
+    local PR_URL=${3:-""}
+
+    local TITLE_TEXT="Task Completed: #${ISSUE_NUM}"
+    local MESSAGE="Completed: ${TITLE}"
+    [ -n "$PR_URL" ] && MESSAGE="${MESSAGE}\nPR: ${PR_URL}"
+    local EVENT_DATA="{\"issue_number\": ${ISSUE_NUM}, \"title\": \"${TITLE}\", \"pr_url\": \"${PR_URL}\"}"
+
+    notify_event "task_completed" "$TITLE_TEXT" "$MESSAGE" "#2ecc71" "3066993" "$EVENT_DATA"
+}
+
+notify_task_failed() {
+    local ISSUE_NUM=$1
+    local TITLE=$2
+    local REASON=$3
+    local ITERATIONS=$4
+
+    local TITLE_TEXT="Task Failed: #${ISSUE_NUM}"
+    local MESSAGE="Failed: ${TITLE}\nReason: ${REASON}\nIterations: ${ITERATIONS}"
+    local EVENT_DATA="{\"issue_number\": ${ISSUE_NUM}, \"title\": \"${TITLE}\", \"reason\": \"${REASON}\", \"iterations\": ${ITERATIONS}}"
+
+    notify_event "task_failed" "$TITLE_TEXT" "$MESSAGE" "#e74c3c" "15158332" "$EVENT_DATA"
+}
+
+notify_gigachad_merge() {
+    local PR_NUM=$1
+    local COMMIT_SHA=$2
+
+    local TITLE_TEXT="GigaChad Merge: PR #${PR_NUM}"
+    local MESSAGE="Auto-merged PR #${PR_NUM}\nCommit: ${COMMIT_SHA}"
+    local EVENT_DATA="{\"pr_number\": ${PR_NUM}, \"commit_sha\": \"${COMMIT_SHA}\"}"
+
+    notify_event "gigachad_merge" "$TITLE_TEXT" "$MESSAGE" "#9b59b6" "10181046" "$EVENT_DATA"
+}
+
+notify_session_ended() {
+    local TASKS_COMPLETED=$1
+    local TASKS_FAILED=$2
+    local DURATION_SECS=$3
+    local TOTAL_COST_USD=$4
+
+    local TITLE_TEXT="ChadGI Session Ended"
+    local MESSAGE="Completed: ${TASKS_COMPLETED} tasks\nFailed: ${TASKS_FAILED} tasks\nDuration: $(format_duration $DURATION_SECS)\nCost: \$${TOTAL_COST_USD}"
+    local EVENT_DATA="{\"tasks_completed\": ${TASKS_COMPLETED}, \"tasks_failed\": ${TASKS_FAILED}, \"duration_secs\": ${DURATION_SECS}, \"total_cost_usd\": ${TOTAL_COST_USD}}"
+
+    notify_event "session_ended" "$TITLE_TEXT" "$MESSAGE" "#95a5a6" "10070709" "$EVENT_DATA"
+}
+
+# Test webhook connectivity
+# Usage: test_webhook_connectivity
+# Returns 0 if at least one webhook works, 1 if all fail or none configured
+test_webhook_connectivity() {
+    local ANY_SUCCESS=false
+    local ANY_CONFIGURED=false
+
+    log_step "Testing webhook connectivity..."
+
+    # Test Slack
+    if [ "$SLACK_ENABLED" = "true" ] && [ -n "$SLACK_WEBHOOK_URL" ]; then
+        ANY_CONFIGURED=true
+        log_info "Testing Slack webhook..."
+        local SLACK_PAYLOAD='{"text": "ChadGI webhook test - connection successful!"}'
+        if send_webhook "$SLACK_WEBHOOK_URL" "$SLACK_PAYLOAD"; then
+            log_success "Slack webhook: OK"
+            ANY_SUCCESS=true
+        else
+            log_error "Slack webhook: FAILED"
+        fi
+    fi
+
+    # Test Discord
+    if [ "$DISCORD_ENABLED" = "true" ] && [ -n "$DISCORD_WEBHOOK_URL" ]; then
+        ANY_CONFIGURED=true
+        log_info "Testing Discord webhook..."
+        local DISCORD_PAYLOAD='{"content": "ChadGI webhook test - connection successful!"}'
+        if send_webhook "$DISCORD_WEBHOOK_URL" "$DISCORD_PAYLOAD"; then
+            log_success "Discord webhook: OK"
+            ANY_SUCCESS=true
+        else
+            log_error "Discord webhook: FAILED"
+        fi
+    fi
+
+    # Test Generic
+    if [ "$GENERIC_WEBHOOK_ENABLED" = "true" ] && [ -n "$GENERIC_WEBHOOK_URL" ]; then
+        ANY_CONFIGURED=true
+        log_info "Testing generic webhook..."
+        local GENERIC_PAYLOAD='{"event": "test", "message": "ChadGI webhook test - connection successful!", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
+        if send_webhook "$GENERIC_WEBHOOK_URL" "$GENERIC_PAYLOAD"; then
+            log_success "Generic webhook: OK"
+            ANY_SUCCESS=true
+        else
+            log_error "Generic webhook: FAILED"
+        fi
+    fi
+
+    if [ "$ANY_CONFIGURED" = "false" ]; then
+        log_warn "No webhooks configured"
+        return 1
+    fi
+
+    if [ "$ANY_SUCCESS" = "true" ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 #------------------------------------------------------------------------------
@@ -715,6 +1248,15 @@ function ctrl_c() {
     print_session_summary
     save_session_stats
 
+    # Send session ended notification
+    local SESSION_END_EPOCH=$(date +%s)
+    local SESSION_DURATION=$((SESSION_END_EPOCH - SESSION_START_EPOCH))
+    local FAILED_COUNT=0
+    for TASK in $FAILED_TASKS; do
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+    done
+    notify_session_ended "$ISSUES_COMPLETED" "$FAILED_COUNT" "$SESSION_DURATION" "${TOTAL_COST:-0}"
+
     exit 0
 }
 
@@ -1075,6 +1617,10 @@ gigachad_merge_and_sync() {
         log_warn "Could not pull latest - may need manual sync"
     fi
 
+    # Get the merge commit SHA and send notification
+    local MERGE_COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null | cut -c1-7)
+    notify_gigachad_merge "$PR_NUMBER" "$MERGE_COMMIT_SHA"
+
     return 0
 }
 
@@ -1383,6 +1929,9 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
         # Still mark as complete since tests passed
         TASK_COMPLETE=true
     fi
+
+    # Extract PR info from output for notifications
+    COMPLETED_PR_URL=$(cat "$OUTPUT_FILE" "$OUTPUT_FILE.raw" 2>/dev/null | grep -oE "https://github.com/[^/]+/[^/]+/pull/[0-9]+" | head -1 || echo "")
 
     # If GigaChad mode is enabled, auto-merge the PR
     if [ "$GIGACHAD_MODE" = "true" ] && [ "$TASK_COMPLETE" = "true" ]; then
@@ -1766,6 +2315,14 @@ while true; do
                     # Display and save session statistics before exit
                     print_session_summary
                     save_session_stats
+                    # Send session ended notification
+                    local EXIT_SESSION_END_EPOCH=$(date +%s)
+                    local EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
+                    local EXIT_FAILED_COUNT=0
+                    for TASK in $FAILED_TASKS; do
+                        EXIT_FAILED_COUNT=$((EXIT_FAILED_COUNT + 1))
+                    done
+                    notify_session_ended "$ISSUES_COMPLETED" "$EXIT_FAILED_COUNT" "$EXIT_SESSION_DURATION" "${TOTAL_COST:-0}"
                     exit 0
                     ;;
                 "wait"|*)
@@ -1792,6 +2349,9 @@ while true; do
     move_to_column "$ITEM_ID" "$IN_PROGRESS_COLUMN" && \
         log_success "Moved to '$IN_PROGRESS_COLUMN'" || \
         log_warn "Could not move issue (continuing anyway)"
+
+    # Send task started notification
+    notify_task_started "$ISSUE_NUMBER" "$ISSUE_TITLE" "$ISSUE_URL"
 
     # Auto-assign issue to current user
     if [ -n "$GITHUB_USERNAME" ]; then
@@ -1910,6 +2470,9 @@ PROMPT_EOF
         # Record failed task
         FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:max_iterations_reached"
 
+        # Send task failed notification
+        notify_task_failed "$ISSUE_NUMBER" "$ISSUE_TITLE" "max_iterations_reached" "$MAX_ITERATIONS"
+
         # Handle max iterations based on config
         case "$ON_MAX_ITERATIONS" in
             "rollback")
@@ -1937,6 +2500,9 @@ PROMPT_EOF
 
     # Record successful task with duration
     SUCCESSFUL_TASKS="${SUCCESSFUL_TASKS} ${ISSUE_NUMBER}:${TASK_DURATION}"
+
+    # Send task completed notification
+    notify_task_completed "$ISSUE_NUMBER" "$ISSUE_TITLE" "$COMPLETED_PR_URL"
 
     # In GigaChad mode: move to Done; otherwise: move to In Review
     if [ "$GIGACHAD_MERGED" = "true" ]; then

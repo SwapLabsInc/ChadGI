@@ -69,6 +69,7 @@ program
   .command('validate')
   .description('Validate dependencies and configuration')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('--notify-test', 'Test webhook connectivity for configured notifications')
   .action(async (options) => {
     try {
       const isValid = await validate(options);
