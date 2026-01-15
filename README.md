@@ -129,6 +129,7 @@ github:
   ready_column: Ready
   in_progress_column: In progress
   review_column: In review
+  done_column: Done  # Used when gigachad_mode is enabled
 
 # Branch configuration
 branch:
@@ -150,6 +151,7 @@ iteration:
   test_command: "npm test"
   build_command: "npm run build"
   on_max_iterations: skip
+  gigachad_mode: false  # Auto-merge PRs without human review
 
 # Output settings
 output:
@@ -185,6 +187,7 @@ ChadGI uses GitHub Projects v2 to manage tasks. You need a project with a Status
 - **Ready** - Tasks waiting to be picked up
 - **In progress** - Task currently being worked on
 - **In review** - PR created, awaiting review
+- **Done** - (Optional) Task completed via GigaChad Mode auto-merge
 
 ### Option 1: Automatic Setup
 
@@ -204,6 +207,7 @@ This creates the project but you may need to manually add Status options.
    - Ready
    - In progress
    - In review
+   - Done (if using GigaChad Mode)
 6. Note the project number from the URL
 
 ### Adding Tasks
@@ -287,6 +291,57 @@ ChadGI ensures tests pass **before** creating a PR:
 2. Claude pushes branch and creates PR
 3. Claude outputs `<promise>COMPLETE</promise>`
 
+### GigaChad Mode
+
+For the truly fearless, **GigaChad Mode** bypasses human review entirely:
+
+```yaml
+iteration:
+  gigachad_mode: true
+```
+
+When enabled, after PR creation:
+1. ChadGI automatically merges the PR into the target branch (squash merge)
+2. Pulls the latest changes locally to prevent merge conflicts on next task
+3. Moves the ticket directly to the "Done" column (not "In Review")
+
+**This is Chad-level confidence.** Only enable if:
+- You have comprehensive test coverage
+- You trust your CI/CD pipeline
+- You're comfortable with autonomous deployments
+- You want maximum velocity
+
+To use GigaChad Mode, you'll also need a "Done" column in your project board:
+```yaml
+github:
+  done_column: Done
+```
+
+#### Commit Prefix for Rollbacks
+
+Auto-merged commits are prefixed with `[GIGACHAD]` by default, making it easy to identify autonomous merges in your git history:
+
+```
+[GIGACHAD] feat: add user authentication
+[GIGACHAD] fix: resolve database connection issue
+feat: manual human-reviewed commit
+```
+
+To rollback to the last human-approved commit:
+```bash
+# Find the last non-GigaChad commit
+git log --oneline | grep -v "^\[GIGACHAD\]" | head -1
+
+# Or reset to before GigaChad started
+git log --oneline --all | grep -v GIGACHAD
+```
+
+Customize the prefix in your config:
+```yaml
+iteration:
+  gigachad_commit_prefix: "[AUTO]"  # Or "[BOT]", "🤖", etc.
+```
+
 ## Safety Notes
 
 **ChadGI runs Claude Code with `--dangerously-skip-permissions`**
@@ -297,13 +352,15 @@ This means Claude Code will:
 - Push code to GitHub
 - Create Pull Requests
 - Create GitHub issues (when generating tasks)
+- **With GigaChad Mode:** Auto-merge PRs without human review
 
 **Recommended safeguards:**
 1. Run in a dedicated terminal you can monitor
 2. Have your repository backed up
-3. Review PRs before merging
+3. Review PRs before merging (unless using GigaChad Mode)
 4. Use a test repository first
 5. Set higher `poll_interval` for more review time
+6. **Avoid GigaChad Mode on production repositories without comprehensive tests**
 
 ## Troubleshooting
 
