@@ -219,6 +219,69 @@ else
 fi
 
 #------------------------------------------------------------------------------
+# Test 11: Config parsing - gigachad_commit_prefix defaults correctly
+#------------------------------------------------------------------------------
+echo "Test 11: gigachad_commit_prefix defaults to '[GIGACHAD]'"
+
+TEMP_CONFIG=$(mktemp)
+cat > "$TEMP_CONFIG" << 'EOF'
+iteration:
+  gigachad_mode: true
+EOF
+
+RESULT=$(parse_yaml_nested "iteration" "gigachad_commit_prefix" "$TEMP_CONFIG")
+if [ -z "$RESULT" ] || [ "$RESULT" = "" ]; then
+    pass "gigachad_commit_prefix not set (will use default '[GIGACHAD]')"
+else
+    fail "gigachad_commit_prefix should be empty when not set, got: $RESULT"
+fi
+
+rm -f "$TEMP_CONFIG"
+
+#------------------------------------------------------------------------------
+# Test 12: Config parsing - gigachad_commit_prefix can be customized
+#------------------------------------------------------------------------------
+echo "Test 12: gigachad_commit_prefix can be customized"
+
+TEMP_CONFIG=$(mktemp)
+cat > "$TEMP_CONFIG" << 'EOF'
+iteration:
+  gigachad_mode: true
+  gigachad_commit_prefix: "[AUTO]"
+EOF
+
+RESULT=$(parse_yaml_nested "iteration" "gigachad_commit_prefix" "$TEMP_CONFIG")
+if [ "$RESULT" = "[AUTO]" ]; then
+    pass "gigachad_commit_prefix='[AUTO]' parsed correctly"
+else
+    fail "gigachad_commit_prefix should be '[AUTO]', got: $RESULT"
+fi
+
+rm -f "$TEMP_CONFIG"
+
+#------------------------------------------------------------------------------
+# Test 13: Main script uses --subject flag for prefixed commits
+#------------------------------------------------------------------------------
+echo "Test 13: Squash merge uses --subject flag for commit prefix"
+
+if grep -q 'gh pr merge.*--subject' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+    pass "Squash merge uses --subject flag for commit prefix"
+else
+    fail "Squash merge should use --subject flag for commit prefix"
+fi
+
+#------------------------------------------------------------------------------
+# Test 14: Config template includes gigachad_commit_prefix
+#------------------------------------------------------------------------------
+echo "Test 14: Config template includes gigachad_commit_prefix"
+
+if grep -q "gigachad_commit_prefix" "$PROJECT_ROOT/templates/chadgi-config.yaml"; then
+    pass "gigachad_commit_prefix found in config template"
+else
+    fail "gigachad_commit_prefix should be in config template"
+fi
+
+#------------------------------------------------------------------------------
 # Summary
 #------------------------------------------------------------------------------
 echo ""

@@ -160,6 +160,8 @@ load_config() {
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
     GIGACHAD_MODE=$(parse_yaml_nested "iteration" "gigachad_mode" "$CONFIG_FILE")
     GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
+    GIGACHAD_COMMIT_PREFIX=$(parse_yaml_nested "iteration" "gigachad_commit_prefix" "$CONFIG_FILE")
+    GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
 
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
@@ -202,6 +204,7 @@ set_defaults() {
     BUILD_COMMAND="${BUILD_COMMAND:-}"
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
     GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
+    GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
 }
 
 #------------------------------------------------------------------------------
@@ -747,15 +750,21 @@ gigachad_merge_and_sync() {
     echo -e "${PURPLE}${BOLD}     Chad doesn't wait for reviews. Chad ships.${NC}"
     echo ""
 
-    # Merge the PR using squash (cleaner history)
+    # Get PR title to prefix it for easy identification in git history
+    local PR_TITLE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title -q '.title' 2>/dev/null)
+    local PREFIXED_TITLE="$GIGACHAD_COMMIT_PREFIX $PR_TITLE"
+
+    # Merge the PR using squash (cleaner history) with prefixed commit message
     log_step "Merging PR #$PR_NUMBER into $BASE_BRANCH..."
-    if gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch 2>/dev/null; then
+    log_info "Commit prefix: $GIGACHAD_COMMIT_PREFIX"
+    if gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch --subject "$PREFIXED_TITLE" 2>/dev/null; then
         log_success "PR #$PR_NUMBER merged successfully!"
     else
-        # Try regular merge if squash fails
+        # Try regular merge if squash fails (note: regular merge doesn't support --subject)
         log_warn "Squash merge failed, trying regular merge..."
         if gh pr merge "$PR_NUMBER" --repo "$REPO" --merge --delete-branch 2>/dev/null; then
             log_success "PR #$PR_NUMBER merged successfully!"
+            log_warn "Note: Regular merge used - commit prefix not applied"
         else
             log_error "Failed to merge PR #$PR_NUMBER"
             return 1

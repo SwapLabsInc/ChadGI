@@ -317,6 +317,31 @@ github:
   done_column: Done
 ```
 
+#### Commit Prefix for Rollbacks
+
+Auto-merged commits are prefixed with `[GIGACHAD]` by default, making it easy to identify autonomous merges in your git history:
+
+```
+[GIGACHAD] feat: add user authentication
+[GIGACHAD] fix: resolve database connection issue
+feat: manual human-reviewed commit
+```
+
+To rollback to the last human-approved commit:
+```bash
+# Find the last non-GigaChad commit
+git log --oneline | grep -v "^\[GIGACHAD\]" | head -1
+
+# Or reset to before GigaChad started
+git log --oneline --all | grep -v GIGACHAD
+```
+
+Customize the prefix in your config:
+```yaml
+iteration:
+  gigachad_commit_prefix: "[AUTO]"  # Or "[BOT]", "🤖", etc.
+```
+
 ## Safety Notes
 
 **ChadGI runs Claude Code with `--dangerously-skip-permissions`**

@@ -52,6 +52,9 @@ iteration:
   # When enabled: auto-merges PRs into target branch, moves tickets to Done, and pulls latest
   # Use at your own risk - no human review means no safety net!
   gigachad_mode: false
+  # Prefix added to commit messages when GigaChad auto-merges
+  # Makes it easy to identify autonomous merges in git history for rollbacks
+  gigachad_commit_prefix: "[GIGACHAD]"
 
 # Output settings
 output:
