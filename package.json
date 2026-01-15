@@ -1,6 +1,6 @@
 {
   "name": "chadgi",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ChadGI - Autonomous Task Worker powered by Claude Code. Chad does what Chad wants.",
   "type": "module",
   "main": "dist/cli.js",
