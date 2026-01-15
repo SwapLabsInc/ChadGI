@@ -5,6 +5,9 @@ import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
 import { stats } from './stats.js';
+import { pause } from './pause.js';
+import { resume } from './resume.js';
+import { status } from './status.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -84,6 +87,49 @@ program
     .action(async (options) => {
     try {
         await stats(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('pause')
+    .description('Pause ChadGI after the current task completes')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-f, --for <duration>', 'Auto-resume after duration (e.g., 30m, 2h)')
+    .option('-r, --reason <reason>', 'Reason for pausing')
+    .action(async (options) => {
+    try {
+        await pause(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('resume')
+    .description('Resume a paused ChadGI session')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('--restart', 'Start ChadGI if not currently running')
+    .action(async (options) => {
+    try {
+        await resume(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('status')
+    .description('Show current ChadGI session state')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-j, --json', 'Output status as JSON')
+    .action(async (options) => {
+    try {
+        await status(options);
     }
     catch (error) {
         console.error('Error:', error.message);
