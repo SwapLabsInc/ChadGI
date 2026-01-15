@@ -83,3 +83,55 @@ local_file:
 # Manual mode settings (used when task_source: manual)
 manual:
   prompt_on_completion: true  # Ask for next task when done
+
+# Webhook notifications - Chad keeps you informed
+# Supports Slack, Discord, and generic webhook endpoints
+notifications:
+  # Enable/disable all notifications (master switch)
+  enabled: false
+
+  # Rate limiting to prevent webhook spam
+  rate_limit:
+    min_interval: 10         # Minimum seconds between notifications
+    burst_limit: 5           # Max notifications in burst window
+    burst_window: 60         # Burst window in seconds
+
+  # Slack webhook configuration
+  slack:
+    enabled: false
+    webhook_url: ""          # Your Slack incoming webhook URL
+    # Which events to notify on (all optional)
+    events:
+      task_started: true
+      task_completed: true
+      task_failed: true
+      gigachad_merge: true
+      session_ended: true
+
+  # Discord webhook configuration
+  discord:
+    enabled: false
+    webhook_url: ""          # Your Discord webhook URL
+    # Which events to notify on (all optional)
+    events:
+      task_started: true
+      task_completed: true
+      task_failed: true
+      gigachad_merge: true
+      session_ended: true
+
+  # Generic webhook configuration (custom endpoint)
+  generic:
+    enabled: false
+    webhook_url: ""          # Your custom webhook endpoint
+    # Optional custom headers (key: value pairs)
+    headers:
+      # Authorization: "Bearer your-token"
+      # X-Custom-Header: "custom-value"
+    # Which events to notify on (all optional)
+    events:
+      task_started: true
+      task_completed: true
+      task_failed: true
+      gigachad_merge: true
+      session_ended: true

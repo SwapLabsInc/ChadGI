@@ -1,10 +1,15 @@
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 interface ValidateOptions {
   config?: string;
   quiet?: boolean;
+  notifyTest?: boolean;
 }
 
 interface ValidationResult {
@@ -291,6 +296,47 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
     });
     if (!quiet) {
       console.log('\x1b[33m!\x1b[0m Not in a git repository');
+    }
+  }
+
+  // Test webhook notifications if requested
+  if (options.notifyTest) {
+    if (!quiet) {
+      console.log('\nTesting webhook notifications:\n');
+    }
+
+    // Get the script directory from this module's location
+    const scriptDir = join(__dirname, '..', 'scripts');
+    const testScript = `
+      source "${scriptDir}/chadgi.sh" 2>/dev/null || true
+      CONFIG_FILE="${configPath}"
+      load_config 2>/dev/null || true
+      test_webhook_connectivity
+    `;
+
+    try {
+      execSync(`bash -c '${testScript}'`, {
+        stdio: quiet ? 'pipe' : 'inherit',
+        env: {
+          ...process.env,
+          CHADGI_DIR: dirname(configPath),
+          CONFIG_FILE: configPath
+        }
+      });
+      results.push({
+        name: 'webhooks',
+        status: 'ok',
+        message: 'connectivity test passed'
+      });
+    } catch {
+      results.push({
+        name: 'webhooks',
+        status: 'warning',
+        message: 'connectivity test failed or no webhooks configured'
+      });
+      if (!quiet) {
+        console.log('\x1b[33m!\x1b[0m Webhook test failed or no webhooks configured');
+      }
     }
   }
 
