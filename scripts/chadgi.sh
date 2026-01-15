@@ -679,6 +679,15 @@ run_tests_with_output() {
 
     > "$RESULT_FILE"
 
+    # Handle case where no verification commands are configured
+    if [ -z "$TEST_COMMAND" ] && [ -z "$BUILD_COMMAND" ]; then
+        log_warn "No test/build commands configured - skipping verification"
+        echo "=== VERIFICATION SKIPPED ===" >> "$RESULT_FILE"
+        echo "No test_command or build_command configured in chadgi-config.yaml" >> "$RESULT_FILE"
+        echo "STATUS: SKIPPED (no commands configured)" >> "$RESULT_FILE"
+        return 0
+    fi
+
     if [ -n "$TEST_COMMAND" ]; then
         log_step "Running tests: $TEST_COMMAND"
         echo "=== TEST RESULTS ===" >> "$RESULT_FILE"
