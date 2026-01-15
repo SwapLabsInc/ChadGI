@@ -27,6 +27,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Default configuration file - looks in CHADGI_DIR
 CONFIG_FILE="${CONFIG_FILE:-$CHADGI_DIR/chadgi-config.yaml}"
 
+# Dry-run mode - passed from CLI via environment variable
+DRY_RUN="${DRY_RUN:-false}"
+
 # Template paths - also from CHADGI_DIR
 TASK_TEMPLATE="$CHADGI_DIR/chadgi-task.md"
 GENERATE_TASK_TEMPLATE="$CHADGI_DIR/chadgi-generate-task.md"
@@ -453,6 +456,10 @@ function log_error() {
     echo -e "${RED}x $1${NC}"
 }
 
+function log_dry_run() {
+    echo -e "${YELLOW}[DRY-RUN]${NC} $1"
+}
+
 #------------------------------------------------------------------------------
 # Rich Streaming Output
 #------------------------------------------------------------------------------
@@ -779,6 +786,86 @@ gigachad_merge_and_sync() {
     else
         log_warn "Could not pull latest - may need manual sync"
     fi
+
+    return 0
+}
+
+# Run task in dry-run mode - explore without making changes
+# Shows what would happen and allows Claude to explore the codebase
+run_task_dry_run() {
+    local PROMPT_FILE=$1
+
+    log_header "DRY-RUN MODE - SIMULATING WORKFLOW"
+    log_dry_run "In normal mode, ChadGI would:"
+    echo -e "  1. Run Claude with full permissions to implement the task"
+    echo -e "  2. Execute test command: ${TEST_COMMAND:-'(none configured)'}"
+    echo -e "  3. Execute build command: ${BUILD_COMMAND:-'(none configured)'}"
+    echo -e "  4. Create a PR targeting $BASE_BRANCH"
+    if [ "$GIGACHAD_MODE" = "true" ]; then
+        echo -e "  5. ${PURPLE}[GIGACHAD]${NC} Auto-merge the PR and move to Done"
+    else
+        echo -e "  5. Move issue to '$REVIEW_COLUMN' column"
+    fi
+    echo ""
+
+    # Show what PR would be created
+    log_dry_run "PR that would be created:"
+    echo -e "  Title: ${ISSUE_PREFIX} <implementation title>"
+    echo -e "  Base: $BASE_BRANCH"
+    echo -e "  Head: $BRANCH_NAME"
+    echo -e "  Body: Summary of changes + 'Closes #$ISSUE_NUMBER'"
+    echo ""
+
+    # Show GigaChad warnings if enabled
+    if [ "$GIGACHAD_MODE" = "true" ]; then
+        echo -e "${YELLOW}${BOLD}WARNING: GigaChad mode is ENABLED${NC}"
+        echo -e "${YELLOW}  - PRs would be auto-merged without human review${NC}"
+        echo -e "${YELLOW}  - Issues would be moved directly to '$DONE_COLUMN'${NC}"
+        echo -e "${YELLOW}  - Consider disabling for initial testing${NC}"
+        echo ""
+    fi
+
+    # Run Claude in exploration mode (no --dangerously-skip-permissions)
+    log_header "EXPLORING CODEBASE (Read-Only Mode)"
+    log_info "Running Claude without write permissions for safe exploration..."
+    echo ""
+
+    # Create a modified prompt for dry-run exploration
+    local DRY_RUN_PROMPT=$(mktemp)
+    cat > "$DRY_RUN_PROMPT" << DRY_RUN_EOF
+[DRY-RUN MODE] You are in dry-run/exploration mode. Your task is to:
+
+1. READ and understand the issue requirements
+2. EXPLORE the codebase to understand what changes would be needed
+3. DESCRIBE what you would do to implement this (but do NOT make any changes)
+
+Issue Details:
+- Number: #$ISSUE_NUMBER
+- Title: $ISSUE_TITLE
+- URL: $ISSUE_URL
+
+Issue Description:
+$ISSUE_BODY
+
+Please explore the codebase and explain:
+1. What files would need to be modified?
+2. What is your implementation approach?
+3. What tests would you add or modify?
+4. Any potential challenges or considerations?
+
+Remember: This is READ-ONLY exploration. Do not create, edit, or delete any files.
+Do not run any commands that would modify the repository.
+DRY_RUN_EOF
+
+    # Run Claude with --print only (no dangerous permissions)
+    claude --print "$(cat "$DRY_RUN_PROMPT")" 2>&1 || true
+
+    rm -f "$DRY_RUN_PROMPT"
+
+    echo ""
+    log_header "DRY-RUN COMPLETE"
+    log_success "Exploration finished - no changes were made"
+    log_info "To run for real, use: chadgi start (without --dry-run)"
 
     return 0
 }
@@ -1146,6 +1233,12 @@ move_to_column() {
         return 1
     fi
 
+    # In dry-run mode, just log what would happen
+    if [ "$DRY_RUN" = "true" ]; then
+        log_dry_run "Would move item $ITEM_ID to column '$TARGET_COLUMN'"
+        return 0
+    fi
+
     gh project item-edit --project-id "$PROJECT_ID" --id "$ITEM_ID" \
         --field-id "$STATUS_FIELD_ID" --single-select-option-id "$OPTION_ID" 2>/dev/null
 
@@ -1327,6 +1420,10 @@ if [ "$GIGACHAD_MODE" = "true" ]; then
 else
     log_info "Columns: $READY_COLUMN -> $IN_PROGRESS_COLUMN -> $REVIEW_COLUMN"
 fi
+if [ "$DRY_RUN" = "true" ]; then
+    echo -e "${YELLOW}${BOLD}     DRY-RUN MODE - No changes will be made${NC}"
+    log_info "Mode: DRY-RUN (read-only)"
+fi
 log_info "Poll Interval: ${POLL_INTERVAL}s"
 log_info "On Empty Queue: $ON_EMPTY_QUEUE"
 log_info "Iteration: max $MAX_ITERATIONS attempts per task"
@@ -1394,10 +1491,14 @@ while true; do
 
     # Auto-assign issue to current user
     if [ -n "$GITHUB_USERNAME" ]; then
-        log_step "Assigning issue to @$GITHUB_USERNAME..."
-        gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-assignee "$GITHUB_USERNAME" 2>/dev/null && \
-            log_success "Assigned to @$GITHUB_USERNAME" || \
-            log_warn "Could not assign issue (continuing anyway)"
+        if [ "$DRY_RUN" = "true" ]; then
+            log_dry_run "Would assign issue #$ISSUE_NUMBER to @$GITHUB_USERNAME"
+        else
+            log_step "Assigning issue to @$GITHUB_USERNAME..."
+            gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-assignee "$GITHUB_USERNAME" 2>/dev/null && \
+                log_success "Assigned to @$GITHUB_USERNAME" || \
+                log_warn "Could not assign issue (continuing anyway)"
+        fi
     fi
 
     log_header "CREATING BRANCH FOR ISSUE #$ISSUE_NUMBER"
@@ -1408,15 +1509,19 @@ while true; do
     ATTEMPT_SUFFIX=$(date +%m%d%H%M)
     BRANCH_NAME="${BRANCH_PREFIX}${ISSUE_NUMBER}-${BRANCH_SLUG}-${ATTEMPT_SUFFIX}"
 
-    log_step "Fetching latest from origin..."
-    git fetch origin "$BASE_BRANCH" 2>/dev/null || log_warn "Could not fetch origin"
+    if [ "$DRY_RUN" = "true" ]; then
+        log_dry_run "Would create branch: $BRANCH_NAME from origin/$BASE_BRANCH"
+    else
+        log_step "Fetching latest from origin..."
+        git fetch origin "$BASE_BRANCH" 2>/dev/null || log_warn "Could not fetch origin"
 
-    log_step "Creating branch: $BRANCH_NAME"
-    git checkout -B "$BRANCH_NAME" "origin/$BASE_BRANCH" 2>/dev/null && \
-        log_success "Branch created and checked out" || {
-        log_error "Could not create branch"
-        log_info "Continuing on current branch..."
-    }
+        log_step "Creating branch: $BRANCH_NAME"
+        git checkout -B "$BRANCH_NAME" "origin/$BASE_BRANCH" 2>/dev/null && \
+            log_success "Branch created and checked out" || {
+            log_error "Could not create branch"
+            log_info "Continuing on current branch..."
+        }
+    fi
 
     log_header "STARTING CLAUDE CODE ON ISSUE #$ISSUE_NUMBER"
 
@@ -1469,7 +1574,23 @@ After creating the PR, report the PR URL.
 PROMPT_EOF
     fi
 
-    # Run Claude Code with iteration loop
+    # Run Claude Code - either dry-run exploration or full iteration loop
+    if [ "$DRY_RUN" = "true" ]; then
+        run_task_dry_run "$PROMPT_FILE"
+        TASK_EXIT=$?
+        rm -f "$PROMPT_FILE"
+
+        # In dry-run mode, exit after processing one task
+        log_header "DRY-RUN SESSION COMPLETE"
+        log_info "Processed 1 task in dry-run mode"
+        log_info "No changes were made to GitHub or git"
+        echo ""
+        echo -e "${GREEN}Dry-run successful!${NC} To run for real:"
+        echo -e "  chadgi start"
+        echo ""
+        exit 0
+    fi
+
     run_task_with_iterations "$PROMPT_FILE"
     TASK_EXIT=$?
     rm -f "$PROMPT_FILE"
