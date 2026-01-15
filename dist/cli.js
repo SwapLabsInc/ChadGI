@@ -5,6 +5,7 @@ import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
 import { stats } from './stats.js';
+import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
@@ -87,6 +88,22 @@ program
     .action(async (options) => {
     try {
         await stats(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('insights')
+    .description('Display aggregated performance analytics and profiling')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-j, --json', 'Output insights as JSON')
+    .option('-e, --export <path>', 'Export metrics data to file')
+    .option('-d, --days <n>', 'Show only data from the last N days', parseInt)
+    .action(async (options) => {
+    try {
+        await insights(options);
     }
     catch (error) {
         console.error('Error:', error.message);

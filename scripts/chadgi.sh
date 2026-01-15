@@ -1706,6 +1706,169 @@ STATS_EOF
 }
 
 #------------------------------------------------------------------------------
+# Task Metrics - Detailed per-task performance profiling
+#------------------------------------------------------------------------------
+
+# Track per-task metrics for insights command
+# These variables are reset at the start of each task
+TASK_PHASE1_START=0
+TASK_PHASE1_END=0
+TASK_PHASE2_START=0
+TASK_PHASE2_END=0
+TASK_VERIFICATION_TIME=0
+TASK_GIT_OPS_TIME=0
+TASK_ITERATIONS=0
+TASK_RETRY_COUNT=0
+TASK_ERROR_RECOVERY_TIME=0
+TASK_COST=0
+TASK_FAILURE_PHASE=""
+
+# Reset task metrics for a new task
+reset_task_metrics() {
+    TASK_PHASE1_START=0
+    TASK_PHASE1_END=0
+    TASK_PHASE2_START=0
+    TASK_PHASE2_END=0
+    TASK_VERIFICATION_TIME=0
+    TASK_GIT_OPS_TIME=0
+    TASK_ITERATIONS=0
+    TASK_RETRY_COUNT=0
+    TASK_ERROR_RECOVERY_TIME=0
+    TASK_COST=0
+    TASK_FAILURE_PHASE=""
+}
+
+# Save detailed task metrics to chadgi-metrics.json
+save_task_metrics() {
+    local ISSUE_NUM=$1
+    local STATUS=$2            # "completed" or "failed"
+    local DURATION=$3          # Total task duration in seconds
+    local FAILURE_REASON=${4:-""}
+    local FAILURE_PHASE=${5:-""}
+
+    local METRICS_FILE="${CHADGI_DIR}/chadgi-metrics.json"
+    local NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Calculate phase durations
+    local PHASE1_DURATION=0
+    if [ $TASK_PHASE1_START -gt 0 ] && [ $TASK_PHASE1_END -gt 0 ]; then
+        PHASE1_DURATION=$((TASK_PHASE1_END - TASK_PHASE1_START))
+    elif [ $TASK_PHASE1_START -gt 0 ]; then
+        # Phase 1 didn't complete
+        local NOW_EPOCH=$(date +%s)
+        PHASE1_DURATION=$((NOW_EPOCH - TASK_PHASE1_START))
+    fi
+
+    local PHASE2_DURATION=0
+    if [ $TASK_PHASE2_START -gt 0 ] && [ $TASK_PHASE2_END -gt 0 ]; then
+        PHASE2_DURATION=$((TASK_PHASE2_END - TASK_PHASE2_START))
+    elif [ $TASK_PHASE2_START -gt 0 ]; then
+        # Phase 2 didn't complete
+        local NOW_EPOCH=$(date +%s)
+        PHASE2_DURATION=$((NOW_EPOCH - TASK_PHASE2_START))
+    fi
+
+    # Get files modified and lines changed from git
+    local FILES_MODIFIED=0
+    local LINES_CHANGED=0
+    if command -v git &> /dev/null; then
+        FILES_MODIFIED=$(git diff --stat "origin/$BASE_BRANCH"...HEAD 2>/dev/null | tail -1 | grep -oE "[0-9]+ file" | grep -oE "[0-9]+" || echo "0")
+        local INSERTIONS=$(git diff --stat "origin/$BASE_BRANCH"...HEAD 2>/dev/null | tail -1 | grep -oE "[0-9]+ insertion" | grep -oE "[0-9]+" || echo "0")
+        local DELETIONS=$(git diff --stat "origin/$BASE_BRANCH"...HEAD 2>/dev/null | tail -1 | grep -oE "[0-9]+ deletion" | grep -oE "[0-9]+" || echo "0")
+        LINES_CHANGED=$((${INSERTIONS:-0} + ${DELETIONS:-0}))
+    fi
+
+    # Build the task metric JSON entry
+    local METRIC_ENTRY=$(cat << METRIC_EOF
+{
+  "issue_number": ${ISSUE_NUM},
+  "started_at": "$(date -d "@$CURRENT_TASK_START_EPOCH" -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -r "$CURRENT_TASK_START_EPOCH" -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "$NOW")",
+  "completed_at": "${NOW}",
+  "duration_secs": ${DURATION},
+  "status": "${STATUS}",
+  "iterations": ${TASK_ITERATIONS:-1},
+  "cost_usd": ${TASK_COST:-0},
+  "phases": {
+    "phase1_duration_secs": ${PHASE1_DURATION},
+    "phase2_duration_secs": ${PHASE2_DURATION},
+    "verification_duration_secs": ${TASK_VERIFICATION_TIME:-0},
+    "git_operations_duration_secs": ${TASK_GIT_OPS_TIME:-0}
+  },
+  "failure_reason": $([ -n "$FAILURE_REASON" ] && echo "\"$FAILURE_REASON\"" || echo "null"),
+  "failure_phase": $([ -n "$FAILURE_PHASE" ] && echo "\"$FAILURE_PHASE\"" || echo "null"),
+  "error_recovery_time_secs": ${TASK_ERROR_RECOVERY_TIME:-0},
+  "files_modified": ${FILES_MODIFIED:-0},
+  "lines_changed": ${LINES_CHANGED:-0},
+  "retry_count": ${TASK_RETRY_COUNT:-0}
+}
+METRIC_EOF
+)
+
+    # Initialize metrics file if it doesn't exist
+    if [ ! -f "$METRICS_FILE" ]; then
+        cat > "$METRICS_FILE" << INIT_EOF
+{
+  "version": "1.0.0",
+  "last_updated": "${NOW}",
+  "retention_days": 30,
+  "tasks": [${METRIC_ENTRY}]
+}
+INIT_EOF
+        log_info "Task metrics initialized in $METRICS_FILE"
+        return
+    fi
+
+    # Read existing file, update last_updated and append new task
+    local TMP_FILE=$(mktemp)
+
+    # Use jq if available for proper JSON manipulation, otherwise use sed
+    if command -v jq &> /dev/null; then
+        jq --argjson new_task "$METRIC_ENTRY" \
+           --arg now "$NOW" \
+           '.last_updated = $now | .tasks += [$new_task]' \
+           "$METRICS_FILE" > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$METRICS_FILE"
+    else
+        # Fallback: simple JSON append without jq
+        # Find the last ] in the tasks array and insert before it
+        local EXISTING=$(cat "$METRICS_FILE")
+        # Update last_updated
+        EXISTING=$(echo "$EXISTING" | sed "s/\"last_updated\": \"[^\"]*\"/\"last_updated\": \"${NOW}\"/")
+        # Insert new task entry before closing ] of tasks array
+        EXISTING=$(echo "$EXISTING" | sed 's/"tasks": \[/"tasks": [NEWENTRY/')
+        # Find the position to insert (before the final ] of tasks array)
+        # This is simplified - we append after existing entries
+        EXISTING=$(echo "$EXISTING" | sed "s/\][ \t\n]*\}$/,${METRIC_ENTRY}]\n}/")
+        # Handle case where tasks array was empty
+        EXISTING=$(echo "$EXISTING" | sed "s/NEWENTRY,/NEWENTRY/")
+        EXISTING=$(echo "$EXISTING" | sed "s/NEWENTRY/${METRIC_ENTRY},/")
+        # Clean up if it was the first entry
+        EXISTING=$(echo "$EXISTING" | sed 's/,\]/]/')
+        echo "$EXISTING" > "$METRICS_FILE"
+    fi
+
+    log_info "Task metrics saved for issue #${ISSUE_NUM}"
+}
+
+# Apply metrics retention policy (remove old entries)
+apply_metrics_retention() {
+    local METRICS_FILE="${CHADGI_DIR}/chadgi-metrics.json"
+    [ ! -f "$METRICS_FILE" ] && return
+
+    if command -v jq &> /dev/null; then
+        local RETENTION_DAYS=$(jq -r '.retention_days // 30' "$METRICS_FILE")
+        local CUTOFF_DATE=$(date -d "-${RETENTION_DAYS} days" -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+                          date -v-${RETENTION_DAYS}d -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+
+        if [ -n "$CUTOFF_DATE" ]; then
+            local TMP_FILE=$(mktemp)
+            jq --arg cutoff "$CUTOFF_DATE" \
+               '.tasks = [.tasks[] | select(.started_at >= $cutoff)]' \
+               "$METRICS_FILE" > "$TMP_FILE" 2>/dev/null && mv "$TMP_FILE" "$METRICS_FILE"
+        fi
+    fi
+}
+
+#------------------------------------------------------------------------------
 # Branding - Chad does what Chad wants
 #------------------------------------------------------------------------------
 
@@ -2115,6 +2278,7 @@ run_claude_with_output() {
                         local COST=$(echo "$line" | jq -r '.total_cost_usd // 0' 2>/dev/null)
                         echo -e "\n${DIM}Cost: \$${COST}${NC}"
                         TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
+                        TASK_COST=$(echo "$TASK_COST + $COST" | bc 2>/dev/null || echo "$COST")
                     fi
                 fi
             done
@@ -2415,6 +2579,9 @@ run_task_with_iterations() {
     # Start task timeout tracking
     start_task_timeout
 
+    # Track phase 1 start time for metrics
+    TASK_PHASE1_START=$(date +%s)
+
     #---------------------------------------------------------------------------
     # PHASE 1: Implementation Loop
     # Claude implements the feature, runs tests locally, commits
@@ -2422,6 +2589,9 @@ run_task_with_iterations() {
     #---------------------------------------------------------------------------
     while [ $ITERATION -le $MAX_ITERATIONS ] && [ "$IMPL_COMPLETE" = "false" ]; do
         log_header "PHASE 1: IMPLEMENTATION (Iteration $ITERATION / $MAX_ITERATIONS)"
+
+        # Track iterations for metrics
+        TASK_ITERATIONS=$ITERATION
 
         # Clear output file for this iteration
         > "$OUTPUT_FILE"
@@ -2507,6 +2677,7 @@ If you're still implementing features, continue working. Don't signal until ALL 
                             local COST=$(echo "$line" | jq -r '.total_cost_usd // 0' 2>/dev/null)
                             echo -e "\n${DIM}Cost: \$${COST}${NC}"
                             TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
+                            TASK_COST=$(echo "$TASK_COST + $COST" | bc 2>/dev/null || echo "$COST")
                         fi
                     fi
                 done
@@ -2518,6 +2689,7 @@ If you're still implementing features, continue working. Don't signal until ALL 
 
             # Run tests to verify implementation
             log_step "Verifying implementation with tests/build..."
+            local VERIFY_START=$(date +%s)
             if run_tests_with_output "$TEST_RESULTS"; then
                 log_success "All verification checks passed!"
                 IMPL_COMPLETE=true
@@ -2529,15 +2701,22 @@ If you're still implementing features, continue working. Don't signal until ALL 
                 else
                     log_warn "Verification failed - continuing iteration loop"
                 fi
+                # Track retry for metrics
+                TASK_RETRY_COUNT=$((TASK_RETRY_COUNT + 1))
             fi
+            # Accumulate verification time for metrics
+            TASK_VERIFICATION_TIME=$((TASK_VERIFICATION_TIME + $(date +%s) - VERIFY_START))
         else
             log_info "No ready-for-PR promise yet"
 
             # Run tests to provide feedback for next iteration
+            local VERIFY_START=$(date +%s)
             if ! run_tests_with_output "$TEST_RESULTS"; then
                 # Classify any failure for informational purposes
                 classify_error 1 "$TEST_RESULTS" "verification"
             fi
+            # Accumulate verification time for metrics
+            TASK_VERIFICATION_TIME=$((TASK_VERIFICATION_TIME + $(date +%s) - VERIFY_START))
         fi
 
         if [ "$IMPL_COMPLETE" = "false" ]; then
@@ -2546,6 +2725,8 @@ If you're still implementing features, continue working. Don't signal until ALL 
                 # Calculate retry delay based on backoff strategy
                 local DELAY=$(calculate_retry_delay $ITERATION)
                 log_retry_delay $DELAY $ITERATION
+                # Track error recovery time for metrics
+                TASK_ERROR_RECOVERY_TIME=$((TASK_ERROR_RECOVERY_TIME + DELAY))
                 sleep $DELAY
             fi
         fi
@@ -2557,6 +2738,9 @@ If you're still implementing features, continue working. Don't signal until ALL 
         stop_task_timeout
         rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
 
+        # Track phase 1 failure for metrics
+        TASK_FAILURE_PHASE="phase1"
+
         if [ "$TASK_TIMEOUT_TRIGGERED" = "true" ]; then
             log_error "Task timed out after ${TASK_TIMEOUT} minutes"
             return 124  # Standard timeout exit code
@@ -2566,12 +2750,18 @@ If you're still implementing features, continue working. Don't signal until ALL 
         fi
     fi
 
+    # Track phase 1 completion for metrics
+    TASK_PHASE1_END=$(date +%s)
+
     #---------------------------------------------------------------------------
     # PHASE 2: PR Creation
     # Tests have passed - now ask Claude to create the PR
     #---------------------------------------------------------------------------
     log_header "PHASE 2: CREATING PULL REQUEST"
     log_step "Tests passed! Asking Claude to create the PR..."
+
+    # Track phase 2 start time for metrics
+    TASK_PHASE2_START=$(date +%s)
 
     > "$OUTPUT_FILE"
 
@@ -2627,6 +2817,7 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
                     local COST=$(echo "$line" | jq -r '.total_cost_usd // 0' 2>/dev/null)
                     echo -e "\n${DIM}Cost: \$${COST}${NC}"
                     TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
+                    TASK_COST=$(echo "$TASK_COST + $COST" | bc 2>/dev/null || echo "$COST")
                 fi
             fi
         done
@@ -2640,6 +2831,9 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
         # Still mark as complete since tests passed
         TASK_COMPLETE=true
     fi
+
+    # Track phase 2 completion for metrics
+    TASK_PHASE2_END=$(date +%s)
 
     # Extract PR info from output for notifications
     COMPLETED_PR_URL=$(cat "$OUTPUT_FILE" "$OUTPUT_FILE.raw" 2>/dev/null | grep -oE "https://github.com/[^/]+/[^/]+/pull/[0-9]+" | head -1 || echo "")
@@ -3233,6 +3427,9 @@ while true; do
     CURRENT_TASK_START_EPOCH=$(date +%s)
     ISSUES_ATTEMPTED=$((ISSUES_ATTEMPTED + 1))
 
+    # Reset task metrics for this new task
+    reset_task_metrics
+
     # Save progress
     save_progress "in_progress" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
 
@@ -3341,6 +3538,13 @@ PROMPT_EOF
         # Record failed task
         FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:${FAILURE_REASON}"
 
+        # Calculate task duration for metrics
+        local TASK_END_EPOCH=$(date +%s)
+        local TASK_DURATION=$((TASK_END_EPOCH - CURRENT_TASK_START_EPOCH))
+
+        # Save detailed task metrics
+        save_task_metrics "$ISSUE_NUMBER" "failed" "$TASK_DURATION" "$FAILURE_REASON" "$TASK_FAILURE_PHASE"
+
         # Send task failed notification
         notify_task_failed "$ISSUE_NUMBER" "$ISSUE_TITLE" "$FAILURE_REASON" "$FAILURE_DETAILS"
 
@@ -3371,6 +3575,9 @@ PROMPT_EOF
 
     # Record successful task with duration
     SUCCESSFUL_TASKS="${SUCCESSFUL_TASKS} ${ISSUE_NUMBER}:${TASK_DURATION}"
+
+    # Save detailed task metrics
+    save_task_metrics "$ISSUE_NUMBER" "completed" "$TASK_DURATION"
 
     # Send task completed notification
     notify_task_completed "$ISSUE_NUMBER" "$ISSUE_TITLE" "$COMPLETED_PR_URL"
