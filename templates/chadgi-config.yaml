@@ -55,6 +55,11 @@ iteration:
   # Prefix added to commit messages when GigaChad auto-merges
   # Makes it easy to identify autonomous merges in git history for rollbacks
   gigachad_commit_prefix: "[GIGACHAD]"
+  # Retry delay settings for when tests fail
+  retry_delay: 5              # Initial delay in seconds between retries
+  retry_backoff: exponential  # Options: fixed, linear, exponential
+  retry_max_delay: 60         # Maximum delay cap (seconds) for exponential backoff
+  retry_jitter: false         # Add ±20% randomness to prevent thundering herd
 
 # Output settings
 output:
