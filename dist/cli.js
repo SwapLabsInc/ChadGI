@@ -4,6 +4,7 @@ import { init } from './init.js';
 import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
+import { stats } from './stats.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -66,6 +67,21 @@ program
     try {
         const isValid = await validate(options);
         process.exit(isValid ? 0 : 1);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('stats')
+    .description('View historical session statistics')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-l, --last <n>', 'Show only the last N sessions', parseInt)
+    .option('-j, --json', 'Output statistics as JSON')
+    .action(async (options) => {
+    try {
+        await stats(options);
     }
     catch (error) {
         console.error('Error:', error.message);

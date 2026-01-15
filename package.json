@@ -11,7 +11,7 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "bash tests/test-gigachad-mode.sh && bash tests/test-dry-run-mode.sh",
+    "test": "bash tests/test-gigachad-mode.sh && bash tests/test-dry-run-mode.sh && bash tests/test-session-stats.sh",
     "prepublishOnly": "npm run build",
     "release": "./scripts/publish.sh"
   },
