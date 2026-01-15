@@ -266,6 +266,7 @@ process_template() {
         -e "s|{{IN_PROGRESS_COLUMN}}|${IN_PROGRESS_COLUMN}|g" \
         -e "s|{{REVIEW_COLUMN}}|${REVIEW_COLUMN}|g" \
         -e "s|{{COMPLETION_PROMISE}}|${COMPLETION_PROMISE}|g" \
+        -e "s|{{GITHUB_USERNAME}}|${GITHUB_USERNAME}|g" \
         "$OUTPUT_FILE"
     rm -f "${OUTPUT_FILE}.bak"
 
@@ -776,11 +777,50 @@ If you're still implementing features, continue working. Don't signal until ALL 
 
 Now please:
 1. Push the branch to origin
-2. Create a Pull Request targeting **${BASE_BRANCH}** with:
-   - Use: gh pr create --base ${BASE_BRANCH} ...
-   - A clear title summarizing the change
-   - Reference 'Closes #${ISSUE_NUMBER}' in the description
-   - A summary of what changed and a test plan
+2. Create a Pull Request targeting **${BASE_BRANCH}** using this EXACT format:
+
+\`\`\`bash
+gh pr create --base ${BASE_BRANCH} --title \"[CHAD] <your clear title summarizing the change>\" --body \"\$(cat <<'EOF'
+## Summary
+<bullet points of what changed>
+
+## Test Plan
+<how to verify this works>
+
+Closes #${ISSUE_NUMBER}
+
+---
+\\\`\\\`\\\`
+⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋⠉⠈⠉⠉⠉⠉⠛⠻⢿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⡿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿
+⣿⣿⣿⣿⡏⣀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿
+⣿⣿⣿⢏⣴⣿⣷⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿
+⣿⣿⣟⣾⣿⡟⠁⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣷⢢⠀⠀⠀⠀⠀⠀⠀⢸⣿
+⣿⣿⣿⣿⣟⠀⡴⠄⠀⠀⠀⠀⠀⠀⠙⠻⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⣿
+⣿⣿⣿⠟⠻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠶⢴⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⣿
+⣿⣁⡀⠀⠀⢰⢠⣦⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡄⠀⣴⣶⣿⡄⣿
+⣿⡋⠀⠀⠀⠎⢸⣿⡆⠀⠀⠀⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⠗⢘⣿⣟⠛⠿⣼
+⣿⣿⠋⢀⡌⢰⣿⡿⢿⡀⠀⠀⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⡇⠀⢸⣿⣿⣧⢀⣼
+⣿⣿⣷⢻⠄⠘⠛⠋⠛⠃⠀⠀⠀⠀⠀⢿⣧⠈⠉⠙⠛⠋⠀⠀⠀⣿⣿⣿⣿⣿
+⣿⣿⣧⠀⠈⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠟⠀⠀⠀⠀⢀⢃⠀⠀⢸⣿⣿⣿⣿
+⣿⣿⡿⠀⠴⢗⣠⣤⣴⡶⠶⠖⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡸⠀⣿⣿⣿⣿
+⣿⣿⣿⡀⢠⣾⣿⠏⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠛⠉⠀⣿⣿⣿⣿
+⣿⣿⣿⣧⠈⢹⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿
+⣿⣿⣿⣿⡄⠈⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣦⣄⣀⣀⣀⣀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠙⣿⣿⡟⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠁⠀⠀⠹⣿⠃⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⢐⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⠿⠛⠉⠉⠁⠀⢻⣿⡇⠀⠀⠀⠀⠀⠀⢀⠈⣿⣿⡿⠉⠛⠛⠛⠉⠉
+⣿⡿⠋⠁⠀⠀⢀⣀⣠⡴⣸⣿⣇⡄⠀⠀⠀⠀⢀⡿⠄⠙⠛⠀⣀⣠⣤⣤⠄
+\\\`\\\`\\\`
+_Spawned by ChadGI. No humans mass-produced in the mass-production of this PR._
+EOF
+)\"
+\`\`\`
 
 After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
 
@@ -837,6 +877,18 @@ STATUS_FIELD_ID=""
 READY_OPTION_ID=""
 IN_PROGRESS_OPTION_ID=""
 REVIEW_OPTION_ID=""
+GITHUB_USERNAME=""
+
+# Get the current GitHub username
+get_github_username() {
+    if [ -z "$GITHUB_USERNAME" ]; then
+        GITHUB_USERNAME=$(gh api user -q '.login' 2>/dev/null || echo "")
+        if [ -z "$GITHUB_USERNAME" ]; then
+            log_warn "Could not determine GitHub username - issues will not be auto-assigned"
+        fi
+    fi
+    echo "$GITHUB_USERNAME"
+}
 
 # Initialize project board cache
 init_project_board() {
@@ -869,7 +921,13 @@ init_project_board() {
     REVIEW_OPTION_ID=$(echo "$FIELDS" | jq -r --arg col "$REVIEW_COLUMN" \
         '.fields[] | select(.name == "Status") | .options[] | select(.name == $col) | .id' 2>/dev/null | head -1)
 
-    log_success "Connected to project #$PROJECT_NUMBER"
+    # Get GitHub username for auto-assignment
+    get_github_username > /dev/null
+    if [ -n "$GITHUB_USERNAME" ]; then
+        log_success "Connected to project #$PROJECT_NUMBER (as @$GITHUB_USERNAME)"
+    else
+        log_success "Connected to project #$PROJECT_NUMBER"
+    fi
 }
 
 # Get issues in a specific column
@@ -995,11 +1053,46 @@ Your task:
 
 For each issue:
 \`\`\`bash
-# Create the issue and capture the URL
-gh issue create --repo $REPO --title "<title>" --body "<body>"
+# Create the issue (title MUST start with [CHAD], include label and assignee)
+ISSUE_URL=\$(gh issue create --repo $REPO \\
+  --title "[CHAD] <title>" \\
+  --label "touched-by-chad" \\
+  --assignee "$GITHUB_USERNAME" \\
+  --body "<body>
+
+---
+\\\`\\\`\\\`
+⣿⣿⣿⣿⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋⠉⠈⠉⠉⠉⠉⠛⠻⢿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⡿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿
+⣿⣿⣿⣿⡏⣀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿
+⣿⣿⣿⢏⣴⣿⣷⠀⠀⠀⠀⠀⢾⣿⣿⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿
+⣿⣿⣟⣾⣿⡟⠁⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣷⢢⠀⠀⠀⠀⠀⠀⠀⢸⣿
+⣿⣿⣿⣿⣟⠀⡴⠄⠀⠀⠀⠀⠀⠀⠙⠻⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⣿
+⣿⣿⣿⠟⠻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠶⢴⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⣿
+⣿⣁⡀⠀⠀⢰⢠⣦⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡄⠀⣴⣶⣿⡄⣿
+⣿⡋⠀⠀⠀⠎⢸⣿⡆⠀⠀⠀⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⠗⢘⣿⣟⠛⠿⣼
+⣿⣿⠋⢀⡌⢰⣿⡿⢿⡀⠀⠀⠀⠀⠀⠙⠿⣿⣿⣿⣿⣿⡇⠀⢸⣿⣿⣧⢀⣼
+⣿⣿⣷⢻⠄⠘⠛⠋⠛⠃⠀⠀⠀⠀⠀⢿⣧⠈⠉⠙⠛⠋⠀⠀⠀⣿⣿⣿⣿⣿
+⣿⣿⣧⠀⠈⢸⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠟⠀⠀⠀⠀⢀⢃⠀⠀⢸⣿⣿⣿⣿
+⣿⣿⡿⠀⠴⢗⣠⣤⣴⡶⠶⠖⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡸⠀⣿⣿⣿⣿
+⣿⣿⣿⡀⢠⣾⣿⠏⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠛⠉⠀⣿⣿⣿⣿
+⣿⣿⣿⣧⠈⢹⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿
+⣿⣿⣿⣿⡄⠈⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣦⣄⣀⣀⣀⣀⠀⠀⠀⠀⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠀⠙⣿⣿⡟⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠁⠀⠀⠹⣿⠃⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⡿⠛⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⢐⣿⣿⣿⣿⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⠿⠛⠉⠉⠁⠀⢻⣿⡇⠀⠀⠀⠀⠀⠀⢀⠈⣿⣿⡿⠉⠛⠛⠛⠉⠉
+⣿⡿⠋⠁⠀⠀⢀⣀⣠⡴⣸⣿⣇⡄⠀⠀⠀⠀⢀⡿⠄⠙⠛⠀⣀⣠⣤⣤⠄
+\\\`\\\`\\\`
+_Spawned by ChadGI. No humans were mass-produced in the making of this ticket._
+" | grep -o 'https://[^ ]*')
 
 # Add to project board and move to Ready column
-gh project item-add $PROJECT_NUMBER --owner $REPO_OWNER --url <issue_url>
+gh project item-add $PROJECT_NUMBER --owner $REPO_OWNER --url \$ISSUE_URL
 \`\`\`
 
 After adding each issue to the project, move it to the "$READY_COLUMN" column in the project board.
@@ -1127,6 +1220,14 @@ while true; do
     move_to_column "$ITEM_ID" "$IN_PROGRESS_COLUMN" && \
         log_success "Moved to '$IN_PROGRESS_COLUMN'" || \
         log_warn "Could not move issue (continuing anyway)"
+
+    # Auto-assign issue to current user
+    if [ -n "$GITHUB_USERNAME" ]; then
+        log_step "Assigning issue to @$GITHUB_USERNAME..."
+        gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --add-assignee "$GITHUB_USERNAME" 2>/dev/null && \
+            log_success "Assigned to @$GITHUB_USERNAME" || \
+            log_warn "Could not assign issue (continuing anyway)"
+    fi
 
     log_header "CREATING BRANCH FOR ISSUE #$ISSUE_NUMBER"
 
