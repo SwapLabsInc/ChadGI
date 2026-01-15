@@ -776,7 +776,8 @@ If you're still implementing features, continue working. Don't signal until ALL 
 
 Now please:
 1. Push the branch to origin
-2. Create a Pull Request with:
+2. Create a Pull Request targeting **${BASE_BRANCH}** with:
+   - Use: gh pr create --base ${BASE_BRANCH} ...
    - A clear title summarizing the change
    - Reference 'Closes #${ISSUE_NUMBER}' in the description
    - A summary of what changed and a test plan
@@ -1181,7 +1182,8 @@ You are already on a fresh branch: **$BRANCH_NAME** (created from $BASE_BRANCH)
 3. Implement the requested changes following existing code patterns
 4. Test your implementation (run existing tests, add new tests if needed)
 5. Commit your changes with clear, descriptive commit messages
-6. Push the branch and create a Pull Request that:
+6. Push the branch and create a Pull Request targeting **$BASE_BRANCH**:
+   - Use: gh pr create --base $BASE_BRANCH ...
    - Has a clear title summarizing the change
    - References 'Closes #$ISSUE_NUMBER' in the description
    - Includes a summary of changes and test plan
