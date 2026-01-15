@@ -10,6 +10,7 @@ const __dirname = dirname(__filename);
 interface StartOptions {
   config?: string;
   dryRun?: boolean;
+  timeout?: number;
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
@@ -17,6 +18,7 @@ export async function start(options: StartOptions = {}): Promise<void> {
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;
   const dryRun = options.dryRun ?? false;
+  const timeout = options.timeout;
 
   if (dryRun) {
     console.log('Starting ChadGI in DRY-RUN mode...\n');
@@ -26,6 +28,14 @@ export async function start(options: StartOptions = {}): Promise<void> {
     console.log('  [DRY-RUN] Will exit after processing one task\n');
   } else {
     console.log('Starting ChadGI automation loop...\n');
+  }
+
+  if (timeout !== undefined) {
+    if (timeout === 0) {
+      console.log('Task timeout: DISABLED (via --timeout flag)\n');
+    } else {
+      console.log(`Task timeout: ${timeout} minutes (via --timeout flag)\n`);
+    }
   }
 
   // Validate configuration first
@@ -51,12 +61,17 @@ export async function start(options: StartOptions = {}): Promise<void> {
   }
 
   // Set up environment variables
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     CHADGI_DIR: chadgiDir,
     CONFIG_FILE: configPath,
     DRY_RUN: dryRun ? 'true' : 'false'
   };
+
+  // Add timeout override if specified via CLI
+  if (timeout !== undefined) {
+    env.TASK_TIMEOUT = String(timeout);
+  }
 
   // Spawn the bash script
   const child = spawn('bash', [scriptPath], {

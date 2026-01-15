@@ -30,6 +30,10 @@ CONFIG_FILE="${CONFIG_FILE:-$CHADGI_DIR/chadgi-config.yaml}"
 # Dry-run mode - passed from CLI via environment variable
 DRY_RUN="${DRY_RUN:-false}"
 
+# Task timeout override - passed from CLI via environment variable (in minutes)
+# Empty means use config value, otherwise override
+CLI_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
+
 # Template paths - also from CHADGI_DIR
 TASK_TEMPLATE="$CHADGI_DIR/chadgi-task.md"
 GENERATE_TASK_TEMPLATE="$CHADGI_DIR/chadgi-generate-task.md"
@@ -210,6 +214,10 @@ load_config() {
     GIGACHAD_COMMIT_PREFIX=$(parse_yaml_nested "iteration" "gigachad_commit_prefix" "$CONFIG_FILE")
     GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
 
+    # Task timeout (in minutes, 0 = no timeout)
+    TASK_TIMEOUT=$(parse_yaml_nested "iteration" "task_timeout" "$CONFIG_FILE")
+    TASK_TIMEOUT="${TASK_TIMEOUT:-30}"
+
     # Retry settings
     RETRY_DELAY=$(parse_yaml_nested "iteration" "retry_delay" "$CONFIG_FILE")
     RETRY_DELAY="${RETRY_DELAY:-5}"
@@ -285,6 +293,11 @@ load_config() {
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
     [[ "$PROGRESS_FILE" != /* ]] && PROGRESS_FILE="$CHADGI_DIR/$PROGRESS_FILE"
 
+    # Apply CLI override for task timeout if provided
+    if [ -n "$CLI_TASK_TIMEOUT" ]; then
+        TASK_TIMEOUT="$CLI_TASK_TIMEOUT"
+    fi
+
     log_success "Configuration loaded"
 }
 
@@ -322,6 +335,8 @@ set_defaults() {
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
     GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
     GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
+    # Task timeout (in minutes, 0 = no timeout)
+    TASK_TIMEOUT="${TASK_TIMEOUT:-30}"
     # Retry settings
     RETRY_DELAY="${RETRY_DELAY:-5}"
     RETRY_BACKOFF="${RETRY_BACKOFF:-exponential}"
@@ -430,6 +445,159 @@ log_retry_delay() {
     fi
 
     log_info "Retrying in ${DELAY} seconds (backoff: ${RETRY_BACKOFF}${JITTER_STR}, iteration ${ITERATION})"
+}
+
+#------------------------------------------------------------------------------
+# Task Timeout Management
+#------------------------------------------------------------------------------
+
+# Global timeout state
+TASK_TIMEOUT_START=0
+TASK_TIMEOUT_PID=""
+TASK_TIMEOUT_TRIGGERED=false
+TIMEOUT_WARNING_75_SHOWN=false
+TIMEOUT_WARNING_90_SHOWN=false
+
+# Convert timeout in minutes to seconds
+get_timeout_seconds() {
+    echo $((TASK_TIMEOUT * 60))
+}
+
+# Check if timeout is enabled (non-zero)
+is_timeout_enabled() {
+    [ "$TASK_TIMEOUT" -gt 0 ] 2>/dev/null
+}
+
+# Start the timeout monitor for a task
+# Spawns a background process that monitors elapsed time
+start_task_timeout() {
+    if ! is_timeout_enabled; then
+        return
+    fi
+
+    TASK_TIMEOUT_START=$(date +%s)
+    TASK_TIMEOUT_TRIGGERED=false
+    TIMEOUT_WARNING_75_SHOWN=false
+    TIMEOUT_WARNING_90_SHOWN=false
+
+    local TIMEOUT_SECS=$(get_timeout_seconds)
+    local TIMEOUT_75=$((TIMEOUT_SECS * 75 / 100))
+    local TIMEOUT_90=$((TIMEOUT_SECS * 90 / 100))
+
+    # Start background timeout monitor
+    (
+        while true; do
+            sleep 30  # Check every 30 seconds
+            local ELAPSED=$(($(date +%s) - TASK_TIMEOUT_START))
+
+            # Check for 75% warning
+            if [ $ELAPSED -ge $TIMEOUT_75 ] && [ ! -f "/tmp/chadgi_timeout_75_$$" ]; then
+                touch "/tmp/chadgi_timeout_75_$$"
+                echo -e "\n${YELLOW}${BOLD}WARNING: Task has used 75% of timeout (${TASK_TIMEOUT} minutes)${NC}" >&2
+                echo -e "${YELLOW}  Elapsed: $((ELAPSED / 60)) minutes, Remaining: $(((TIMEOUT_SECS - ELAPSED) / 60)) minutes${NC}" >&2
+            fi
+
+            # Check for 90% warning
+            if [ $ELAPSED -ge $TIMEOUT_90 ] && [ ! -f "/tmp/chadgi_timeout_90_$$" ]; then
+                touch "/tmp/chadgi_timeout_90_$$"
+                echo -e "\n${RED}${BOLD}WARNING: Task has used 90% of timeout (${TASK_TIMEOUT} minutes)${NC}" >&2
+                echo -e "${RED}  Elapsed: $((ELAPSED / 60)) minutes, Remaining: $(((TIMEOUT_SECS - ELAPSED) / 60)) minutes${NC}" >&2
+                echo -e "${RED}  Task will be interrupted soon!${NC}" >&2
+            fi
+
+            # Check for timeout
+            if [ $ELAPSED -ge $TIMEOUT_SECS ]; then
+                touch "/tmp/chadgi_timeout_triggered_$$"
+                break
+            fi
+        done
+    ) &
+    TASK_TIMEOUT_PID=$!
+}
+
+# Stop the timeout monitor
+stop_task_timeout() {
+    if [ -n "$TASK_TIMEOUT_PID" ]; then
+        kill $TASK_TIMEOUT_PID 2>/dev/null || true
+        wait $TASK_TIMEOUT_PID 2>/dev/null || true
+        TASK_TIMEOUT_PID=""
+    fi
+    # Clean up temp files
+    rm -f "/tmp/chadgi_timeout_75_$$" "/tmp/chadgi_timeout_90_$$" "/tmp/chadgi_timeout_triggered_$$" 2>/dev/null || true
+}
+
+# Check if timeout has been triggered
+check_task_timeout() {
+    if [ -f "/tmp/chadgi_timeout_triggered_$$" ]; then
+        TASK_TIMEOUT_TRIGGERED=true
+        return 0
+    fi
+    return 1
+}
+
+# Get elapsed time since task started
+get_task_elapsed() {
+    if [ "$TASK_TIMEOUT_START" -gt 0 ]; then
+        echo $(($(date +%s) - TASK_TIMEOUT_START))
+    else
+        echo 0
+    fi
+}
+
+# Log timeout warning
+log_timeout_warning() {
+    local PERCENT=$1
+    local ELAPSED=$2
+    local REMAINING=$3
+    echo -e "${YELLOW}${BOLD}TIMEOUT WARNING: ${PERCENT}% of time limit reached${NC}"
+    echo -e "${YELLOW}  Elapsed: $((ELAPSED / 60)) minutes, Remaining: $((REMAINING / 60)) minutes${NC}"
+}
+
+# Gracefully interrupt a Claude session
+# First tries SIGTERM, then SIGKILL if needed
+graceful_interrupt_claude() {
+    local PID=$1
+    local GRACE_PERIOD=10
+
+    log_warn "Timeout reached - initiating graceful interruption..."
+
+    # First, try SIGTERM for graceful shutdown
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        log_step "Sending SIGTERM to Claude process ($PID)..."
+        kill -TERM "$PID" 2>/dev/null || true
+
+        # Wait for grace period
+        local WAITED=0
+        while [ $WAITED -lt $GRACE_PERIOD ] && kill -0 "$PID" 2>/dev/null; do
+            sleep 1
+            WAITED=$((WAITED + 1))
+        done
+
+        # If still running, use SIGKILL
+        if kill -0 "$PID" 2>/dev/null; then
+            log_warn "Process still running, sending SIGKILL..."
+            kill -KILL "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
+        fi
+    fi
+
+    log_info "Claude process interrupted"
+}
+
+# Try to save partial work before timeout
+# Commits any uncommitted changes with a WIP prefix
+save_partial_work() {
+    log_step "Attempting to save partial work..."
+
+    # Check if there are uncommitted changes
+    if git status --porcelain 2>/dev/null | grep -q .; then
+        log_info "Found uncommitted changes, creating WIP commit..."
+        git add -A 2>/dev/null || true
+        git commit -m "[WIP] Partial work before timeout - task #$ISSUE_NUMBER" 2>/dev/null || true
+        log_success "Partial work saved in WIP commit"
+    else
+        log_info "No uncommitted changes to save"
+    fi
 }
 
 #------------------------------------------------------------------------------
@@ -1456,36 +1624,94 @@ run_claude_streaming() {
 
 # Run Claude and capture output to file (for completion promise detection)
 # Uses a simpler approach for bash 3.x compatibility
+# Supports optional timeout monitoring
 run_claude_with_output() {
     local PROMPT_FILE=$1
     local OUTPUT_FILE=$2
     local RAW_OUTPUT=$(mktemp)
+    local CLAUDE_PID_FILE=$(mktemp)
+    local EXIT_CODE=0
 
-    # Run Claude and save raw output
-    claude --dangerously-skip-permissions --print --verbose --output-format stream-json "$(cat "$PROMPT_FILE")" 2>&1 | tee "$RAW_OUTPUT" | \
-        while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
-            if [ "$TYPE" = "assistant" ]; then
-                local TEXT=$(echo "$line" | jq -r '.message.content[]? | select(.type == "text") | .text // empty' 2>/dev/null)
-                [ -n "$TEXT" ] && echo -e "$TEXT"
-                local TOOL=$(echo "$line" | jq -r '.message.content[]? | select(.type == "tool_use") | .name // empty' 2>/dev/null)
-                local INPUT=$(echo "$line" | jq -r '.message.content[]? | select(.type == "tool_use") | .input // empty' 2>/dev/null)
-                if [ -n "$TOOL" ] && [ "$SHOW_TOOL_DETAILS" = "true" ]; then
-                    format_tool_output "$TOOL" "$INPUT" ""
-                elif [ -n "$TOOL" ]; then
-                    echo -e "${DIM}-> $TOOL${NC}"
+    # Run Claude in background so we can monitor timeout
+    (
+        claude --dangerously-skip-permissions --print --verbose --output-format stream-json "$(cat "$PROMPT_FILE")" 2>&1 | tee "$RAW_OUTPUT" | \
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
+                if [ "$TYPE" = "assistant" ]; then
+                    local TEXT=$(echo "$line" | jq -r '.message.content[]? | select(.type == "text") | .text // empty' 2>/dev/null)
+                    [ -n "$TEXT" ] && echo -e "$TEXT"
+                    local TOOL=$(echo "$line" | jq -r '.message.content[]? | select(.type == "tool_use") | .name // empty' 2>/dev/null)
+                    local INPUT=$(echo "$line" | jq -r '.message.content[]? | select(.type == "tool_use") | .input // empty' 2>/dev/null)
+                    if [ -n "$TOOL" ] && [ "$SHOW_TOOL_DETAILS" = "true" ]; then
+                        format_tool_output "$TOOL" "$INPUT" ""
+                    elif [ -n "$TOOL" ]; then
+                        echo -e "${DIM}-> $TOOL${NC}"
+                    fi
+                elif [ "$TYPE" = "result" ]; then
+                    if [ "$SHOW_COST" = "true" ]; then
+                        local COST=$(echo "$line" | jq -r '.total_cost_usd // 0' 2>/dev/null)
+                        echo -e "\n${DIM}Cost: \$${COST}${NC}"
+                        TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
+                    fi
                 fi
-            elif [ "$TYPE" = "result" ]; then
-                if [ "$SHOW_COST" = "true" ]; then
-                    local COST=$(echo "$line" | jq -r '.total_cost_usd // 0' 2>/dev/null)
-                    echo -e "\n${DIM}Cost: \$${COST}${NC}"
-                    TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
-                fi
+            done
+    ) &
+    local CLAUDE_WRAPPER_PID=$!
+    echo "$CLAUDE_WRAPPER_PID" > "$CLAUDE_PID_FILE"
+
+    # Wait for Claude with timeout monitoring
+    if is_timeout_enabled; then
+        local TIMEOUT_SECS=$(get_timeout_seconds)
+        local TIMEOUT_75=$((TIMEOUT_SECS * 75 / 100))
+        local TIMEOUT_90=$((TIMEOUT_SECS * 90 / 100))
+        local WAIT_START=$(date +%s)
+
+        while kill -0 "$CLAUDE_WRAPPER_PID" 2>/dev/null; do
+            sleep 5  # Check every 5 seconds
+
+            local ELAPSED=$(($(date +%s) - TASK_TIMEOUT_START))
+
+            # Check for 75% warning
+            if [ $ELAPSED -ge $TIMEOUT_75 ] && [ "$TIMEOUT_WARNING_75_SHOWN" = "false" ]; then
+                TIMEOUT_WARNING_75_SHOWN=true
+                echo -e "\n${YELLOW}${BOLD}WARNING: Task has used 75% of timeout (${TASK_TIMEOUT} minutes)${NC}"
+                echo -e "${YELLOW}  Elapsed: $((ELAPSED / 60)) minutes, Remaining: $(((TIMEOUT_SECS - ELAPSED) / 60)) minutes${NC}"
+            fi
+
+            # Check for 90% warning
+            if [ $ELAPSED -ge $TIMEOUT_90 ] && [ "$TIMEOUT_WARNING_90_SHOWN" = "false" ]; then
+                TIMEOUT_WARNING_90_SHOWN=true
+                echo -e "\n${RED}${BOLD}WARNING: Task has used 90% of timeout (${TASK_TIMEOUT} minutes)${NC}"
+                echo -e "${RED}  Elapsed: $((ELAPSED / 60)) minutes, Remaining: $(((TIMEOUT_SECS - ELAPSED) / 60)) minutes${NC}"
+                echo -e "${RED}  Task will be interrupted soon!${NC}"
+            fi
+
+            # Check for timeout
+            if [ $ELAPSED -ge $TIMEOUT_SECS ]; then
+                TASK_TIMEOUT_TRIGGERED=true
+                log_error "Task timeout reached (${TASK_TIMEOUT} minutes)"
+
+                # Try to save partial work before interrupting
+                save_partial_work
+
+                # Gracefully interrupt the Claude process
+                graceful_interrupt_claude "$CLAUDE_WRAPPER_PID"
+                EXIT_CODE=124  # Standard timeout exit code
+                break
             fi
         done
 
-    local EXIT_CODE=${PIPESTATUS[0]}
+        # If not interrupted by timeout, wait for normal completion
+        if [ "$TASK_TIMEOUT_TRIGGERED" = "false" ]; then
+            wait "$CLAUDE_WRAPPER_PID" 2>/dev/null
+            EXIT_CODE=$?
+        fi
+    else
+        # No timeout, just wait normally
+        wait "$CLAUDE_WRAPPER_PID"
+        EXIT_CODE=$?
+    fi
 
     # Extract text output for completion promise detection
     cat "$RAW_OUTPUT" | while IFS= read -r line; do
@@ -1495,7 +1721,7 @@ run_claude_with_output() {
         fi
     done > "$OUTPUT_FILE"
 
-    rm -f "$RAW_OUTPUT"
+    rm -f "$RAW_OUTPUT" "$CLAUDE_PID_FILE"
     return $EXIT_CODE
 }
 
@@ -1720,6 +1946,12 @@ run_task_with_iterations() {
 
     log_info "Max iterations: $MAX_ITERATIONS (using session continuity)"
     log_info "Two-phase flow: Implementation -> Test Verification -> PR Creation"
+    if is_timeout_enabled; then
+        log_info "Task timeout: ${TASK_TIMEOUT} minutes"
+    fi
+
+    # Start task timeout tracking
+    start_task_timeout
 
     #---------------------------------------------------------------------------
     # PHASE 1: Implementation Loop
@@ -1850,9 +2082,17 @@ If you're still implementing features, continue working. Don't signal until ALL 
 
     # Check if Phase 1 succeeded
     if [ "$IMPL_COMPLETE" = "false" ]; then
+        # Stop timeout monitor and clean up
+        stop_task_timeout
         rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
-        log_error "Max iterations ($MAX_ITERATIONS) reached without passing verification"
-        return 1
+
+        if [ "$TASK_TIMEOUT_TRIGGERED" = "true" ]; then
+            log_error "Task timed out after ${TASK_TIMEOUT} minutes"
+            return 124  # Standard timeout exit code
+        else
+            log_error "Max iterations ($MAX_ITERATIONS) reached without passing verification"
+            return 1
+        fi
     fi
 
     #---------------------------------------------------------------------------
@@ -1954,6 +2194,9 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
     else
         GIGACHAD_MERGED=false
     fi
+
+    # Stop timeout monitor
+    stop_task_timeout
 
     rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
 
@@ -2277,6 +2520,11 @@ fi
 log_info "Poll Interval: ${POLL_INTERVAL}s"
 log_info "On Empty Queue: $ON_EMPTY_QUEUE"
 log_info "Iteration: max $MAX_ITERATIONS attempts per task"
+if is_timeout_enabled; then
+    log_info "Task Timeout: ${TASK_TIMEOUT} minutes"
+else
+    log_info "Task Timeout: disabled"
+fi
 [ -n "$TEST_COMMAND" ] && log_info "Test Command: $TEST_COMMAND"
 [ -n "$BUILD_COMMAND" ] && log_info "Build Command: $BUILD_COMMAND"
 
@@ -2467,13 +2715,22 @@ PROMPT_EOF
         log_error "Task did not complete successfully"
         save_progress "error" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
 
+        # Determine failure reason (timeout vs max iterations)
+        local FAILURE_REASON="max_iterations_reached"
+        local FAILURE_DETAILS="$MAX_ITERATIONS"
+        if [ $TASK_EXIT -eq 124 ]; then
+            FAILURE_REASON="timeout"
+            FAILURE_DETAILS="${TASK_TIMEOUT}m"
+            log_warn "Task timed out after ${TASK_TIMEOUT} minutes"
+        fi
+
         # Record failed task
-        FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:max_iterations_reached"
+        FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:${FAILURE_REASON}"
 
         # Send task failed notification
-        notify_task_failed "$ISSUE_NUMBER" "$ISSUE_TITLE" "max_iterations_reached" "$MAX_ITERATIONS"
+        notify_task_failed "$ISSUE_NUMBER" "$ISSUE_TITLE" "$FAILURE_REASON" "$FAILURE_DETAILS"
 
-        # Handle max iterations based on config
+        # Handle failed task based on config (same behavior for timeout and max_iterations)
         case "$ON_MAX_ITERATIONS" in
             "rollback")
                 log_step "Rolling back changes..."

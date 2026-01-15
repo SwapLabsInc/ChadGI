@@ -39,6 +39,7 @@ on_empty_queue: generate
 #   Phase 2: PR Creation - After verification passes, Claude creates PR (outputs completion_promise)
 iteration:
   max_iterations: 5           # Max attempts per task before giving up
+  task_timeout: 30            # Timeout per task in minutes (0 = disabled)
   completion_promise: "COMPLETE"    # String Claude outputs after PR is created
   ready_promise: "READY_FOR_PR"     # String Claude outputs when implementation is done (before PR)
   # Commands to verify work (run after implementation, BEFORE PR creation)

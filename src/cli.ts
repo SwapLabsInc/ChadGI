@@ -42,6 +42,7 @@ program
   .description('Start the ChadGI automation loop')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-d, --dry-run', 'Run in dry-run mode - show what would happen without making changes')
+  .option('-t, --timeout <minutes>', 'Override task timeout in minutes (0 = disabled)', parseInt)
   .action(async (options) => {
     try {
       await start(options);
