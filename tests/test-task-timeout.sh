@@ -202,14 +202,15 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 16: Timeout failure is recorded as "timeout" reason
+# Test 16: Timeout failure is recorded with timeout error type
 #------------------------------------------------------------------------------
-echo "Test 16: Timeout failure is recorded as 'timeout' reason"
+echo "Test 16: Timeout failure is recorded with timeout error type"
 
-if grep -q 'FAILURE_REASON="timeout"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
-    pass "Timeout failure is recorded with 'timeout' reason"
+# Check for either the legacy "timeout" reason or the new "timeout_failure" classification
+if grep -q 'FAILURE_REASON="timeout"\|timeout_failure' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+    pass "Timeout failure is recorded with timeout error type"
 else
-    fail "Timeout failure should be recorded with 'timeout' reason"
+    fail "Timeout failure should be recorded with timeout error type"
 fi
 
 #------------------------------------------------------------------------------
