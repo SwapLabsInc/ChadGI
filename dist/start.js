@@ -10,6 +10,7 @@ export async function start(options = {}) {
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
     const dryRun = options.dryRun ?? false;
+    const timeout = options.timeout;
     if (dryRun) {
         console.log('Starting ChadGI in DRY-RUN mode...\n');
         console.log('  [DRY-RUN] No changes will be made to GitHub or git');
@@ -19,6 +20,14 @@ export async function start(options = {}) {
     }
     else {
         console.log('Starting ChadGI automation loop...\n');
+    }
+    if (timeout !== undefined) {
+        if (timeout === 0) {
+            console.log('Task timeout: DISABLED (via --timeout flag)\n');
+        }
+        else {
+            console.log(`Task timeout: ${timeout} minutes (via --timeout flag)\n`);
+        }
     }
     // Validate configuration first
     console.log('Validating configuration...');
@@ -44,6 +53,10 @@ export async function start(options = {}) {
         CONFIG_FILE: configPath,
         DRY_RUN: dryRun ? 'true' : 'false'
     };
+    // Add timeout override if specified via CLI
+    if (timeout !== undefined) {
+        env.TASK_TIMEOUT = String(timeout);
+    }
     // Spawn the bash script
     const child = spawn('bash', [scriptPath], {
         env,
