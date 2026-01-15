@@ -79,6 +79,19 @@ branding:
   include_footer: true                # Include ASCII art Chad in issues/PRs
   tagline: "Chad does what Chad wants."  # The ChadGI motto
 
+# Priority settings - task queue ordering by priority labels
+# When enabled, tasks with higher priority labels are processed first
+priority:
+  enabled: true                       # Enable/disable priority-based ordering
+  # Map priority levels to GitHub labels (case-insensitive matching)
+  # Tasks are processed in order: critical -> high -> normal -> low
+  # Issues without priority labels default to "normal"
+  labels:
+    critical: ["priority:critical", "P0", "urgent"]
+    high: ["priority:high", "P1"]
+    normal: ["priority:normal", "P2"]
+    low: ["priority:low", "P3", "backlog"]
+
 # Local file task source (used when task_source: local-file)
 local_file:
   path: ./chadgi-tasks.txt
