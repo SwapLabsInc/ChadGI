@@ -4,6 +4,8 @@
   <img src="chad-gi.jpeg" alt="ChadGI" width="400">
 </p>
 
+<p align="center"><em>Chad does what Chad wants.</em></p>
+
 > Autonomous Task Worker powered by Claude Code
 
 ChadGI is a CLI tool that runs Claude Code in a continuous loop to automatically work through tasks from a GitHub Project board. It's designed for transparency - you can watch it work in real-time and stop it at any moment.

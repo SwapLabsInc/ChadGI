@@ -1,5 +1,7 @@
 # Generate New Tasks
 
+*{{CHAD_TAGLINE}}*
+
 You are analyzing the {{REPO}} repository to suggest 2-3 new improvement tasks.
 
 **IMPORTANT:** You are on the {{BASE_BRANCH}} branch. Analyze the current production code.
@@ -25,7 +27,14 @@ For EACH task, run these commands in sequence:
 
 ```bash
 # Step 1: Create the issue and capture the URL
-ISSUE_URL=$(gh issue create --repo {{REPO}} --title "<title>" --body "<body>" | grep -o 'https://[^ ]*')
+# IMPORTANT: Title MUST start with {{ISSUE_PREFIX}}, include label and assignee
+ISSUE_URL=$(gh issue create --repo {{REPO}} \
+  --title "{{ISSUE_PREFIX}} <title>" \
+  --label "{{CHAD_LABEL}}" \
+  --assignee "{{GITHUB_USERNAME}}" \
+  --body "<body>
+{{CHAD_FOOTER}}
+" | grep -o 'https://[^ ]*')
 echo "Created: $ISSUE_URL"
 
 # Step 2: Add to project board and get the item ID
