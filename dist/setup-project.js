@@ -116,7 +116,7 @@ export async function setupProject(options = {}) {
     console.log('GitHub Project setup complete!');
     console.log('');
     console.log('Next steps:');
-    console.log(`1. Update chadgi/chadgi-config.yaml with:`);
+    console.log(`1. Update .chadgi/chadgi-config.yaml with:`);
     console.log(`   github:`);
     console.log(`     repo: ${repo}`);
     console.log(`     project_number: ${projectNumber}`);

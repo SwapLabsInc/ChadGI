@@ -1,0 +1,72 @@
+# ChadGI Configuration
+# Autonomous task worker configuration
+
+# Task source - where to get tasks from
+# Options: github-issues, local-file, manual
+task_source: github-issues
+
+# Template files for prompts (relative to chadgi directory)
+prompt_template: ./chadgi-task.md
+generate_template: ./chadgi-generate-task.md
+progress_file: ./chadgi-progress.json
+
+# GitHub configuration (used when task_source: github-issues)
+github:
+  repo: SwapLabsInc/ChadGI
+  project_number: 7
+  # Project board column names (must match exactly, case-sensitive!)
+  ready_column: Ready
+  in_progress_column: In progress
+  review_column: In review
+
+# Branch configuration
+branch:
+  base: master
+  prefix: feature/issue-
+
+# Polling and timing
+poll_interval: 10          # Seconds between task checks
+consecutive_empty_threshold: 2  # Empty checks before generating tasks
+
+# What to do when queue is empty
+# Options: generate, wait, exit
+on_empty_queue: generate
+
+# Iteration settings (the core ChadGI pattern)
+# Two-phase approach:
+#   Phase 1: Implementation - Claude implements, tests locally, commits (outputs ready_promise)
+#   Phase 2: PR Creation - After verification passes, Claude creates PR (outputs completion_promise)
+iteration:
+  max_iterations: 5           # Max attempts per task before giving up
+  completion_promise: "COMPLETE"    # String Claude outputs after PR is created
+  ready_promise: "READY_FOR_PR"     # String Claude outputs when implementation is done (before PR)
+  # Commands to verify work (run after implementation, BEFORE PR creation)
+  # Tests must pass before Claude is asked to create a PR
+  test_command: "npm test"
+  build_command: "npm run build"
+  # What to do when max iterations reached without success
+  # Options: skip (move to next task), rollback (reset branch), retry-later (move back to ready)
+  on_max_iterations: skip
+
+# Output settings
+output:
+  show_tool_details: true   # Show rich tool output (commands, files, etc.)
+  show_cost: true           # Show cost at end of run
+  truncate_length: 60       # Max length for command/path display
+  show_timestamps: true     # Show timestamps in output
+
+# Branding settings - Chad does what Chad wants
+branding:
+  issue_prefix: "[CHAD]"              # Prefix for issue/PR titles (set to "" to disable)
+  label: "touched-by-chad"            # GitHub label added to issues (set to "" to disable)
+  include_footer: true                # Include ASCII art Chad in issues/PRs
+  tagline: "Chad does what Chad wants."  # The ChadGI motto
+
+# Local file task source (used when task_source: local-file)
+local_file:
+  path: ./chadgi-tasks.txt
+  completed_path: ./chadgi-tasks-done.txt
+
+# Manual mode settings (used when task_source: manual)
+manual:
+  prompt_on_completion: true  # Ask for next task when done

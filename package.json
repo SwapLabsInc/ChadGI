@@ -12,7 +12,6 @@
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run build",
-    "self-improve": "./scripts/chadgi-self-improve.sh",
     "release": "./scripts/publish.sh"
   },
   "files": [
