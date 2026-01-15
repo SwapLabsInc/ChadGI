@@ -1046,6 +1046,75 @@ PROGRESS_EOF
 }
 
 #------------------------------------------------------------------------------
+# Pause/Resume Support
+#------------------------------------------------------------------------------
+
+# Path to the pause lock file
+PAUSE_LOCK_FILE="$CHADGI_DIR/pause.lock"
+
+# Check if pause lock exists and handle accordingly
+# Returns: 0 if should continue, 1 if paused (and will wait)
+check_pause_lock() {
+    if [ ! -f "$PAUSE_LOCK_FILE" ]; then
+        return 0
+    fi
+
+    log_header "PAUSED - WAITING FOR RESUME"
+
+    # Update progress to show paused state
+    save_progress "paused" "${ISSUE_NUMBER:-}" "${ISSUE_TITLE:-}" "${BRANCH_NAME:-}"
+
+    # Read pause lock for info
+    local PAUSE_REASON=""
+    local RESUME_AT=""
+    if command -v jq &>/dev/null; then
+        PAUSE_REASON=$(jq -r '.reason // empty' "$PAUSE_LOCK_FILE" 2>/dev/null)
+        RESUME_AT=$(jq -r '.resume_at // empty' "$PAUSE_LOCK_FILE" 2>/dev/null)
+    fi
+
+    if [ -n "$PAUSE_REASON" ]; then
+        log_info "Pause reason: $PAUSE_REASON"
+    fi
+
+    if [ -n "$RESUME_AT" ]; then
+        log_info "Auto-resume scheduled at: $RESUME_AT"
+    fi
+
+    echo -e "${YELLOW}${BOLD}"
+    echo "  ||  PAUSED - Waiting for 'chadgi resume' command..."
+    echo -e "${NC}"
+    log_info "Run 'chadgi resume' in another terminal to continue."
+    log_info "Run 'chadgi status' to check current state."
+
+    # Wait loop - check every 5 seconds for resume or auto-resume time
+    while [ -f "$PAUSE_LOCK_FILE" ]; do
+        # Check for auto-resume time
+        if [ -n "$RESUME_AT" ]; then
+            local NOW_EPOCH=$(date +%s)
+            local RESUME_EPOCH=$(date -d "$RESUME_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RESUME_AT" +%s 2>/dev/null || echo "0")
+            if [ "$RESUME_EPOCH" -gt 0 ] && [ "$NOW_EPOCH" -ge "$RESUME_EPOCH" ]; then
+                log_info "Auto-resume time reached. Removing pause lock..."
+                rm -f "$PAUSE_LOCK_FILE"
+                break
+            fi
+        fi
+        sleep 5
+    done
+
+    log_header "RESUMED - CONTINUING PROCESSING"
+    log_success "Pause lock removed. Continuing with task queue."
+
+    # Update progress back to previous state
+    if [ -n "$ISSUE_NUMBER" ]; then
+        save_progress "in_progress" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+    else
+        save_progress "idle" "" "" ""
+    fi
+
+    return 0
+}
+
+#------------------------------------------------------------------------------
 # Session Statistics
 #------------------------------------------------------------------------------
 
@@ -2540,6 +2609,9 @@ init_progress
 CONSECUTIVE_EMPTY=0
 
 while true; do
+    # Check for pause signal at the start of each loop iteration
+    check_pause_lock
+
     log_header "SEARCHING FOR TASKS (Loop #$((ISSUES_COMPLETED + 1)))"
 
     # Find tasks in Ready column
@@ -2794,6 +2866,12 @@ PROMPT_EOF
     fi
     [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "0" ] && echo -e "${DIM}Total session cost: \$${TOTAL_COST}${NC}"
 
-    log_info "Moving to next issue in ${POLL_INTERVAL} seconds..."
-    sleep "$POLL_INTERVAL"
+    # Check for pause signal after task completion (before sleeping)
+    if [ -f "$PAUSE_LOCK_FILE" ]; then
+        log_info "Pause signal detected after task completion."
+        check_pause_lock
+    else
+        log_info "Moving to next issue in ${POLL_INTERVAL} seconds..."
+        sleep "$POLL_INTERVAL"
+    fi
 done
