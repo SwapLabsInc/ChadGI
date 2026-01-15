@@ -34,6 +34,7 @@ program
     .command('start')
     .description('Start the ChadGI automation loop')
     .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-d, --dry-run', 'Run in dry-run mode - show what would happen without making changes')
     .action(async (options) => {
     try {
         await start(options);

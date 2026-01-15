@@ -9,7 +9,17 @@ export async function start(options = {}) {
     const cwd = process.cwd();
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
-    console.log('Starting ChadGI automation loop...\n');
+    const dryRun = options.dryRun ?? false;
+    if (dryRun) {
+        console.log('Starting ChadGI in DRY-RUN mode...\n');
+        console.log('  [DRY-RUN] No changes will be made to GitHub or git');
+        console.log('  [DRY-RUN] Tasks will be read but not moved');
+        console.log('  [DRY-RUN] Claude will explore but not execute write operations');
+        console.log('  [DRY-RUN] Will exit after processing one task\n');
+    }
+    else {
+        console.log('Starting ChadGI automation loop...\n');
+    }
     // Validate configuration first
     console.log('Validating configuration...');
     const isValid = await validate({ config: configPath, quiet: true });
@@ -31,7 +41,8 @@ export async function start(options = {}) {
     const env = {
         ...process.env,
         CHADGI_DIR: chadgiDir,
-        CONFIG_FILE: configPath
+        CONFIG_FILE: configPath,
+        DRY_RUN: dryRun ? 'true' : 'false'
     };
     // Spawn the bash script
     const child = spawn('bash', [scriptPath], {
