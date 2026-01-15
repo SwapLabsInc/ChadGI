@@ -54,6 +54,9 @@ iteration:
   # Prefix added to commit messages when GigaChad auto-merges
   # Makes it easy to identify autonomous merges in git history for rollbacks
   gigachad_commit_prefix: "[GIGACHAD]"
+  # Error diagnostics - auto-capture diagnostic artifacts on failure
+  # Saves git diff, build output, and system state to .chadgi/diagnostics/
+  error_diagnostics: true
 
 # Output settings
 output:

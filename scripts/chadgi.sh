@@ -228,6 +228,10 @@ load_config() {
     RETRY_JITTER=$(parse_yaml_nested "iteration" "retry_jitter" "$CONFIG_FILE")
     RETRY_JITTER="${RETRY_JITTER:-false}"
 
+    # Error diagnostics settings
+    ERROR_DIAGNOSTICS=$(parse_yaml_nested "iteration" "error_diagnostics" "$CONFIG_FILE")
+    ERROR_DIAGNOSTICS="${ERROR_DIAGNOSTICS:-true}"
+
     # Notification settings
     NOTIFICATIONS_ENABLED=$(parse_yaml_nested "notifications" "enabled" "$CONFIG_FILE")
     NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
@@ -342,6 +346,8 @@ set_defaults() {
     RETRY_BACKOFF="${RETRY_BACKOFF:-exponential}"
     RETRY_MAX_DELAY="${RETRY_MAX_DELAY:-60}"
     RETRY_JITTER="${RETRY_JITTER:-false}"
+    # Error diagnostics
+    ERROR_DIAGNOSTICS="${ERROR_DIAGNOSTICS:-true}"
 
     # Notification settings
     NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
@@ -598,6 +604,337 @@ save_partial_work() {
     else
         log_info "No uncommitted changes to save"
     fi
+}
+
+#------------------------------------------------------------------------------
+# Error Classification and Diagnostic Artifacts
+#------------------------------------------------------------------------------
+
+# Error types for classification
+# - build_failure: test/build commands failed
+# - timeout_failure: task exceeded time limit
+# - git_error: version control operations failed
+# - api_error: GitHub API or external service failure
+# - execution_error: Claude execution issue
+
+# Global diagnostic state
+LAST_ERROR_TYPE=""
+LAST_ERROR_DETAILS=""
+DIAGNOSTICS_DIR=""
+
+# Classify an error based on context and output
+# Usage: classify_error <exit_code> <output_file> <context>
+# Sets LAST_ERROR_TYPE and LAST_ERROR_DETAILS
+classify_error() {
+    local EXIT_CODE=$1
+    local OUTPUT_FILE=$2
+    local CONTEXT=${3:-"unknown"}
+
+    LAST_ERROR_TYPE=""
+    LAST_ERROR_DETAILS=""
+
+    # Check for timeout (exit code 124 is standard timeout)
+    if [ "$EXIT_CODE" -eq 124 ] || [ "$TASK_TIMEOUT_TRIGGERED" = "true" ]; then
+        LAST_ERROR_TYPE="timeout_failure"
+        LAST_ERROR_DETAILS="Task exceeded time limit of ${TASK_TIMEOUT} minutes"
+        return 0
+    fi
+
+    # Check for specific error patterns in output
+    if [ -f "$OUTPUT_FILE" ]; then
+        local OUTPUT_CONTENT=$(cat "$OUTPUT_FILE" 2>/dev/null || echo "")
+
+        # Check for git errors
+        if echo "$OUTPUT_CONTENT" | grep -qiE "(fatal: |error: cannot|git.*failed|merge conflict|not a git repository)"; then
+            LAST_ERROR_TYPE="git_error"
+            LAST_ERROR_DETAILS=$(echo "$OUTPUT_CONTENT" | grep -iE "(fatal: |error: cannot|git.*failed|merge conflict)" | head -3 | tr '\n' ' ')
+            return 0
+        fi
+
+        # Check for GitHub API errors
+        if echo "$OUTPUT_CONTENT" | grep -qiE "(gh: |API rate limit|403 Forbidden|404 Not Found|could not find|authentication required|GraphQL)"; then
+            LAST_ERROR_TYPE="api_error"
+            LAST_ERROR_DETAILS=$(echo "$OUTPUT_CONTENT" | grep -iE "(gh: |API rate limit|403|404|could not find|authentication)" | head -3 | tr '\n' ' ')
+            return 0
+        fi
+
+        # Check for build/test failures (based on context)
+        if [ "$CONTEXT" = "test" ] || [ "$CONTEXT" = "build" ] || [ "$CONTEXT" = "verification" ]; then
+            if echo "$OUTPUT_CONTENT" | grep -qiE "(FAILED|FAIL|Error:|error\[|npm ERR!|test.*failed|build.*failed|compilation error|syntax error)"; then
+                LAST_ERROR_TYPE="build_failure"
+                LAST_ERROR_DETAILS=$(echo "$OUTPUT_CONTENT" | grep -iE "(FAILED|FAIL|Error:|error\[|npm ERR!)" | head -5 | tr '\n' ' ')
+                return 0
+            fi
+        fi
+    fi
+
+    # Default to execution error for non-zero exit codes
+    if [ "$EXIT_CODE" -ne 0 ]; then
+        LAST_ERROR_TYPE="execution_error"
+        LAST_ERROR_DETAILS="Claude execution failed with exit code $EXIT_CODE"
+        return 0
+    fi
+
+    # No error detected
+    return 1
+}
+
+# Create diagnostics directory for the current task
+# Usage: create_diagnostics_dir <issue_number>
+# Sets DIAGNOSTICS_DIR to the created directory path
+create_diagnostics_dir() {
+    local ISSUE_NUM=$1
+    local TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+    DIAGNOSTICS_DIR="${CHADGI_DIR}/diagnostics/${ISSUE_NUM}-${TIMESTAMP}"
+
+    # Create the directory
+    mkdir -p "$DIAGNOSTICS_DIR" 2>/dev/null
+
+    if [ -d "$DIAGNOSTICS_DIR" ]; then
+        return 0
+    else
+        log_warn "Could not create diagnostics directory: $DIAGNOSTICS_DIR"
+        DIAGNOSTICS_DIR=""
+        return 1
+    fi
+}
+
+# Capture git diff showing what was attempted
+# Usage: capture_git_diff <diagnostics_dir>
+capture_git_diff() {
+    local DIAG_DIR=$1
+
+    if [ -z "$DIAG_DIR" ] || [ ! -d "$DIAG_DIR" ]; then
+        return 1
+    fi
+
+    local DIFF_FILE="${DIAG_DIR}/git-diff.txt"
+
+    {
+        echo "=== Git Diff (staged and unstaged changes) ==="
+        echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo ""
+        git diff HEAD 2>/dev/null || echo "(No diff available)"
+        echo ""
+        echo "=== Staged Changes ==="
+        git diff --cached 2>/dev/null || echo "(No staged changes)"
+    } > "$DIFF_FILE" 2>&1
+
+    return 0
+}
+
+# Capture last N lines of build/test output
+# Usage: capture_build_output <diagnostics_dir> <output_file> [lines]
+capture_build_output() {
+    local DIAG_DIR=$1
+    local OUTPUT_FILE=$2
+    local LINES=${3:-50}
+
+    if [ -z "$DIAG_DIR" ] || [ ! -d "$DIAG_DIR" ]; then
+        return 1
+    fi
+
+    local OUTPUT_CAPTURE="${DIAG_DIR}/build-output.txt"
+
+    {
+        echo "=== Last ${LINES} Lines of Build/Test Output ==="
+        echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo ""
+        if [ -f "$OUTPUT_FILE" ]; then
+            tail -n "$LINES" "$OUTPUT_FILE" 2>/dev/null || echo "(Could not read output file)"
+        else
+            echo "(No output file available)"
+        fi
+    } > "$OUTPUT_CAPTURE" 2>&1
+
+    return 0
+}
+
+# Capture system state snapshot
+# Usage: capture_system_state <diagnostics_dir>
+capture_system_state() {
+    local DIAG_DIR=$1
+
+    if [ -z "$DIAG_DIR" ] || [ ! -d "$DIAG_DIR" ]; then
+        return 1
+    fi
+
+    local STATE_FILE="${DIAG_DIR}/system-state.txt"
+
+    {
+        echo "=== System State Snapshot ==="
+        echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo ""
+
+        echo "--- Git Status ---"
+        echo "Current branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
+        echo "Repository: ${REPO:-unknown}"
+        echo ""
+        git status --short 2>/dev/null || echo "(Git status unavailable)"
+        echo ""
+
+        echo "--- Recent Commits ---"
+        git log --oneline -5 2>/dev/null || echo "(Git log unavailable)"
+        echo ""
+
+        echo "--- Task Context ---"
+        echo "Issue Number: ${ISSUE_NUMBER:-unknown}"
+        echo "Issue Title: ${ISSUE_TITLE:-unknown}"
+        echo "Branch Name: ${BRANCH_NAME:-unknown}"
+        echo "Base Branch: ${BASE_BRANCH:-unknown}"
+        echo ""
+
+        echo "--- Configuration ---"
+        echo "Max Iterations: ${MAX_ITERATIONS:-unknown}"
+        echo "Task Timeout: ${TASK_TIMEOUT:-unknown} minutes"
+        echo "Test Command: ${TEST_COMMAND:-not configured}"
+        echo "Build Command: ${BUILD_COMMAND:-not configured}"
+        echo ""
+
+        echo "--- Environment ---"
+        echo "Working Directory: $(pwd)"
+        echo "ChadGI Directory: ${CHADGI_DIR:-unknown}"
+        echo "Platform: $(uname -s 2>/dev/null || echo 'unknown')"
+        echo "Date: $(date)"
+    } > "$STATE_FILE" 2>&1
+
+    return 0
+}
+
+# Create error summary file
+# Usage: create_error_summary <diagnostics_dir> <error_type> <error_details>
+create_error_summary() {
+    local DIAG_DIR=$1
+    local ERROR_TYPE=$2
+    local ERROR_DETAILS=$3
+
+    if [ -z "$DIAG_DIR" ] || [ ! -d "$DIAG_DIR" ]; then
+        return 1
+    fi
+
+    local SUMMARY_FILE="${DIAG_DIR}/error-summary.txt"
+
+    {
+        echo "=== Error Summary ==="
+        echo "Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo ""
+        echo "Error Type: ${ERROR_TYPE}"
+        echo ""
+        echo "Error Details:"
+        echo "${ERROR_DETAILS}"
+        echo ""
+        echo "=== Diagnostic Files ==="
+        echo "- error-summary.txt (this file)"
+        echo "- git-diff.txt (changes attempted)"
+        echo "- build-output.txt (last 50 lines of output)"
+        echo "- system-state.txt (system snapshot)"
+        echo ""
+        echo "=== Quick Reference ==="
+        case "$ERROR_TYPE" in
+            "build_failure")
+                echo "This error indicates test/build commands failed."
+                echo "Check build-output.txt for specific error messages."
+                ;;
+            "timeout_failure")
+                echo "This error indicates the task exceeded the time limit."
+                echo "Consider increasing task_timeout in config or breaking the task into smaller parts."
+                ;;
+            "git_error")
+                echo "This error indicates version control operations failed."
+                echo "Common causes: merge conflicts, permission issues, or branch problems."
+                ;;
+            "api_error")
+                echo "This error indicates GitHub API or external service failure."
+                echo "Common causes: rate limits, authentication issues, or network problems."
+                ;;
+            "execution_error")
+                echo "This error indicates a Claude execution issue."
+                echo "Check system-state.txt and build-output.txt for more context."
+                ;;
+            *)
+                echo "Unknown error type. Check all diagnostic files for more information."
+                ;;
+        esac
+    } > "$SUMMARY_FILE" 2>&1
+
+    return 0
+}
+
+# Collect all diagnostic artifacts for a failed task
+# Usage: collect_diagnostics <issue_number> <error_type> <error_details> <output_file>
+collect_diagnostics() {
+    local ISSUE_NUM=$1
+    local ERROR_TYPE=$2
+    local ERROR_DETAILS=$3
+    local OUTPUT_FILE=$4
+
+    # Check if diagnostics are enabled
+    if [ "$ERROR_DIAGNOSTICS" != "true" ]; then
+        return 0
+    fi
+
+    log_step "Collecting diagnostic artifacts..."
+
+    # Create diagnostics directory
+    if ! create_diagnostics_dir "$ISSUE_NUM"; then
+        log_warn "Could not create diagnostics directory"
+        return 1
+    fi
+
+    # Collect all artifacts
+    capture_git_diff "$DIAGNOSTICS_DIR"
+    capture_build_output "$DIAGNOSTICS_DIR" "$OUTPUT_FILE" 50
+    capture_system_state "$DIAGNOSTICS_DIR"
+    create_error_summary "$DIAGNOSTICS_DIR" "$ERROR_TYPE" "$ERROR_DETAILS"
+
+    log_success "Diagnostics saved to: $DIAGNOSTICS_DIR"
+
+    return 0
+}
+
+# Display enhanced error report
+# Usage: display_error_report <error_type> <error_details> <diagnostics_dir>
+display_error_report() {
+    local ERROR_TYPE=$1
+    local ERROR_DETAILS=$2
+    local DIAG_DIR=$3
+
+    echo ""
+    echo -e "${RED}${BOLD}==========================================================${NC}"
+    echo -e "${RED}${BOLD}                   TASK FAILURE REPORT                    ${NC}"
+    echo -e "${RED}${BOLD}==========================================================${NC}"
+    echo ""
+
+    # Error type with icon
+    local ERROR_ICON=""
+    case "$ERROR_TYPE" in
+        "build_failure")   ERROR_ICON="[BUILD]" ;;
+        "timeout_failure") ERROR_ICON="[TIMEOUT]" ;;
+        "git_error")       ERROR_ICON="[GIT]" ;;
+        "api_error")       ERROR_ICON="[API]" ;;
+        "execution_error") ERROR_ICON="[EXEC]" ;;
+        *)                 ERROR_ICON="[ERROR]" ;;
+    esac
+
+    echo -e "${RED}Error Type:${NC} ${ERROR_ICON} ${ERROR_TYPE}"
+    echo ""
+
+    echo -e "${RED}Error Details:${NC}"
+    echo "  ${ERROR_DETAILS}"
+    echo ""
+
+    # Show diagnostics path if available
+    if [ -n "$DIAG_DIR" ] && [ -d "$DIAG_DIR" ]; then
+        echo -e "${CYAN}Diagnostics Path:${NC}"
+        echo "  ${DIAG_DIR}"
+        echo ""
+        echo -e "${CYAN}Diagnostic Files:${NC}"
+        ls -la "$DIAG_DIR" 2>/dev/null | tail -n +2 | sed 's/^/  /'
+    fi
+
+    echo ""
+    echo -e "${RED}${BOLD}==========================================================${NC}"
 }
 
 #------------------------------------------------------------------------------
@@ -2129,13 +2466,22 @@ If you're still implementing features, continue working. Don't signal until ALL 
                 log_success "All verification checks passed!"
                 IMPL_COMPLETE=true
             else
-                log_warn "Verification failed - continuing iteration loop"
+                # Classify the build/test failure for better feedback
+                classify_error 1 "$TEST_RESULTS" "verification"
+                if [ -n "$LAST_ERROR_TYPE" ]; then
+                    log_warn "Verification failed (${LAST_ERROR_TYPE}) - continuing iteration loop"
+                else
+                    log_warn "Verification failed - continuing iteration loop"
+                fi
             fi
         else
             log_info "No ready-for-PR promise yet"
 
             # Run tests to provide feedback for next iteration
-            run_tests_with_output "$TEST_RESULTS" || true
+            if ! run_tests_with_output "$TEST_RESULTS"; then
+                # Classify any failure for informational purposes
+                classify_error 1 "$TEST_RESULTS" "verification"
+            fi
         fi
 
         if [ "$IMPL_COMPLETE" = "false" ]; then
@@ -2787,14 +3133,38 @@ PROMPT_EOF
         log_error "Task did not complete successfully"
         save_progress "error" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
 
-        # Determine failure reason (timeout vs max iterations)
-        local FAILURE_REASON="max_iterations_reached"
-        local FAILURE_DETAILS="$MAX_ITERATIONS"
-        if [ $TASK_EXIT -eq 124 ]; then
-            FAILURE_REASON="timeout"
-            FAILURE_DETAILS="${TASK_TIMEOUT}m"
-            log_warn "Task timed out after ${TASK_TIMEOUT} minutes"
+        # Use enhanced error classification
+        local ERROR_OUTPUT_FILE=$(mktemp)
+        # Try to capture any recent output for classification
+        if [ -f "$TEST_RESULTS" ]; then
+            cp "$TEST_RESULTS" "$ERROR_OUTPUT_FILE" 2>/dev/null || true
         fi
+
+        # Classify the error based on exit code and context
+        if [ $TASK_EXIT -eq 124 ]; then
+            # Timeout is a special case
+            LAST_ERROR_TYPE="timeout_failure"
+            LAST_ERROR_DETAILS="Task exceeded time limit of ${TASK_TIMEOUT} minutes"
+        else
+            # Try to classify based on output patterns
+            classify_error $TASK_EXIT "$ERROR_OUTPUT_FILE" "verification"
+            if [ -z "$LAST_ERROR_TYPE" ]; then
+                # Default classification if pattern matching didn't work
+                LAST_ERROR_TYPE="execution_error"
+                LAST_ERROR_DETAILS="Task failed after $MAX_ITERATIONS iterations with exit code $TASK_EXIT"
+            fi
+        fi
+
+        local FAILURE_REASON="$LAST_ERROR_TYPE"
+        local FAILURE_DETAILS="$LAST_ERROR_DETAILS"
+
+        # Collect diagnostic artifacts if enabled
+        collect_diagnostics "$ISSUE_NUMBER" "$LAST_ERROR_TYPE" "$LAST_ERROR_DETAILS" "$ERROR_OUTPUT_FILE"
+
+        # Display enhanced error report
+        display_error_report "$LAST_ERROR_TYPE" "$LAST_ERROR_DETAILS" "$DIAGNOSTICS_DIR"
+
+        rm -f "$ERROR_OUTPUT_FILE"
 
         # Record failed task
         FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:${FAILURE_REASON}"

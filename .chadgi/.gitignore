@@ -1,3 +1,6 @@
 # ChadGI generated files
 chadgi-progress.json
 *.log
+
+# Error diagnostics artifacts
+diagnostics/

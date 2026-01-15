@@ -61,6 +61,9 @@ iteration:
   retry_backoff: exponential  # Options: fixed, linear, exponential
   retry_max_delay: 60         # Maximum delay cap (seconds) for exponential backoff
   retry_jitter: false         # Add ±20% randomness to prevent thundering herd
+  # Error diagnostics - auto-capture diagnostic artifacts on failure
+  # Saves git diff, build output, and system state to .chadgi/diagnostics/
+  error_diagnostics: true     # Enable/disable diagnostic artifact collection
 
 # Output settings
 output:
