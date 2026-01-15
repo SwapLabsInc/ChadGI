@@ -260,6 +260,204 @@ PROGRESS_EOF
 }
 
 #------------------------------------------------------------------------------
+# Session Statistics
+#------------------------------------------------------------------------------
+
+# Calculate human-readable duration from seconds
+format_duration() {
+    local SECONDS=$1
+    local HOURS=$((SECONDS / 3600))
+    local MINUTES=$(((SECONDS % 3600) / 60))
+    local SECS=$((SECONDS % 60))
+
+    if [ $HOURS -gt 0 ]; then
+        printf "%dh %dm %ds" $HOURS $MINUTES $SECS
+    elif [ $MINUTES -gt 0 ]; then
+        printf "%dm %ds" $MINUTES $SECS
+    else
+        printf "%ds" $SECS
+    fi
+}
+
+# Calculate average from a list of values
+calculate_average() {
+    local VALUES=$1
+    local COUNT=0
+    local TOTAL=0
+
+    for VAL in $VALUES; do
+        TOTAL=$(echo "$TOTAL + $VAL" | bc 2>/dev/null || echo "$TOTAL")
+        COUNT=$((COUNT + 1))
+    done
+
+    if [ $COUNT -gt 0 ]; then
+        echo "scale=4; $TOTAL / $COUNT" | bc 2>/dev/null || echo "0"
+    else
+        echo "0"
+    fi
+}
+
+# Print session statistics summary
+print_session_summary() {
+    local SESSION_END_EPOCH=$(date +%s)
+    local SESSION_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local SESSION_DURATION=$((SESSION_END_EPOCH - SESSION_START_EPOCH))
+
+    echo ""
+    echo -e "${PURPLE}${BOLD}==========================================================${NC}"
+    echo -e "${PURPLE}${BOLD}                   SESSION STATISTICS                      ${NC}"
+    echo -e "${PURPLE}${BOLD}==========================================================${NC}"
+    echo ""
+
+    # Session timing
+    echo -e "${CYAN}Session Timing${NC}"
+    echo -e "  Started:   ${SESSION_START}"
+    echo -e "  Ended:     ${SESSION_END}"
+    echo -e "  Duration:  $(format_duration $SESSION_DURATION)"
+    echo ""
+
+    # Task completion stats
+    echo -e "${CYAN}Task Completion${NC}"
+    echo -e "  Attempted:  ${ISSUES_ATTEMPTED}"
+    echo -e "  Completed:  ${ISSUES_COMPLETED}"
+    local FAILED_COUNT=0
+    for TASK in $FAILED_TASKS; do
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+    done
+    echo -e "  Failed:     ${FAILED_COUNT}"
+
+    # Success rate
+    if [ $ISSUES_ATTEMPTED -gt 0 ]; then
+        local SUCCESS_RATE=$(echo "scale=1; $ISSUES_COMPLETED * 100 / $ISSUES_ATTEMPTED" | bc 2>/dev/null || echo "0")
+        echo -e "  Success:    ${SUCCESS_RATE}%"
+    fi
+    echo ""
+
+    # Successful tasks breakdown
+    if [ -n "$SUCCESSFUL_TASKS" ]; then
+        echo -e "${GREEN}Successful Tasks${NC}"
+        local DURATIONS=""
+        for TASK in $SUCCESSFUL_TASKS; do
+            local ISSUE_NUM=$(echo "$TASK" | cut -d: -f1)
+            local DURATION_SECS=$(echo "$TASK" | cut -d: -f2)
+            DURATIONS="$DURATIONS $DURATION_SECS"
+            echo -e "  - Issue #${ISSUE_NUM}: $(format_duration $DURATION_SECS)"
+        done
+
+        # Calculate average time per task
+        local AVG_DURATION=$(calculate_average "$DURATIONS")
+        AVG_DURATION=$(printf "%.0f" "$AVG_DURATION")
+        if [ -n "$AVG_DURATION" ] && [ "$AVG_DURATION" != "0" ]; then
+            echo -e "  ${DIM}Average: $(format_duration $AVG_DURATION)${NC}"
+        fi
+        echo ""
+    fi
+
+    # Failed tasks breakdown
+    if [ -n "$FAILED_TASKS" ]; then
+        echo -e "${RED}Failed Tasks${NC}"
+        for TASK in $FAILED_TASKS; do
+            local ISSUE_NUM=$(echo "$TASK" | cut -d: -f1)
+            local REASON=$(echo "$TASK" | cut -d: -f2-)
+            echo -e "  - Issue #${ISSUE_NUM}: ${REASON}"
+        done
+        echo ""
+    fi
+
+    # Cost breakdown
+    echo -e "${CYAN}API Costs${NC}"
+    echo -e "  Total Cost: \$${TOTAL_COST:-0}"
+
+    if [ $ISSUES_COMPLETED -gt 0 ] && [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "0" ]; then
+        local AVG_COST=$(echo "scale=4; $TOTAL_COST / $ISSUES_COMPLETED" | bc 2>/dev/null || echo "0")
+        printf "  Avg/Task:   \$%.4f\n" "$AVG_COST"
+    fi
+    echo ""
+
+    # GigaChad mode stats
+    if [ "$GIGACHAD_MODE" = "true" ]; then
+        echo -e "${PURPLE}GigaChad Mode${NC}"
+        echo -e "  Auto-merged: ${GIGACHAD_MERGES} PRs"
+        echo ""
+    fi
+
+    echo -e "${PURPLE}${BOLD}==========================================================${NC}"
+    echo -e "${PURPLE}                  ${CHAD_TAGLINE}${NC}"
+    echo -e "${PURPLE}${BOLD}==========================================================${NC}"
+}
+
+# Save session statistics to historical log file
+save_session_stats() {
+    local STATS_FILE="${CHADGI_DIR}/chadgi-stats.json"
+    local SESSION_END_EPOCH=$(date +%s)
+    local SESSION_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local SESSION_DURATION=$((SESSION_END_EPOCH - SESSION_START_EPOCH))
+
+    # Build successful tasks array
+    local SUCCESSFUL_ARRAY="["
+    local FIRST=true
+    for TASK in $SUCCESSFUL_TASKS; do
+        local ISSUE_NUM=$(echo "$TASK" | cut -d: -f1)
+        local DURATION_SECS=$(echo "$TASK" | cut -d: -f2)
+        if [ "$FIRST" = "true" ]; then
+            FIRST=false
+        else
+            SUCCESSFUL_ARRAY="${SUCCESSFUL_ARRAY},"
+        fi
+        SUCCESSFUL_ARRAY="${SUCCESSFUL_ARRAY}{\"issue\":${ISSUE_NUM},\"duration_secs\":${DURATION_SECS}}"
+    done
+    SUCCESSFUL_ARRAY="${SUCCESSFUL_ARRAY}]"
+
+    # Build failed tasks array
+    local FAILED_ARRAY="["
+    FIRST=true
+    for TASK in $FAILED_TASKS; do
+        local ISSUE_NUM=$(echo "$TASK" | cut -d: -f1)
+        local REASON=$(echo "$TASK" | cut -d: -f2-)
+        if [ "$FIRST" = "true" ]; then
+            FIRST=false
+        else
+            FAILED_ARRAY="${FAILED_ARRAY},"
+        fi
+        FAILED_ARRAY="${FAILED_ARRAY}{\"issue\":${ISSUE_NUM},\"reason\":\"${REASON}\"}"
+    done
+    FAILED_ARRAY="${FAILED_ARRAY}]"
+
+    # Create new stats entry
+    local NEW_ENTRY=$(cat << STATS_EOF
+{
+  "session_id": "$(uuidgen 2>/dev/null || echo "session-${SESSION_START_EPOCH}")",
+  "started_at": "${SESSION_START}",
+  "ended_at": "${SESSION_END}",
+  "duration_secs": ${SESSION_DURATION},
+  "tasks_attempted": ${ISSUES_ATTEMPTED},
+  "tasks_completed": ${ISSUES_COMPLETED},
+  "successful_tasks": ${SUCCESSFUL_ARRAY},
+  "failed_tasks": ${FAILED_ARRAY},
+  "total_cost_usd": ${TOTAL_COST:-0},
+  "gigachad_mode": ${GIGACHAD_MODE:-false},
+  "gigachad_merges": ${GIGACHAD_MERGES},
+  "repo": "${REPO}"
+}
+STATS_EOF
+)
+
+    # Append to stats file (create if doesn't exist)
+    if [ ! -f "$STATS_FILE" ]; then
+        echo "[$NEW_ENTRY]" > "$STATS_FILE"
+    else
+        # Read existing file, remove trailing ] and append new entry
+        local EXISTING=$(cat "$STATS_FILE")
+        # Remove trailing ] and whitespace
+        EXISTING=$(echo "$EXISTING" | sed 's/][ \t\n]*$//')
+        # Append new entry with comma
+        echo "${EXISTING},${NEW_ENTRY}]" > "$STATS_FILE"
+    fi
+
+    log_info "Session statistics saved to $STATS_FILE"
+}
+
+#------------------------------------------------------------------------------
 # Branding - Chad does what Chad wants
 #------------------------------------------------------------------------------
 
@@ -427,6 +625,11 @@ function ctrl_c() {
     echo -e "${YELLOW}  ChadGI is shutting down gracefully...${NC}"
     echo -e "${YELLOW}-----------------------------------------------------------${NC}"
     save_progress "stopped" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+
+    # Display and save session statistics
+    print_session_summary
+    save_session_stats
+
     exit 0
 }
 
@@ -1390,8 +1593,19 @@ echo -e "${NC}"
 
 # Initialize session
 SESSION_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SESSION_START_EPOCH=$(date +%s)
 ISSUES_COMPLETED=0
+ISSUES_ATTEMPTED=0
 TOTAL_COST=0
+GIGACHAD_MERGES=0
+
+# Arrays for tracking task details (bash 3.x compatible using strings)
+SUCCESSFUL_TASKS=""    # Space-separated list of "issue_number:duration_secs"
+FAILED_TASKS=""        # Space-separated list of "issue_number:reason"
+TASK_COSTS=""          # Space-separated list of "issue_number:cost"
+
+# Current task tracking
+CURRENT_TASK_START_EPOCH=0
 
 # Load configuration
 load_config
@@ -1462,6 +1676,9 @@ while true; do
                     ;;
                 "exit")
                     log_info "Queue empty - exiting as configured"
+                    # Display and save session statistics before exit
+                    print_session_summary
+                    save_session_stats
                     exit 0
                     ;;
                 "wait"|*)
@@ -1526,6 +1743,10 @@ while true; do
     log_header "STARTING CLAUDE CODE ON ISSUE #$ISSUE_NUMBER"
 
     echo -e "${DIM}Branch: $BRANCH_NAME${NC}\n"
+
+    # Track task start time and increment attempt counter
+    CURRENT_TASK_START_EPOCH=$(date +%s)
+    ISSUES_ATTEMPTED=$((ISSUES_ATTEMPTED + 1))
 
     # Save progress
     save_progress "in_progress" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
@@ -1599,6 +1820,9 @@ PROMPT_EOF
         log_error "Task did not complete successfully"
         save_progress "error" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
 
+        # Record failed task
+        FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:max_iterations_reached"
+
         # Handle max iterations based on config
         case "$ON_MAX_ITERATIONS" in
             "rollback")
@@ -1620,12 +1844,21 @@ PROMPT_EOF
         continue
     fi
 
+    # Calculate task duration
+    local TASK_END_EPOCH=$(date +%s)
+    local TASK_DURATION=$((TASK_END_EPOCH - CURRENT_TASK_START_EPOCH))
+
+    # Record successful task with duration
+    SUCCESSFUL_TASKS="${SUCCESSFUL_TASKS} ${ISSUE_NUMBER}:${TASK_DURATION}"
+
     # In GigaChad mode: move to Done; otherwise: move to In Review
     if [ "$GIGACHAD_MERGED" = "true" ]; then
         log_header "MOVING ISSUE #$ISSUE_NUMBER TO $DONE_COLUMN (GIGACHAD)"
         move_to_column "$ITEM_ID" "$DONE_COLUMN" && \
             log_success "Moved to '$DONE_COLUMN' - PR #$GIGACHAD_MERGED_PR was auto-merged!" || \
             log_warn "Could not move issue to Done"
+        # Track GigaChad merge
+        GIGACHAD_MERGES=$((GIGACHAD_MERGES + 1))
     else
         log_header "MOVING ISSUE #$ISSUE_NUMBER TO $REVIEW_COLUMN"
         move_to_column "$ITEM_ID" "$REVIEW_COLUMN" && \
