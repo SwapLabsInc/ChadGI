@@ -108,6 +108,8 @@ load_config() {
     IN_PROGRESS_COLUMN="${IN_PROGRESS_COLUMN:-In Progress}"
     REVIEW_COLUMN=$(parse_yaml_nested "github" "review_column" "$CONFIG_FILE")
     REVIEW_COLUMN="${REVIEW_COLUMN:-In Review}"
+    DONE_COLUMN=$(parse_yaml_nested "github" "done_column" "$CONFIG_FILE")
+    DONE_COLUMN="${DONE_COLUMN:-Done}"
 
     # Branch settings
     BASE_BRANCH=$(parse_yaml_nested "branch" "base" "$CONFIG_FILE")
@@ -156,6 +158,8 @@ load_config() {
     BUILD_COMMAND="${BUILD_COMMAND:-}"
     ON_MAX_ITERATIONS=$(parse_yaml_nested "iteration" "on_max_iterations" "$CONFIG_FILE")
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
+    GIGACHAD_MODE=$(parse_yaml_nested "iteration" "gigachad_mode" "$CONFIG_FILE")
+    GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
 
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
@@ -177,6 +181,7 @@ set_defaults() {
     READY_COLUMN="${READY_COLUMN:-Ready}"
     IN_PROGRESS_COLUMN="${IN_PROGRESS_COLUMN:-In Progress}"
     REVIEW_COLUMN="${REVIEW_COLUMN:-In Review}"
+    DONE_COLUMN="${DONE_COLUMN:-Done}"
     BASE_BRANCH="${BASE_BRANCH:-main}"
     BRANCH_PREFIX="${BRANCH_PREFIX:-feature/issue-}"
     POLL_INTERVAL="${POLL_INTERVAL:-10}"
@@ -196,6 +201,7 @@ set_defaults() {
     TEST_COMMAND="${TEST_COMMAND:-}"
     BUILD_COMMAND="${BUILD_COMMAND:-}"
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
+    GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
 }
 
 #------------------------------------------------------------------------------
@@ -728,6 +734,46 @@ run_tests_with_output() {
     fi
 }
 
+#------------------------------------------------------------------------------
+# GigaChad Mode - Auto-merge and sync
+#------------------------------------------------------------------------------
+
+# Merge the PR and pull latest to local
+# Returns 0 on success, 1 on failure
+gigachad_merge_and_sync() {
+    local PR_NUMBER=$1
+
+    log_header "GIGACHAD MODE ACTIVATED"
+    echo -e "${PURPLE}${BOLD}     Chad doesn't wait for reviews. Chad ships.${NC}"
+    echo ""
+
+    # Merge the PR using squash (cleaner history)
+    log_step "Merging PR #$PR_NUMBER into $BASE_BRANCH..."
+    if gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch 2>/dev/null; then
+        log_success "PR #$PR_NUMBER merged successfully!"
+    else
+        # Try regular merge if squash fails
+        log_warn "Squash merge failed, trying regular merge..."
+        if gh pr merge "$PR_NUMBER" --repo "$REPO" --merge --delete-branch 2>/dev/null; then
+            log_success "PR #$PR_NUMBER merged successfully!"
+        else
+            log_error "Failed to merge PR #$PR_NUMBER"
+            return 1
+        fi
+    fi
+
+    # Pull the latest from the target branch
+    log_step "Pulling latest $BASE_BRANCH to local..."
+    git checkout "$BASE_BRANCH" 2>/dev/null || git checkout "origin/$BASE_BRANCH" 2>/dev/null
+    if git pull origin "$BASE_BRANCH" 2>/dev/null; then
+        log_success "Local $BASE_BRANCH is now up to date!"
+    else
+        log_warn "Could not pull latest - may need manual sync"
+    fi
+
+    return 0
+}
+
 # Run task with iteration loop using --continue for session continuity
 # Two-phase approach:
 #   Phase 1: Implementation - Claude implements, tests locally, commits (outputs READY_FOR_PR)
@@ -952,6 +998,28 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
         TASK_COMPLETE=true
     fi
 
+    # If GigaChad mode is enabled, auto-merge the PR
+    if [ "$GIGACHAD_MODE" = "true" ] && [ "$TASK_COMPLETE" = "true" ]; then
+        # Extract PR number from the output (look for PR URL pattern)
+        local PR_NUM=$(cat "$OUTPUT_FILE" "$OUTPUT_FILE.raw" 2>/dev/null | grep -oE "pull/[0-9]+" | head -1 | sed 's/pull\///')
+
+        if [ -z "$PR_NUM" ]; then
+            # Try to get PR number from gh pr list
+            PR_NUM=$(gh pr list --repo "$REPO" --head "$BRANCH_NAME" --json number -q '.[0].number' 2>/dev/null)
+        fi
+
+        if [ -n "$PR_NUM" ]; then
+            GIGACHAD_MERGED_PR="$PR_NUM"
+            gigachad_merge_and_sync "$PR_NUM"
+            GIGACHAD_MERGED=true
+        else
+            log_warn "Could not find PR number for auto-merge"
+            GIGACHAD_MERGED=false
+        fi
+    else
+        GIGACHAD_MERGED=false
+    fi
+
     rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
 
     if [ "$TASK_COMPLETE" = "true" ]; then
@@ -971,7 +1039,12 @@ STATUS_FIELD_ID=""
 READY_OPTION_ID=""
 IN_PROGRESS_OPTION_ID=""
 REVIEW_OPTION_ID=""
+DONE_OPTION_ID=""
 GITHUB_USERNAME=""
+
+# GigaChad mode state tracking
+GIGACHAD_MERGED=false
+GIGACHAD_MERGED_PR=""
 
 # Get the current GitHub username
 get_github_username() {
@@ -1014,6 +1087,8 @@ init_project_board() {
         '.fields[] | select(.name == "Status") | .options[] | select(.name == $col) | .id' 2>/dev/null | head -1)
     REVIEW_OPTION_ID=$(echo "$FIELDS" | jq -r --arg col "$REVIEW_COLUMN" \
         '.fields[] | select(.name == "Status") | .options[] | select(.name == $col) | .id' 2>/dev/null | head -1)
+    DONE_OPTION_ID=$(echo "$FIELDS" | jq -r --arg col "$DONE_COLUMN" \
+        '.fields[] | select(.name == "Status") | .options[] | select(.name == $col) | .id' 2>/dev/null | head -1)
 
     # Get GitHub username for auto-assignment
     get_github_username > /dev/null
@@ -1053,6 +1128,8 @@ move_to_column() {
         OPTION_ID="$IN_PROGRESS_OPTION_ID"
     elif [ "$TARGET_COLUMN" = "$REVIEW_COLUMN" ]; then
         OPTION_ID="$REVIEW_OPTION_ID"
+    elif [ "$TARGET_COLUMN" = "$DONE_COLUMN" ]; then
+        OPTION_ID="$DONE_OPTION_ID"
     fi
 
     if [ -z "$OPTION_ID" ] || [ "$OPTION_ID" = "null" ]; then
@@ -1235,7 +1312,12 @@ fi
 log_info "Task Source: Project Board"
 log_info "Repository: $REPO"
 log_info "Project: #$PROJECT_NUMBER"
-log_info "Columns: $READY_COLUMN -> $IN_PROGRESS_COLUMN -> $REVIEW_COLUMN"
+if [ "$GIGACHAD_MODE" = "true" ]; then
+    log_info "Columns: $READY_COLUMN -> $IN_PROGRESS_COLUMN -> $DONE_COLUMN (GigaChad)"
+    echo -e "${PURPLE}${BOLD}     GIGACHAD MODE ENABLED - PRs will be auto-merged!${NC}"
+else
+    log_info "Columns: $READY_COLUMN -> $IN_PROGRESS_COLUMN -> $REVIEW_COLUMN"
+fi
 log_info "Poll Interval: ${POLL_INTERVAL}s"
 log_info "On Empty Queue: $ON_EMPTY_QUEUE"
 log_info "Iteration: max $MAX_ITERATIONS attempts per task"
@@ -1408,21 +1490,35 @@ PROMPT_EOF
         continue
     fi
 
-    log_header "MOVING ISSUE #$ISSUE_NUMBER TO $REVIEW_COLUMN"
-
-    # Move to Review column
-    move_to_column "$ITEM_ID" "$REVIEW_COLUMN" && \
-        log_success "Moved to '$REVIEW_COLUMN'" || \
-        log_warn "Could not move issue"
+    # In GigaChad mode: move to Done; otherwise: move to In Review
+    if [ "$GIGACHAD_MERGED" = "true" ]; then
+        log_header "MOVING ISSUE #$ISSUE_NUMBER TO $DONE_COLUMN (GIGACHAD)"
+        move_to_column "$ITEM_ID" "$DONE_COLUMN" && \
+            log_success "Moved to '$DONE_COLUMN' - PR #$GIGACHAD_MERGED_PR was auto-merged!" || \
+            log_warn "Could not move issue to Done"
+    else
+        log_header "MOVING ISSUE #$ISSUE_NUMBER TO $REVIEW_COLUMN"
+        move_to_column "$ITEM_ID" "$REVIEW_COLUMN" && \
+            log_success "Moved to '$REVIEW_COLUMN'" || \
+            log_warn "Could not move issue"
+    fi
 
     ISSUES_COMPLETED=$((ISSUES_COMPLETED + 1))
+
+    # Reset GigaChad state for next task
+    GIGACHAD_MERGED=false
+    GIGACHAD_MERGED_PR=""
 
     # Save progress
     save_progress "idle" "" "" ""
 
     log_header "ISSUE #$ISSUE_NUMBER COMPLETED"
     echo -e "${GREEN}Total issues completed this session: $ISSUES_COMPLETED${NC}"
-    echo -e "${PURPLE}${CHAD_TAGLINE}${NC}"
+    if [ "$GIGACHAD_MODE" = "true" ]; then
+        echo -e "${PURPLE}${BOLD}GigaChad doesn't wait. GigaChad ships.${NC}"
+    else
+        echo -e "${PURPLE}${CHAD_TAGLINE}${NC}"
+    fi
     [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "0" ] && echo -e "${DIM}Total session cost: \$${TOTAL_COST}${NC}"
 
     log_info "Moving to next issue in ${POLL_INTERVAL} seconds..."
