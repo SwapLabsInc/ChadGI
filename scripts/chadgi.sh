@@ -166,6 +166,16 @@ load_config() {
     GIGACHAD_COMMIT_PREFIX=$(parse_yaml_nested "iteration" "gigachad_commit_prefix" "$CONFIG_FILE")
     GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
 
+    # Retry settings
+    RETRY_DELAY=$(parse_yaml_nested "iteration" "retry_delay" "$CONFIG_FILE")
+    RETRY_DELAY="${RETRY_DELAY:-5}"
+    RETRY_BACKOFF=$(parse_yaml_nested "iteration" "retry_backoff" "$CONFIG_FILE")
+    RETRY_BACKOFF="${RETRY_BACKOFF:-exponential}"
+    RETRY_MAX_DELAY=$(parse_yaml_nested "iteration" "retry_max_delay" "$CONFIG_FILE")
+    RETRY_MAX_DELAY="${RETRY_MAX_DELAY:-60}"
+    RETRY_JITTER=$(parse_yaml_nested "iteration" "retry_jitter" "$CONFIG_FILE")
+    RETRY_JITTER="${RETRY_JITTER:-false}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -208,6 +218,81 @@ set_defaults() {
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
     GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
     GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
+    # Retry settings
+    RETRY_DELAY="${RETRY_DELAY:-5}"
+    RETRY_BACKOFF="${RETRY_BACKOFF:-exponential}"
+    RETRY_MAX_DELAY="${RETRY_MAX_DELAY:-60}"
+    RETRY_JITTER="${RETRY_JITTER:-false}"
+}
+
+#------------------------------------------------------------------------------
+# Retry Delay Calculation
+#------------------------------------------------------------------------------
+
+# Calculate the retry delay based on backoff strategy and iteration
+# Usage: calculate_retry_delay <iteration_number>
+# Returns: delay in seconds (printed to stdout)
+calculate_retry_delay() {
+    local ITERATION=$1
+    local DELAY=0
+
+    case "$RETRY_BACKOFF" in
+        "fixed")
+            # Always wait retry_delay seconds
+            DELAY=$RETRY_DELAY
+            ;;
+        "linear")
+            # Wait retry_delay * iteration_number seconds
+            DELAY=$((RETRY_DELAY * ITERATION))
+            ;;
+        "exponential"|*)
+            # Wait retry_delay * 2^(iteration-1) seconds (capped at max_delay)
+            local EXPONENT=$((ITERATION - 1))
+            local POWER=1
+            local i=0
+            while [ $i -lt $EXPONENT ]; do
+                POWER=$((POWER * 2))
+                i=$((i + 1))
+            done
+            DELAY=$((RETRY_DELAY * POWER))
+            ;;
+    esac
+
+    # Cap at max delay
+    if [ $DELAY -gt $RETRY_MAX_DELAY ]; then
+        DELAY=$RETRY_MAX_DELAY
+    fi
+
+    # Apply jitter if enabled (±20% randomness)
+    if [ "$RETRY_JITTER" = "true" ]; then
+        # Calculate 20% of delay
+        local JITTER_RANGE=$((DELAY * 20 / 100))
+        if [ $JITTER_RANGE -gt 0 ]; then
+            # Generate random value between -jitter_range and +jitter_range
+            local RANDOM_VAL=$((RANDOM % (JITTER_RANGE * 2 + 1) - JITTER_RANGE))
+            DELAY=$((DELAY + RANDOM_VAL))
+            # Ensure delay doesn't go below 1 second
+            if [ $DELAY -lt 1 ]; then
+                DELAY=1
+            fi
+        fi
+    fi
+
+    echo $DELAY
+}
+
+# Log the retry delay being applied
+# Usage: log_retry_delay <delay_seconds> <iteration_number>
+log_retry_delay() {
+    local DELAY=$1
+    local ITERATION=$2
+    local JITTER_STR=""
+
+    if [ "$RETRY_JITTER" = "true" ]; then
+        JITTER_STR=" with jitter"
+    fi
+
+    log_info "Retrying in ${DELAY} seconds (backoff: ${RETRY_BACKOFF}${JITTER_STR}, iteration ${ITERATION})"
 }
 
 #------------------------------------------------------------------------------
@@ -1209,8 +1294,10 @@ If you're still implementing features, continue working. Don't signal until ALL 
         if [ "$IMPL_COMPLETE" = "false" ]; then
             ITERATION=$((ITERATION + 1))
             if [ $ITERATION -le $MAX_ITERATIONS ]; then
-                log_info "Continuing to next iteration..."
-                sleep 2
+                # Calculate retry delay based on backoff strategy
+                local DELAY=$(calculate_retry_delay $ITERATION)
+                log_retry_delay $DELAY $ITERATION
+                sleep $DELAY
             fi
         fi
     done
