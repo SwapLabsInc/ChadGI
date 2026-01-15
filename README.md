@@ -175,6 +175,8 @@ Templates support these variables:
 | `{{PROJECT_NUMBER}}` | Project number |
 | `{{READY_COLUMN}}` | Ready column name |
 | `{{COMPLETION_PROMISE}}` | Completion signal string |
+| `{{TEST_COMMAND}}` | Configured test command |
+| `{{BUILD_COMMAND}}` | Configured build command |
 
 ## GitHub Project Setup
 

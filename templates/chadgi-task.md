@@ -37,8 +37,12 @@ You are already on a fresh branch: **{{BRANCH_NAME}}** (created from {{BASE_BRAN
 2. **Explore** - Examine the codebase to understand context and patterns
 3. **Implement** - Make the requested changes following existing code style
 4. **Write Tests** - Add tests for any new functionality (don't rely only on existing tests)
-5. **Test Locally** - Run tests and build to verify your changes
+5. **Test Locally** - Run the verification commands below to confirm your changes work
 6. **Commit** - Commit changes with clear, descriptive messages
+
+**Verification Commands** (run these before signaling ready):
+- Test: `{{TEST_COMMAND}}`
+- Build: `{{BUILD_COMMAND}}`
 
 **DO NOT create a Pull Request yet.** The automated system will verify your changes first.
 

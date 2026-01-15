@@ -349,6 +349,8 @@ process_template() {
         -e "s|{{ISSUE_PREFIX}}|${ISSUE_PREFIX}|g" \
         -e "s|{{CHAD_LABEL}}|${CHAD_LABEL}|g" \
         -e "s|{{CHAD_TAGLINE}}|${CHAD_TAGLINE}|g" \
+        -e "s|{{TEST_COMMAND}}|${TEST_COMMAND}|g" \
+        -e "s|{{BUILD_COMMAND}}|${BUILD_COMMAND}|g" \
         "$OUTPUT_FILE"
     rm -f "${OUTPUT_FILE}.bak"
 
