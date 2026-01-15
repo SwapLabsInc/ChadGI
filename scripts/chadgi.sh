@@ -122,6 +122,33 @@ parse_yaml_nested_events() {
     ' "$FILE" 2>/dev/null || echo ""
 }
 
+# Parse priority labels array from config (priority.labels.critical, etc.)
+# Returns space-separated list of labels
+parse_priority_labels() {
+    local LEVEL=$1
+    local FILE=$2
+    awk -v level="$LEVEL" '
+        /^priority:/ { in_priority=1; next }
+        in_priority && /^[a-z]/ { in_priority=0; in_labels=0 }
+        in_priority && /^  labels:/ { in_labels=1; next }
+        in_priority && in_labels && /^  [a-z]/ { in_labels=0 }
+        in_priority && in_labels && $0 ~ "^    "level":" {
+            # Extract the array: ["label1", "label2", ...] or [label1, label2]
+            gsub(/^    [a-z]+: */, "");
+            gsub(/ *#.*/, "");
+            gsub(/\[/, "");
+            gsub(/\]/, "");
+            gsub(/"/, "");
+            gsub(/,/, " ");
+            gsub(/  +/, " ");
+            gsub(/^ +/, "");
+            gsub(/ +$/, "");
+            print;
+            exit
+        }
+    ' "$FILE" 2>/dev/null || echo ""
+}
+
 # Load configuration from YAML file
 load_config() {
     if [ ! -f "$CONFIG_FILE" ]; then
@@ -292,6 +319,20 @@ load_config() {
     GENERIC_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "generic" "session_ended" "$CONFIG_FILE")
     GENERIC_EVENT_SESSION_ENDED="${GENERIC_EVENT_SESSION_ENDED:-true}"
 
+    # Priority settings - task queue ordering by priority labels
+    PRIORITY_ENABLED=$(parse_yaml_nested "priority" "enabled" "$CONFIG_FILE")
+    PRIORITY_ENABLED="${PRIORITY_ENABLED:-true}"
+
+    # Parse priority labels for each level (space-separated)
+    PRIORITY_LABELS_CRITICAL=$(parse_priority_labels "critical" "$CONFIG_FILE")
+    PRIORITY_LABELS_CRITICAL="${PRIORITY_LABELS_CRITICAL:-priority:critical P0 urgent}"
+    PRIORITY_LABELS_HIGH=$(parse_priority_labels "high" "$CONFIG_FILE")
+    PRIORITY_LABELS_HIGH="${PRIORITY_LABELS_HIGH:-priority:high P1}"
+    PRIORITY_LABELS_NORMAL=$(parse_priority_labels "normal" "$CONFIG_FILE")
+    PRIORITY_LABELS_NORMAL="${PRIORITY_LABELS_NORMAL:-priority:normal P2}"
+    PRIORITY_LABELS_LOW=$(parse_priority_labels "low" "$CONFIG_FILE")
+    PRIORITY_LABELS_LOW="${PRIORITY_LABELS_LOW:-priority:low P3 backlog}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -381,6 +422,13 @@ set_defaults() {
     GENERIC_EVENT_TASK_FAILED="${GENERIC_EVENT_TASK_FAILED:-true}"
     GENERIC_EVENT_GIGACHAD_MERGE="${GENERIC_EVENT_GIGACHAD_MERGE:-true}"
     GENERIC_EVENT_SESSION_ENDED="${GENERIC_EVENT_SESSION_ENDED:-true}"
+
+    # Priority settings
+    PRIORITY_ENABLED="${PRIORITY_ENABLED:-true}"
+    PRIORITY_LABELS_CRITICAL="${PRIORITY_LABELS_CRITICAL:-priority:critical P0 urgent}"
+    PRIORITY_LABELS_HIGH="${PRIORITY_LABELS_HIGH:-priority:high P1}"
+    PRIORITY_LABELS_NORMAL="${PRIORITY_LABELS_NORMAL:-priority:normal P2}"
+    PRIORITY_LABELS_LOW="${PRIORITY_LABELS_LOW:-priority:low P3 backlog}"
 }
 
 #------------------------------------------------------------------------------
@@ -1215,10 +1263,18 @@ notify_task_started() {
     local ISSUE_NUM=$1
     local TITLE=$2
     local URL=$3
+    local PRIORITY=${4:-""}
 
     local TITLE_TEXT="Task Started: #${ISSUE_NUM}"
     local MESSAGE="Working on: ${TITLE}\n${URL}"
-    local EVENT_DATA="{\"issue_number\": ${ISSUE_NUM}, \"title\": \"${TITLE}\", \"url\": \"${URL}\"}"
+
+    # Include priority in message if available
+    if [ -n "$PRIORITY" ]; then
+        TITLE_TEXT="Task Started: #${ISSUE_NUM} (priority: ${PRIORITY})"
+        MESSAGE="Working on: ${TITLE}\nPriority: ${PRIORITY}\n${URL}"
+    fi
+
+    local EVENT_DATA="{\"issue_number\": ${ISSUE_NUM}, \"title\": \"${TITLE}\", \"url\": \"${URL}\", \"priority\": \"${PRIORITY}\"}"
 
     notify_event "task_started" "$TITLE_TEXT" "$MESSAGE" "#3498db" "3447003" "$EVENT_DATA"
 }
@@ -2708,6 +2764,71 @@ get_issues_in_column() {
     ' 2>/dev/null
 }
 
+# Get labels for an issue (returns space-separated list)
+get_issue_labels() {
+    local ISSUE_NUM=$1
+    gh issue view "$ISSUE_NUM" --repo "$REPO" --json labels -q '.labels[].name' 2>/dev/null | tr '\n' ' ' || echo ""
+}
+
+# Determine priority level for an issue based on its labels
+# Returns: 0=critical, 1=high, 2=normal (default), 3=low
+# Also sets CURRENT_PRIORITY_NAME to the human-readable priority name
+get_issue_priority() {
+    local ISSUE_NUM=$1
+    local LABELS=$(get_issue_labels "$ISSUE_NUM")
+
+    # Check for critical priority labels
+    for label in $PRIORITY_LABELS_CRITICAL; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_PRIORITY_NAME="critical"
+            echo 0
+            return
+        fi
+    done
+
+    # Check for high priority labels
+    for label in $PRIORITY_LABELS_HIGH; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_PRIORITY_NAME="high"
+            echo 1
+            return
+        fi
+    done
+
+    # Check for low priority labels (check before normal to ensure explicit low takes precedence)
+    for label in $PRIORITY_LABELS_LOW; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_PRIORITY_NAME="low"
+            echo 3
+            return
+        fi
+    done
+
+    # Check for normal priority labels (explicit normal)
+    for label in $PRIORITY_LABELS_NORMAL; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_PRIORITY_NAME="normal"
+            echo 2
+            return
+        fi
+    done
+
+    # Default to normal priority
+    CURRENT_PRIORITY_NAME="normal"
+    echo 2
+}
+
+# Get priority name for display
+get_priority_name() {
+    local PRIORITY_NUM=$1
+    case "$PRIORITY_NUM" in
+        0) echo "critical" ;;
+        1) echo "high" ;;
+        3) echo "low" ;;
+        *) echo "normal" ;;
+    esac
+}
+
 # Move an item to a different column
 move_to_column() {
     local ITEM_ID=$1
@@ -2746,24 +2867,62 @@ move_to_column() {
 get_project_task() {
     local READY_ITEMS=$(get_issues_in_column "$READY_COLUMN")
 
-    # Get first item
-    local FIRST_ITEM=$(echo "$READY_ITEMS" | jq -s '.[0] // empty' 2>/dev/null)
+    # Count items in ready column first
+    ISSUE_COUNT=$(echo "$READY_ITEMS" | jq -s 'length' 2>/dev/null)
 
-    if [ -z "$FIRST_ITEM" ] || [ "$FIRST_ITEM" = "null" ]; then
+    if [ -z "$READY_ITEMS" ] || [ "$ISSUE_COUNT" -eq 0 ]; then
+        ISSUE_COUNT=0
+        ISSUE_PRIORITY=""
+        return 1
+    fi
+
+    # If priority is enabled, sort by priority
+    if [ "$PRIORITY_ENABLED" = "true" ]; then
+        # Build a list of issue numbers with their priorities
+        local SORTED_ITEMS=""
+        local ITEM_NUMBERS=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null)
+
+        # Get priority for each item and store as "priority:number" pairs
+        local PRIORITY_LIST=""
+        for num in $ITEM_NUMBERS; do
+            local priority=$(get_issue_priority "$num")
+            PRIORITY_LIST="$PRIORITY_LIST$priority:$num "
+        done
+
+        # Sort by priority (numeric sort on first field)
+        # Format: "0:42 1:15 2:99 3:1" -> sorted -> pick first
+        local SORTED=$(echo "$PRIORITY_LIST" | tr ' ' '\n' | grep -v '^$' | sort -t: -k1 -n | head -1)
+        local HIGHEST_PRIORITY_NUM=$(echo "$SORTED" | cut -d: -f2)
+
+        if [ -n "$HIGHEST_PRIORITY_NUM" ]; then
+            ISSUE_NUMBER="$HIGHEST_PRIORITY_NUM"
+            ISSUE_PRIORITY=$(get_issue_priority "$ISSUE_NUMBER")
+        else
+            # Fallback to first item if sorting fails
+            ISSUE_NUMBER=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null | head -1)
+            ISSUE_PRIORITY=$(get_issue_priority "$ISSUE_NUMBER")
+        fi
+    else
+        # Priority disabled - use first item as before
+        ISSUE_NUMBER=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null | head -1)
+        ISSUE_PRIORITY=""
+        CURRENT_PRIORITY_NAME=""
+    fi
+
+    # Get full item details for the selected issue
+    local SELECTED_ITEM=$(echo "$READY_ITEMS" | jq -s --argjson num "$ISSUE_NUMBER" '.[] | select(.number == $num)' 2>/dev/null)
+
+    if [ -z "$SELECTED_ITEM" ] || [ "$SELECTED_ITEM" = "null" ]; then
         ISSUE_COUNT=0
         return 1
     fi
 
-    ISSUE_NUMBER=$(echo "$FIRST_ITEM" | jq -r '.number' 2>/dev/null)
-    ISSUE_TITLE=$(echo "$FIRST_ITEM" | jq -r '.title' 2>/dev/null)
-    ISSUE_URL=$(echo "$FIRST_ITEM" | jq -r '.url' 2>/dev/null)
-    ITEM_ID=$(echo "$FIRST_ITEM" | jq -r '.item_id' 2>/dev/null)
+    ISSUE_TITLE=$(echo "$SELECTED_ITEM" | jq -r '.title' 2>/dev/null)
+    ISSUE_URL=$(echo "$SELECTED_ITEM" | jq -r '.url' 2>/dev/null)
+    ITEM_ID=$(echo "$SELECTED_ITEM" | jq -r '.item_id' 2>/dev/null)
 
     # Get issue body
     ISSUE_BODY=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body -q '.body' 2>/dev/null || echo "No description")
-
-    # Count items in ready column
-    ISSUE_COUNT=$(echo "$READY_ITEMS" | jq -s 'length' 2>/dev/null)
 
     return 0
 }
@@ -3004,9 +3163,17 @@ while true; do
 
     CONSECUTIVE_EMPTY=0
 
-    log_success "Found issue #$ISSUE_NUMBER"
+    # Display task info with priority if enabled
+    if [ "$PRIORITY_ENABLED" = "true" ] && [ -n "$CURRENT_PRIORITY_NAME" ]; then
+        log_success "Found issue #$ISSUE_NUMBER (priority: $CURRENT_PRIORITY_NAME)"
+    else
+        log_success "Found issue #$ISSUE_NUMBER"
+    fi
     echo -e "${BLUE}   Title: ${NC}$ISSUE_TITLE"
     echo -e "${BLUE}   URL:   ${NC}$ISSUE_URL"
+    if [ "$PRIORITY_ENABLED" = "true" ] && [ -n "$CURRENT_PRIORITY_NAME" ]; then
+        echo -e "${BLUE}   Priority: ${NC}$CURRENT_PRIORITY_NAME"
+    fi
     log_info "Queue depth: $ISSUE_COUNT issue(s)"
 
     log_header "MOVING ISSUE #$ISSUE_NUMBER TO $IN_PROGRESS_COLUMN"
@@ -3016,8 +3183,8 @@ while true; do
         log_success "Moved to '$IN_PROGRESS_COLUMN'" || \
         log_warn "Could not move issue (continuing anyway)"
 
-    # Send task started notification
-    notify_task_started "$ISSUE_NUMBER" "$ISSUE_TITLE" "$ISSUE_URL"
+    # Send task started notification (include priority if enabled)
+    notify_task_started "$ISSUE_NUMBER" "$ISSUE_TITLE" "$ISSUE_URL" "$CURRENT_PRIORITY_NAME"
 
     # Auto-assign issue to current user
     if [ -n "$GITHUB_USERNAME" ]; then
@@ -3053,7 +3220,12 @@ while true; do
         }
     fi
 
-    log_header "STARTING CLAUDE CODE ON ISSUE #$ISSUE_NUMBER"
+    # Log header with priority if enabled
+    if [ "$PRIORITY_ENABLED" = "true" ] && [ -n "$CURRENT_PRIORITY_NAME" ]; then
+        log_header "STARTING CLAUDE CODE ON ISSUE #$ISSUE_NUMBER (priority: $CURRENT_PRIORITY_NAME)"
+    else
+        log_header "STARTING CLAUDE CODE ON ISSUE #$ISSUE_NUMBER"
+    fi
 
     echo -e "${DIM}Branch: $BRANCH_NAME${NC}\n"
 
