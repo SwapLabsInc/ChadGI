@@ -1,0 +1,49 @@
+{
+  "name": "chadgi",
+  "version": "1.0.0",
+  "description": "ChadGI - Autonomous Task Worker powered by Claude Code",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "chadgi": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build",
+    "self-improve": "./scripts/chadgi-self-improve.sh"
+  },
+  "files": [
+    "dist",
+    "scripts/chadgi.sh",
+    "templates",
+    "README.md",
+    "chad-gi.jpeg"
+  ],
+  "keywords": [
+    "claude",
+    "ai",
+    "automation",
+    "github",
+    "cli",
+    "task-runner",
+    "claude-code"
+  ],
+  "author": "Dan Hepworth",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SwapLabsInc/ChadGI"
+  }
+}
