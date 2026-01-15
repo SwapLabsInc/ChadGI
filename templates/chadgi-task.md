@@ -41,8 +41,8 @@ You are already on a fresh branch: **{{BRANCH_NAME}}** (created from {{BASE_BRAN
 6. **Commit** - Commit changes with clear, descriptive messages
 
 **Verification Commands** (run these before signaling ready):
-- Test: `{{TEST_COMMAND}}`
-- Build: `{{BUILD_COMMAND}}`
+- Test: `{{TEST_COMMAND}}` *(if empty, discover from package.json or project config)*
+- Build: `{{BUILD_COMMAND}}` *(if empty, discover from package.json or project config)*
 
 **DO NOT create a Pull Request yet.** The automated system will verify your changes first.
 
