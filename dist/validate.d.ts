@@ -3,6 +3,7 @@ interface ValidateOptions {
     quiet?: boolean;
     notifyTest?: boolean;
     strict?: boolean;
+    showMerged?: boolean;
 }
 interface TemplateVariableMatch {
     variable: string;

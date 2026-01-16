@@ -1,6 +1,14 @@
 # ChadGI Configuration
 # Autonomous task worker configuration
 
+# Config inheritance - extend from a base config file
+# Specify a relative or absolute path to a base config file
+# Local values override base config values (child takes precedence)
+# Supports chained inheritance (A extends B extends C)
+# extends: ../shared/chadgi-base.yaml
+# Or use base_config (alias for extends):
+# base_config: /path/to/base-config.yaml
+
 # Task source - where to get tasks from
 # Options: github-issues, local-file, manual
 task_source: github-issues

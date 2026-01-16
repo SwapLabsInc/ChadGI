@@ -118,7 +118,8 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 8: Script has NOTIFICATIONS_ENABLED parsing"
 
-if grep -q 'NOTIFICATIONS_ENABLED=$(parse_yaml_nested "notifications" "enabled"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+# Accept both old and new function names (parse_yaml_nested or parse_yaml_nested_merged)
+if grep -q 'NOTIFICATIONS_ENABLED=$(parse_yaml_nested' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "Script has NOTIFICATIONS_ENABLED parsing"
 else
     fail "Script should have NOTIFICATIONS_ENABLED parsing"

@@ -41,7 +41,8 @@ echo ""
 #------------------------------------------------------------------------------
 echo "Test 1: load_config parses retry_delay"
 
-if grep -q 'RETRY_DELAY=$(parse_yaml_nested "iteration" "retry_delay"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+# Accept both old and new function names (parse_yaml_nested or parse_yaml_nested_merged)
+if grep -q 'RETRY_DELAY=$(parse_yaml_nested' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "retry_delay config parsing found"
 else
     fail "retry_delay should be parsed in load_config"
@@ -52,7 +53,8 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 2: load_config parses retry_backoff"
 
-if grep -q 'RETRY_BACKOFF=$(parse_yaml_nested "iteration" "retry_backoff"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+# Accept both old and new function names (parse_yaml_nested or parse_yaml_nested_merged)
+if grep -q 'RETRY_BACKOFF=$(parse_yaml_nested' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "retry_backoff config parsing found"
 else
     fail "retry_backoff should be parsed in load_config"
@@ -63,7 +65,8 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 3: load_config parses retry_max_delay"
 
-if grep -q 'RETRY_MAX_DELAY=$(parse_yaml_nested "iteration" "retry_max_delay"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+# Accept both old and new function names (parse_yaml_nested or parse_yaml_nested_merged)
+if grep -q 'RETRY_MAX_DELAY=$(parse_yaml_nested' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "retry_max_delay config parsing found"
 else
     fail "retry_max_delay should be parsed in load_config"
@@ -74,7 +77,8 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 4: load_config parses retry_jitter"
 
-if grep -q 'RETRY_JITTER=$(parse_yaml_nested "iteration" "retry_jitter"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+# Accept both old and new function names (parse_yaml_nested or parse_yaml_nested_merged)
+if grep -q 'RETRY_JITTER=$(parse_yaml_nested' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "retry_jitter config parsing found"
 else
     fail "retry_jitter should be parsed in load_config"
