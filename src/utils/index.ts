@@ -59,25 +59,45 @@ export {
 
 // GitHub
 export {
+  // Retry configuration
+  RETRY_DEFAULTS,
+  sleep,
+  calculateBackoffDelay,
+  classifyError,
+  isRecoverableError,
+  // Basic execution
   execGh,
   execGhJson,
   safeExecGh,
   safeExecGhJson,
+  // Retry-aware execution
+  execGhWithRetry,
+  execGhJsonWithRetry,
+  safeExecGhWithRetry,
+  safeExecGhJsonWithRetry,
+  // Issue operations
   fetchIssue,
   fetchIssueTitle,
   fetchIssueBody,
   fetchIssueLabels,
   issueExists,
   addIssueLabel,
+  // PR operations
   fetchPrUrl,
   listOpenPrs,
+  // Project operations
   fetchProjectItems,
   fetchProjectFields,
   fetchProjects,
   moveProjectItem,
   addIssueToProject,
+  // Rate limit
   fetchRateLimit,
+  // Types
+  type RetryOptions,
+  type ErrorClassification,
   type ExecOptions,
+  type ExecWithRetryOptions,
   type IssueData,
   type PullRequestData,
   type ProjectItem,
