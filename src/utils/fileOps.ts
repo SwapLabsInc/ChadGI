@@ -12,6 +12,7 @@
 import { writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { isVerbose } from './debug.js';
+import type { DataSchema, ValidationResult } from './data-schema.js';
 
 /**
  * Default number of retry attempts for transient failures
@@ -344,7 +345,7 @@ function logJsonParseError(
 }
 
 /**
- * Safely parse JSON content with structured error logging.
+ * Safely parse JSON content with structured error logging and optional schema validation.
  *
  * Unlike JSON.parse which throws on invalid input, this function:
  * - Returns a typed result object indicating success or failure
@@ -352,9 +353,11 @@ function logJsonParseError(
  * - Shows additional details when --verbose/--debug flag is set
  * - Protects against exposing sensitive data in error logs
  * - Optionally returns a fallback value instead of a failure result
+ * - Optionally validates parsed data against a schema with bounds checking
+ * - Supports recovery of invalid fields using default values
  *
  * @param content - The JSON string to parse
- * @param options - Options for error logging and fallback behavior
+ * @param options - Options for error logging, validation, and fallback behavior
  * @returns A result object with either { success: true, data: T } or { success: false, error: string }
  *
  * @example
@@ -374,6 +377,14 @@ function logJsonParseError(
  * });
  * // result.success is always true when fallback is provided
  * // If parse fails, result.data is the fallback value
+ *
+ * // With schema validation
+ * import { SESSION_STATS_SCHEMA } from './data-schema.js';
+ * const result = safeParseJson<SessionStats>(content, {
+ *   filePath: '/path/to/stats.json',
+ *   schema: SESSION_STATS_SCHEMA,
+ *   recover: true,
+ * });
  * ```
  */
 export function safeParseJson<T>(
@@ -396,4 +407,71 @@ export function safeParseJson<T>(
 
     return { success: false, error: parseError.message };
   }
+}
+
+/**
+ * Parse and validate JSON content against a schema with recovery support.
+ *
+ * This is a convenience wrapper that combines JSON parsing with schema validation.
+ * It's designed for loading persisted data structures that need bounds checking.
+ *
+ * Note: This function requires validateSchema to be passed in to avoid circular
+ * dependency issues in ES modules. Use the version from data.ts which has
+ * proper imports configured.
+ *
+ * @param content - The JSON string to parse
+ * @param validateFn - The validateSchema function from data-schema module
+ * @param schema - The schema to validate against
+ * @param options - Options for validation and error handling
+ * @returns Validated data or null on failure
+ *
+ * @example
+ * ```typescript
+ * import { validateSchema, TASK_LOCK_DATA_SCHEMA } from './data-schema.js';
+ * const lockData = safeParseAndValidate<TaskLockData>(
+ *   content,
+ *   validateSchema,
+ *   TASK_LOCK_DATA_SCHEMA,
+ *   { filePath: lockPath }
+ * );
+ * if (lockData) {
+ *   // Use validated lock data
+ * }
+ * ```
+ */
+export function safeParseAndValidate<T>(
+  content: string,
+  validateFn: <U>(data: unknown, schema: DataSchema, opts?: { recover?: boolean; filePath?: string }) => ValidationResult<U>,
+  schema: DataSchema,
+  options: {
+    filePath?: string;
+    recover?: boolean;
+  } = {}
+): T | null {
+  const parseResult = safeParseJson<unknown>(content, {
+    filePath: options.filePath,
+  });
+
+  if (!parseResult.success) {
+    return null;
+  }
+
+  const validation = validateFn<T>(parseResult.data, schema, {
+    recover: options.recover !== false,
+    filePath: options.filePath,
+  });
+
+  if (!validation.valid) {
+    const errorMessages = validation.errors
+      .filter(e => !e.recovered)
+      .map(e => `${e.path}: ${e.message}`)
+      .join('; ');
+
+    const fileContext = options.filePath ? ` in ${options.filePath}` : '';
+    process.stderr.write(`[WARN] Schema validation failed for ${schema.name}${fileContext}: ${errorMessages}\n`);
+
+    return null;
+  }
+
+  return validation.data ?? null;
 }
