@@ -21,6 +21,7 @@
   },
   "files": [
     "dist",
+    "schemas",
     "scripts/chadgi.sh",
     "templates",
     "README.md",
