@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { hyperlink } from './utils/textui.js';
 function execCommand(command) {
     try {
         return execSync(command, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -105,7 +106,8 @@ export async function setupProject(options = {}) {
         console.log('Missing required options:', missingOptions.join(', '));
         console.log('');
         console.log('To add missing options manually:');
-        console.log(`1. Go to https://github.com/users/${owner}/projects/${projectNumber}/settings`);
+        const settingsUrl = `https://github.com/users/${owner}/projects/${projectNumber}/settings`;
+        console.log(`1. Go to ${hyperlink(settingsUrl)}`);
         console.log('2. Click on "Status" field');
         console.log('3. Add the following options:');
         for (const opt of missingOptions) {
@@ -125,6 +127,7 @@ export async function setupProject(options = {}) {
         console.log('2. Add the missing Status options via the GitHub web interface');
     }
     console.log('');
-    console.log(`Project URL: https://github.com/users/${owner}/projects/${projectNumber}`);
+    const projectUrl = `https://github.com/users/${owner}/projects/${projectNumber}`;
+    console.log(`Project URL: ${hyperlink(projectUrl)}`);
 }
 //# sourceMappingURL=setup-project.js.map

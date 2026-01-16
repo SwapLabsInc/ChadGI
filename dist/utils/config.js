@@ -472,6 +472,10 @@ export function loadConfigWithEnv(configPath, options = {}) {
         const truncateLength = parseYamlNested(content, 'output', 'truncate_length');
         if (truncateLength)
             output.truncate_length = parseInt(truncateLength, 10);
+        const hyperlinks = parseYamlNested(content, 'output', 'hyperlinks');
+        if (hyperlinks && ['auto', 'on', 'off'].includes(hyperlinks)) {
+            output.hyperlinks = hyperlinks;
+        }
         if (Object.keys(output).length > 0)
             config.output = output;
     }
@@ -532,6 +536,7 @@ export const SUPPORTED_ENV_CONFIG_PATHS = [
     'output.show_tool_details',
     'output.show_cost',
     'output.truncate_length',
+    'output.hyperlinks',
 ];
 /**
  * Get all supported environment variable names for a given prefix.

@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'fs';
 import { colors } from './utils/colors.js';
 import { parseYamlNested } from './utils/config.js';
 import { formatDuration, formatDate, formatCost, parseSince, horizontalLine, truncate } from './utils/formatting.js';
+import { coloredHyperlink } from './utils/textui.js';
 import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
 // Import middleware utilities
@@ -201,9 +202,10 @@ function printHistory(entries, total, sinceDate, statusFilter, _repo) {
         if (entry.outcome === 'failed' && entry.failureReason) {
             console.log(`  ${colors.red}Reason: ${entry.failureReason}${colors.reset}`);
         }
-        // PR URL if available
+        // PR URL if available (clickable if terminal supports hyperlinks)
         if (entry.prUrl) {
-            console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
+            const prLink = coloredHyperlink(entry.prUrl, entry.prUrl, 'blue');
+            console.log(`  PR: ${prLink}`);
         }
         console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
     }

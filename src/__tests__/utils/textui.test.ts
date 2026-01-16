@@ -21,6 +21,18 @@ import {
   keyValue,
   divider,
   type TableColumn,
+  // Hyperlink functions
+  isHyperlinkSupported,
+  clearHyperlinkCache,
+  setHyperlinkMode,
+  getHyperlinkMode,
+  shouldUseHyperlinks,
+  hyperlink,
+  coloredHyperlink,
+  githubIssueLink,
+  githubPrLink,
+  initHyperlinkModeFromConfig,
+  type HyperlinkMode,
 } from '../../utils/textui.js';
 import { colors } from '../../utils/colors.js';
 
@@ -817,6 +829,272 @@ describe('Convenience Functions', () => {
       const output = divider(10, '-', 'cyan');
 
       expect(output).toContain(colors.cyan);
+    });
+  });
+});
+
+// ============================================================================
+// Terminal Hyperlink Tests
+// ============================================================================
+
+describe('Terminal Hyperlinks', () => {
+  // Store original env to restore after tests
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    // Clear the hyperlink cache and reset mode before each test
+    clearHyperlinkCache();
+    setHyperlinkMode('auto');
+    // Reset environment variables
+    delete process.env.TERM_PROGRAM;
+    delete process.env.WT_SESSION;
+    delete process.env.VTE_VERSION;
+    delete process.env.TERM;
+    delete process.env.COLORTERM;
+    delete process.env.KONSOLE_VERSION;
+  });
+
+  afterAll(() => {
+    // Restore original environment
+    Object.assign(process.env, originalEnv);
+    clearHyperlinkCache();
+    setHyperlinkMode('auto');
+  });
+
+  describe('isHyperlinkSupported', () => {
+    it('should detect iTerm2', () => {
+      process.env.TERM_PROGRAM = 'iTerm.app';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(true);
+    });
+
+    it('should detect VS Code terminal', () => {
+      process.env.TERM_PROGRAM = 'vscode';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(true);
+    });
+
+    it('should detect Windows Terminal', () => {
+      process.env.WT_SESSION = 'some-session-id';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(true);
+    });
+
+    it('should detect GNOME Terminal via VTE_VERSION >= 5000', () => {
+      process.env.VTE_VERSION = '5000';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(true);
+    });
+
+    it('should not detect GNOME Terminal with older VTE_VERSION', () => {
+      process.env.VTE_VERSION = '4999';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(false);
+    });
+
+    it('should detect Kitty via TERM', () => {
+      process.env.TERM = 'xterm-kitty';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(true);
+    });
+
+    it('should return false when no supported terminal detected', () => {
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(false);
+    });
+
+    it('should cache the result', () => {
+      process.env.TERM_PROGRAM = 'iTerm.app';
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(true);
+
+      // Change env, but cache should still return true
+      delete process.env.TERM_PROGRAM;
+      expect(isHyperlinkSupported()).toBe(true);
+
+      // After clearing cache, should return false
+      clearHyperlinkCache();
+      expect(isHyperlinkSupported()).toBe(false);
+    });
+  });
+
+  describe('setHyperlinkMode / getHyperlinkMode', () => {
+    it('should default to auto', () => {
+      expect(getHyperlinkMode()).toBe('auto');
+    });
+
+    it('should set mode to on', () => {
+      setHyperlinkMode('on');
+      expect(getHyperlinkMode()).toBe('on');
+    });
+
+    it('should set mode to off', () => {
+      setHyperlinkMode('off');
+      expect(getHyperlinkMode()).toBe('off');
+    });
+
+    it('should set mode back to auto', () => {
+      setHyperlinkMode('on');
+      setHyperlinkMode('auto');
+      expect(getHyperlinkMode()).toBe('auto');
+    });
+  });
+
+  describe('shouldUseHyperlinks', () => {
+    it('should return true when mode is on', () => {
+      setHyperlinkMode('on');
+      expect(shouldUseHyperlinks()).toBe(true);
+    });
+
+    it('should return false when mode is off', () => {
+      setHyperlinkMode('off');
+      expect(shouldUseHyperlinks()).toBe(false);
+    });
+
+    it('should return detection result when mode is auto', () => {
+      setHyperlinkMode('auto');
+
+      // No terminal detected
+      clearHyperlinkCache();
+      expect(shouldUseHyperlinks()).toBe(false);
+
+      // With iTerm2 detected
+      process.env.TERM_PROGRAM = 'iTerm.app';
+      clearHyperlinkCache();
+      expect(shouldUseHyperlinks()).toBe(true);
+    });
+  });
+
+  describe('hyperlink', () => {
+    it('should return plain text when hyperlinks disabled', () => {
+      setHyperlinkMode('off');
+      const result = hyperlink('https://example.com', 'Example');
+      expect(result).toBe('Example');
+    });
+
+    it('should use URL as text when text not provided', () => {
+      setHyperlinkMode('off');
+      const result = hyperlink('https://example.com');
+      expect(result).toBe('https://example.com');
+    });
+
+    it('should wrap URL with OSC 8 when hyperlinks enabled', () => {
+      setHyperlinkMode('on');
+      const result = hyperlink('https://example.com', 'Example');
+
+      // Check for OSC 8 escape sequences
+      expect(result).toContain('\x1b]8;;https://example.com\x1b\\');
+      expect(result).toContain('Example');
+      expect(result).toContain('\x1b]8;;\x1b\\');
+    });
+
+    it('should include URL as text when not specified', () => {
+      setHyperlinkMode('on');
+      const result = hyperlink('https://example.com');
+
+      expect(result).toContain('https://example.com');
+    });
+  });
+
+  describe('coloredHyperlink', () => {
+    it('should return colored text without hyperlink when disabled', () => {
+      setHyperlinkMode('off');
+      const result = coloredHyperlink('https://example.com', 'Example', 'blue');
+
+      expect(result).toContain(colors.blue);
+      expect(result).toContain('Example');
+      expect(result).toContain(colors.reset);
+      expect(result).not.toContain('\x1b]8;;');
+    });
+
+    it('should return plain text when no color specified and hyperlinks disabled', () => {
+      setHyperlinkMode('off');
+      const result = coloredHyperlink('https://example.com', 'Example');
+      expect(result).toBe('Example');
+    });
+
+    it('should return colored hyperlink when enabled', () => {
+      setHyperlinkMode('on');
+      const result = coloredHyperlink('https://example.com', 'Example', 'green');
+
+      expect(result).toContain('\x1b]8;;https://example.com\x1b\\');
+      expect(result).toContain(colors.green);
+      expect(result).toContain('Example');
+    });
+  });
+
+  describe('githubIssueLink', () => {
+    it('should format as #number when hyperlinks disabled', () => {
+      setHyperlinkMode('off');
+      const result = githubIssueLink('https://github.com/owner/repo/issues/123', 123);
+      expect(result).toBe('#123');
+    });
+
+    it('should create hyperlink with #number text when enabled', () => {
+      setHyperlinkMode('on');
+      const result = githubIssueLink('https://github.com/owner/repo/issues/123', 123);
+
+      expect(result).toContain('\x1b]8;;https://github.com/owner/repo/issues/123\x1b\\');
+      expect(result).toContain('#123');
+    });
+  });
+
+  describe('githubPrLink', () => {
+    it('should format as PR-number when hyperlinks disabled', () => {
+      setHyperlinkMode('off');
+      const result = githubPrLink('https://github.com/owner/repo/pull/456', 456);
+
+      const stripped = stripAnsi(result);
+      expect(stripped).toBe('PR-456');
+    });
+
+    it('should extract PR number from URL if not provided', () => {
+      setHyperlinkMode('off');
+      const result = githubPrLink('https://github.com/owner/repo/pull/789');
+
+      const stripped = stripAnsi(result);
+      expect(stripped).toBe('PR-789');
+    });
+
+    it('should create colored hyperlink when enabled', () => {
+      setHyperlinkMode('on');
+      const result = githubPrLink('https://github.com/owner/repo/pull/456', 456);
+
+      expect(result).toContain('\x1b]8;;');
+      expect(result).toContain(colors.cyan);
+      expect(result).toContain('PR-456');
+    });
+  });
+
+  describe('initHyperlinkModeFromConfig', () => {
+    it('should set mode from config', () => {
+      initHyperlinkModeFromConfig({ output: { hyperlinks: 'on' } });
+      expect(getHyperlinkMode()).toBe('on');
+
+      initHyperlinkModeFromConfig({ output: { hyperlinks: 'off' } });
+      expect(getHyperlinkMode()).toBe('off');
+
+      initHyperlinkModeFromConfig({ output: { hyperlinks: 'auto' } });
+      expect(getHyperlinkMode()).toBe('auto');
+    });
+
+    it('should not change mode if config is undefined', () => {
+      setHyperlinkMode('on');
+      initHyperlinkModeFromConfig(undefined);
+      expect(getHyperlinkMode()).toBe('on');
+    });
+
+    it('should not change mode if output.hyperlinks is undefined', () => {
+      setHyperlinkMode('off');
+      initHyperlinkModeFromConfig({ output: {} });
+      expect(getHyperlinkMode()).toBe('off');
+    });
+
+    it('should ignore invalid mode values', () => {
+      setHyperlinkMode('auto');
+      // Type assertion to test runtime behavior with invalid value
+      initHyperlinkModeFromConfig({ output: { hyperlinks: 'invalid' as HyperlinkMode } });
+      expect(getHyperlinkMode()).toBe('auto');
     });
   });
 });

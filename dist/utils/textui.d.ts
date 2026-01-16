@@ -6,6 +6,107 @@
  */
 import { type ColorName } from './colors.js';
 /**
+ * Hyperlink mode setting.
+ * - 'auto': Detect terminal support automatically
+ * - 'on': Always use hyperlinks
+ * - 'off': Never use hyperlinks (plain text)
+ */
+export type HyperlinkMode = 'auto' | 'on' | 'off';
+/**
+ * Detect if the terminal supports OSC 8 hyperlinks.
+ *
+ * Checks environment variables for known terminal emulators that support
+ * clickable hyperlinks:
+ * - iTerm2, Apple Terminal, Hyper, VS Code (via TERM_PROGRAM)
+ * - Windows Terminal (via WT_SESSION)
+ * - GNOME Terminal 3.26+ (via VTE_VERSION >= 5000)
+ * - Kitty, Alacritty, WezTerm (via TERM_PROGRAM or TERM)
+ *
+ * @returns true if hyperlinks are supported, false otherwise
+ */
+export declare function isHyperlinkSupported(): boolean;
+/**
+ * Clear the hyperlink support cache.
+ * Useful for testing or when terminal environment changes.
+ */
+export declare function clearHyperlinkCache(): void;
+/**
+ * Set the hyperlink mode.
+ *
+ * @param mode - 'auto', 'on', or 'off'
+ */
+export declare function setHyperlinkMode(mode: HyperlinkMode): void;
+/**
+ * Get the current hyperlink mode.
+ *
+ * @returns The current hyperlink mode setting
+ */
+export declare function getHyperlinkMode(): HyperlinkMode;
+/**
+ * Check if hyperlinks should be used based on current mode and terminal support.
+ *
+ * @returns true if hyperlinks should be rendered, false for plain text
+ */
+export declare function shouldUseHyperlinks(): boolean;
+/**
+ * Create a terminal hyperlink using OSC 8 escape sequences.
+ *
+ * The OSC 8 format is: \e]8;;URL\e\\TEXT\e]8;;\e\\
+ * Where:
+ * - \e]8;; starts the hyperlink with the URL
+ * - \e\\ (or \x07) terminates the URL/parameter section
+ * - TEXT is the visible text
+ * - \e]8;;\e\\ ends the hyperlink
+ *
+ * @param url - The URL to link to
+ * @param text - The visible text (defaults to the URL)
+ * @returns The formatted hyperlink string, or plain text if hyperlinks disabled
+ */
+export declare function hyperlink(url: string, text?: string): string;
+/**
+ * Create a colored terminal hyperlink.
+ *
+ * Combines hyperlink functionality with color formatting.
+ * The color is applied to the visible text portion.
+ *
+ * @param url - The URL to link to
+ * @param text - The visible text (defaults to the URL)
+ * @param color - The color to apply to the text
+ * @returns The formatted colored hyperlink string
+ */
+export declare function coloredHyperlink(url: string, text?: string, color?: ColorName): string;
+/**
+ * Create a GitHub issue/PR URL hyperlink.
+ *
+ * Convenience function for creating hyperlinks to GitHub issues or PRs.
+ *
+ * @param url - The GitHub URL
+ * @param issueNumber - The issue/PR number to display
+ * @returns Formatted hyperlink showing #number that links to the URL
+ */
+export declare function githubIssueLink(url: string, issueNumber: number): string;
+/**
+ * Create a GitHub PR URL hyperlink with PR styling.
+ *
+ * @param url - The GitHub PR URL
+ * @param prNumber - The PR number (optional, extracted from URL if not provided)
+ * @returns Formatted hyperlink showing PR-xxx that links to the URL
+ */
+export declare function githubPrLink(url: string, prNumber?: number): string;
+/**
+ * Initialize hyperlink mode from ChadGI config.
+ *
+ * Call this function after loading the config to set the hyperlink mode
+ * based on the output.hyperlinks configuration option.
+ *
+ * @param config - Object with optional output.hyperlinks setting
+ */
+export declare function initHyperlinkModeFromConfig(config?: {
+    output?: {
+        hyperlinks?: HyperlinkMode;
+    };
+}): void;
+/**
  * Get terminal width, falling back to 80 if not available.
  */
 export declare function getTerminalWidth(): number;
