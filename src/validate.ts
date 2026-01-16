@@ -11,6 +11,7 @@ interface ValidateOptions {
   quiet?: boolean;
   notifyTest?: boolean;
   strict?: boolean;
+  showMerged?: boolean;
 }
 
 interface ValidationResult {
@@ -66,6 +67,174 @@ function parseYamlNested(content: string, parent: string, key: string): string |
     }
   }
   return null;
+}
+
+// Config inheritance support
+
+interface ConfigChainResult {
+  configFiles: string[];
+  error: string | null;
+}
+
+function getExtendsPath(configContent: string): string | null {
+  // Check for 'extends' field first, then 'base_config'
+  let extendsValue = parseYamlValue(configContent, 'extends');
+  if (!extendsValue) {
+    extendsValue = parseYamlValue(configContent, 'base_config');
+  }
+  return extendsValue;
+}
+
+function resolveConfigPath(baseDir: string, configPath: string): string {
+  if (!configPath) return '';
+  if (configPath.startsWith('/')) {
+    return configPath; // Absolute path
+  }
+  return join(baseDir, configPath); // Relative path
+}
+
+function loadConfigChain(configPath: string, visited: Set<string> = new Set()): ConfigChainResult {
+  const resolvedPath = resolve(configPath);
+
+  // Cycle detection
+  if (visited.has(resolvedPath)) {
+    return {
+      configFiles: [],
+      error: `Circular inheritance detected: ${resolvedPath} was already visited`
+    };
+  }
+
+  // Check if file exists
+  if (!existsSync(resolvedPath)) {
+    return {
+      configFiles: [],
+      error: `Config file not found: ${resolvedPath}`
+    };
+  }
+
+  visited.add(resolvedPath);
+
+  const configContent = readFileSync(resolvedPath, 'utf-8');
+  const extendsValue = getExtendsPath(configContent);
+
+  if (extendsValue) {
+    // Resolve the base config path relative to current config's directory
+    const baseConfigPath = resolveConfigPath(dirname(resolvedPath), extendsValue);
+
+    // Recursively load the base config
+    const baseResult = loadConfigChain(baseConfigPath, visited);
+    if (baseResult.error) {
+      return {
+        configFiles: [],
+        error: `${baseResult.error}\n  Referenced from: ${resolvedPath}`
+      };
+    }
+
+    // Return base configs first, then current config
+    return {
+      configFiles: [...baseResult.configFiles, resolvedPath],
+      error: null
+    };
+  }
+
+  // No inheritance, just return this config
+  return {
+    configFiles: [resolvedPath],
+    error: null
+  };
+}
+
+interface MergedConfig {
+  [key: string]: string | MergedConfig | null;
+}
+
+function mergeConfigs(configFiles: string[]): MergedConfig {
+  const merged: MergedConfig = {};
+
+  for (const configFile of configFiles) {
+    const content = readFileSync(configFile, 'utf-8');
+    const lines = content.split('\n');
+
+    let currentSection: string | null = null;
+    let currentSubsection: string | null = null;
+
+    for (const line of lines) {
+      // Skip empty lines and comments
+      if (!line.trim() || line.trim().startsWith('#')) continue;
+
+      // Top-level key (no indentation)
+      const topLevelMatch = line.match(/^([a-z_]+):\s*(.*)$/);
+      if (topLevelMatch) {
+        currentSection = topLevelMatch[1];
+        currentSubsection = null;
+        const value = topLevelMatch[2].replace(/["']/g, '').replace(/#.*$/, '').trim();
+        if (value && currentSection !== 'extends' && currentSection !== 'base_config') {
+          merged[currentSection] = value;
+        } else if (!value && currentSection !== 'extends' && currentSection !== 'base_config') {
+          // Object value - initialize if not exists
+          if (!merged[currentSection] || typeof merged[currentSection] !== 'object') {
+            merged[currentSection] = {};
+          }
+        }
+        continue;
+      }
+
+      // First-level nested key (2 spaces)
+      const nestedMatch = line.match(/^  ([a-z_]+):\s*(.*)$/);
+      if (nestedMatch && currentSection) {
+        currentSubsection = nestedMatch[1];
+        const value = nestedMatch[2].replace(/["']/g, '').replace(/#.*$/, '').trim();
+        if (typeof merged[currentSection] !== 'object' || merged[currentSection] === null) {
+          merged[currentSection] = {};
+        }
+        if (value) {
+          (merged[currentSection] as MergedConfig)[currentSubsection] = value;
+        } else {
+          // Object value
+          if (!(merged[currentSection] as MergedConfig)[currentSubsection] ||
+              typeof (merged[currentSection] as MergedConfig)[currentSubsection] !== 'object') {
+            (merged[currentSection] as MergedConfig)[currentSubsection] = {};
+          }
+        }
+        continue;
+      }
+
+      // Second-level nested key (4 spaces)
+      const deepNestedMatch = line.match(/^    ([a-z_]+):\s*(.*)$/);
+      if (deepNestedMatch && currentSection && currentSubsection) {
+        const key = deepNestedMatch[1];
+        const value = deepNestedMatch[2].replace(/["']/g, '').replace(/#.*$/, '').trim();
+        if (typeof merged[currentSection] === 'object' && merged[currentSection] !== null) {
+          const section = merged[currentSection] as MergedConfig;
+          if (typeof section[currentSubsection] !== 'object' || section[currentSubsection] === null) {
+            section[currentSubsection] = {};
+          }
+          (section[currentSubsection] as MergedConfig)[key] = value || null;
+        }
+      }
+    }
+  }
+
+  return merged;
+}
+
+function formatMergedConfig(merged: MergedConfig, indent: number = 0): string {
+  const lines: string[] = [];
+  const prefix = '  '.repeat(indent);
+
+  for (const [key, value] of Object.entries(merged)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    if (typeof value === 'object') {
+      lines.push(`${prefix}${key}:`);
+      lines.push(formatMergedConfig(value as MergedConfig, indent + 1));
+    } else {
+      lines.push(`${prefix}${key}: ${value}`);
+    }
+  }
+
+  return lines.filter(l => l.trim()).join('\n');
 }
 
 // Valid template variables as documented in README.md
@@ -255,7 +424,7 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
     console.log('Checking configuration:\n');
   }
 
-  // Check config file exists
+  // Check config file exists and validate inheritance chain
   if (existsSync(configPath)) {
     results.push({
       name: 'config file',
@@ -266,12 +435,61 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
       console.log(`\x1b[32m+\x1b[0m Config file found: ${configPath}`);
     }
 
-    // Parse and validate config
+    // Load and validate config inheritance chain
+    const chainResult = loadConfigChain(configPath);
+    let configFiles: string[] = [];
+
+    if (chainResult.error) {
+      results.push({
+        name: 'config inheritance',
+        status: 'error',
+        message: chainResult.error
+      });
+      if (!quiet) {
+        console.log(`\x1b[31mx\x1b[0m Config inheritance error:`);
+        console.log(`    ${chainResult.error.replace(/\n/g, '\n    ')}`);
+      }
+    } else {
+      configFiles = chainResult.configFiles;
+
+      if (configFiles.length > 1) {
+        results.push({
+          name: 'config inheritance',
+          status: 'ok',
+          message: `${configFiles.length} config files in chain`
+        });
+        if (!quiet) {
+          console.log(`\x1b[32m+\x1b[0m Config inheritance chain (${configFiles.length} files):`);
+          for (const cfg of configFiles) {
+            console.log(`    - ${cfg}`);
+          }
+        }
+      }
+    }
+
+    // Show merged config if requested
+    if (options.showMerged && configFiles.length > 0) {
+      console.log('');
+      console.log('Merged configuration:\n');
+      const merged = mergeConfigs(configFiles);
+      console.log(formatMergedConfig(merged));
+      console.log('');
+    }
+
+    // Parse and validate config (using merged values from all config files)
+    // For simplicity, read the primary config for now
     const configContent = readFileSync(configPath, 'utf-8');
 
-    // Check required fields
-    const repo = parseYamlNested(configContent, 'github', 'repo');
-    const projectNumber = parseYamlNested(configContent, 'github', 'project_number');
+    // Check required fields (using merged config chain)
+    let repo: string | null = null;
+    let projectNumber: string | null = null;
+    for (const cfg of configFiles) {
+      const content = readFileSync(cfg, 'utf-8');
+      const cfgRepo = parseYamlNested(content, 'github', 'repo');
+      const cfgProjectNumber = parseYamlNested(content, 'github', 'project_number');
+      if (cfgRepo) repo = cfgRepo;
+      if (cfgProjectNumber) projectNumber = cfgProjectNumber;
+    }
 
     if (repo && repo !== 'owner/repo') {
       results.push({

@@ -317,7 +317,218 @@ parse_priority_labels() {
     ' "$FILE" 2>/dev/null || echo ""
 }
 
+#------------------------------------------------------------------------------
+# Config Inheritance Support
+#------------------------------------------------------------------------------
+
+# Global array to track config chain for cycle detection
+declare -a CONFIG_CHAIN=()
+
+# Check if a config file is already in the chain (cycle detection)
+config_in_chain() {
+    local config_path=$1
+    local resolved_path
+    resolved_path=$(cd "$(dirname "$config_path")" 2>/dev/null && pwd)/$(basename "$config_path") 2>/dev/null || resolved_path="$config_path"
+
+    for chain_path in "${CONFIG_CHAIN[@]}"; do
+        if [ "$chain_path" = "$resolved_path" ]; then
+            return 0  # Found in chain (cycle detected)
+        fi
+    done
+    return 1  # Not in chain
+}
+
+# Add a config to the chain
+add_to_chain() {
+    local config_path=$1
+    local resolved_path
+    resolved_path=$(cd "$(dirname "$config_path")" 2>/dev/null && pwd)/$(basename "$config_path") 2>/dev/null || resolved_path="$config_path"
+    CONFIG_CHAIN+=("$resolved_path")
+}
+
+# Get the extends/base_config value from a config file
+get_extends_path() {
+    local config_file=$1
+    local extends_value
+
+    # Check for 'extends' field first, then 'base_config'
+    extends_value=$(parse_yaml_value "extends" "$config_file")
+    if [ -z "$extends_value" ]; then
+        extends_value=$(parse_yaml_value "base_config" "$config_file")
+    fi
+
+    echo "$extends_value"
+}
+
+# Resolve a potentially relative path to an absolute path
+# relative paths are resolved from the directory containing the config file
+resolve_config_path() {
+    local base_dir=$1
+    local path=$2
+
+    if [ -z "$path" ]; then
+        echo ""
+        return
+    fi
+
+    if [[ "$path" == /* ]]; then
+        # Absolute path
+        echo "$path"
+    else
+        # Relative path - resolve from base_dir
+        echo "$base_dir/$path"
+    fi
+}
+
+# Load all config files in the inheritance chain and return merged values
+# This recursively loads base configs first, then overlays child configs
+# Returns: sets global MERGED_CONFIG_FILES array with paths in load order
+declare -a MERGED_CONFIG_FILES=()
+
+load_config_chain() {
+    local config_file=$1
+    local config_dir
+    config_dir=$(dirname "$config_file")
+
+    # Check if file exists
+    if [ ! -f "$config_file" ]; then
+        log_error "Config file not found: $config_file"
+        return 1
+    fi
+
+    # Check for cycles
+    if config_in_chain "$config_file"; then
+        log_error "Circular inheritance detected in config files!"
+        log_error "Config chain: ${CONFIG_CHAIN[*]} -> $config_file"
+        return 1
+    fi
+
+    # Add to chain
+    add_to_chain "$config_file"
+
+    # Get extends value
+    local extends_value
+    extends_value=$(get_extends_path "$config_file")
+
+    if [ -n "$extends_value" ]; then
+        # Resolve the path relative to current config's directory
+        local base_config_path
+        base_config_path=$(resolve_config_path "$config_dir" "$extends_value")
+
+        if [ ! -f "$base_config_path" ]; then
+            log_error "Base config file not found: $base_config_path"
+            log_error "Referenced from: $config_file"
+            return 1
+        fi
+
+        # Recursively load the base config first
+        load_config_chain "$base_config_path" || return 1
+    fi
+
+    # Add current config to the merged list (base configs come first)
+    MERGED_CONFIG_FILES+=("$config_file")
+
+    return 0
+}
+
+# Parse a value from multiple config files, returning the last (most specific) value
+# This implements the "child overrides parent" merge strategy
+parse_yaml_value_merged() {
+    local KEY=$1
+    shift
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_yaml_value "$KEY" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
+# Parse a nested value from multiple config files
+parse_yaml_nested_merged() {
+    local PARENT=$1
+    local KEY=$2
+    shift 2
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_yaml_nested "$PARENT" "$KEY" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
+# Parse a deeply nested value from multiple config files
+parse_yaml_nested_deep_merged() {
+    local GRANDPARENT=$1
+    local PARENT=$2
+    local KEY=$3
+    shift 3
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_yaml_nested_deep "$GRANDPARENT" "$PARENT" "$KEY" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
+# Parse events from multiple config files
+parse_yaml_nested_events_merged() {
+    local GRANDPARENT=$1
+    local PARENT=$2
+    local KEY=$3
+    shift 3
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_yaml_nested_events "$GRANDPARENT" "$PARENT" "$KEY" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
+# Parse priority labels from multiple config files
+parse_priority_labels_merged() {
+    local LEVEL=$1
+    shift
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_priority_labels "$LEVEL" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
 # Load configuration from YAML file
+# Supports config inheritance via 'extends' or 'base_config' field
 load_config() {
     if [ ! -f "$CONFIG_FILE" ]; then
         log_warn "Config file not found: $CONFIG_FILE"
@@ -328,67 +539,86 @@ load_config() {
 
     log_step "Loading configuration from $CONFIG_FILE"
 
+    # Reset inheritance tracking arrays
+    CONFIG_CHAIN=()
+    MERGED_CONFIG_FILES=()
+
+    # Load the config chain (handles inheritance recursively)
+    if ! load_config_chain "$CONFIG_FILE"; then
+        log_error "Failed to load configuration chain"
+        set_defaults
+        return 1
+    fi
+
+    # Log inheritance chain if multiple configs
+    if [ ${#MERGED_CONFIG_FILES[@]} -gt 1 ]; then
+        log_info "Config inheritance chain (${#MERGED_CONFIG_FILES[@]} files):"
+        for cfg in "${MERGED_CONFIG_FILES[@]}"; do
+            log_info "  - $cfg"
+        done
+    fi
+
     # Task source
-    TASK_SOURCE=$(parse_yaml_value "task_source" "$CONFIG_FILE")
+    TASK_SOURCE=$(parse_yaml_value_merged "task_source" "${MERGED_CONFIG_FILES[@]}")
     TASK_SOURCE="${TASK_SOURCE:-github-issues}"
 
     # Template files - relative to CHADGI_DIR
-    PROMPT_TEMPLATE=$(parse_yaml_value "prompt_template" "$CONFIG_FILE")
+    PROMPT_TEMPLATE=$(parse_yaml_value_merged "prompt_template" "${MERGED_CONFIG_FILES[@]}")
     PROMPT_TEMPLATE="${PROMPT_TEMPLATE:-./chadgi-task.md}"
-    GENERATE_TEMPLATE=$(parse_yaml_value "generate_template" "$CONFIG_FILE")
+    GENERATE_TEMPLATE=$(parse_yaml_value_merged "generate_template" "${MERGED_CONFIG_FILES[@]}")
     GENERATE_TEMPLATE="${GENERATE_TEMPLATE:-./chadgi-generate-task.md}"
-    PROGRESS_FILE=$(parse_yaml_value "progress_file" "$CONFIG_FILE")
+    PROGRESS_FILE=$(parse_yaml_value_merged "progress_file" "${MERGED_CONFIG_FILES[@]}")
     PROGRESS_FILE="${PROGRESS_FILE:-./chadgi-progress.json}"
 
     # GitHub settings
-    REPO=$(parse_yaml_nested "github" "repo" "$CONFIG_FILE")
+    REPO=$(parse_yaml_nested_merged "github" "repo" "${MERGED_CONFIG_FILES[@]}")
     REPO="${REPO:-owner/repo}"
     REPO_OWNER="${REPO%%/*}"
-    PROJECT_NUMBER=$(parse_yaml_nested "github" "project_number" "$CONFIG_FILE")
+    PROJECT_NUMBER=$(parse_yaml_nested_merged "github" "project_number" "${MERGED_CONFIG_FILES[@]}")
     PROJECT_NUMBER="${PROJECT_NUMBER:-1}"
 
     # Project board column names
-    READY_COLUMN=$(parse_yaml_nested "github" "ready_column" "$CONFIG_FILE")
+    READY_COLUMN=$(parse_yaml_nested_merged "github" "ready_column" "${MERGED_CONFIG_FILES[@]}")
     READY_COLUMN="${READY_COLUMN:-Ready}"
-    IN_PROGRESS_COLUMN=$(parse_yaml_nested "github" "in_progress_column" "$CONFIG_FILE")
+    IN_PROGRESS_COLUMN=$(parse_yaml_nested_merged "github" "in_progress_column" "${MERGED_CONFIG_FILES[@]}")
     IN_PROGRESS_COLUMN="${IN_PROGRESS_COLUMN:-In Progress}"
-    REVIEW_COLUMN=$(parse_yaml_nested "github" "review_column" "$CONFIG_FILE")
+    REVIEW_COLUMN=$(parse_yaml_nested_merged "github" "review_column" "${MERGED_CONFIG_FILES[@]}")
     REVIEW_COLUMN="${REVIEW_COLUMN:-In Review}"
-    DONE_COLUMN=$(parse_yaml_nested "github" "done_column" "$CONFIG_FILE")
+    DONE_COLUMN=$(parse_yaml_nested_merged "github" "done_column" "${MERGED_CONFIG_FILES[@]}")
     DONE_COLUMN="${DONE_COLUMN:-Done}"
 
     # Branch settings
-    BASE_BRANCH=$(parse_yaml_nested "branch" "base" "$CONFIG_FILE")
+    BASE_BRANCH=$(parse_yaml_nested_merged "branch" "base" "${MERGED_CONFIG_FILES[@]}")
     BASE_BRANCH="${BASE_BRANCH:-main}"
-    BRANCH_PREFIX=$(parse_yaml_nested "branch" "prefix" "$CONFIG_FILE")
+    BRANCH_PREFIX=$(parse_yaml_nested_merged "branch" "prefix" "${MERGED_CONFIG_FILES[@]}")
     BRANCH_PREFIX="${BRANCH_PREFIX:-feature/issue-}"
 
     # Polling settings
-    POLL_INTERVAL=$(parse_yaml_value "poll_interval" "$CONFIG_FILE")
+    POLL_INTERVAL=$(parse_yaml_value_merged "poll_interval" "${MERGED_CONFIG_FILES[@]}")
     POLL_INTERVAL="${POLL_INTERVAL:-10}"
-    CONSECUTIVE_EMPTY_THRESHOLD=$(parse_yaml_value "consecutive_empty_threshold" "$CONFIG_FILE")
+    CONSECUTIVE_EMPTY_THRESHOLD=$(parse_yaml_value_merged "consecutive_empty_threshold" "${MERGED_CONFIG_FILES[@]}")
     CONSECUTIVE_EMPTY_THRESHOLD="${CONSECUTIVE_EMPTY_THRESHOLD:-2}"
 
     # On empty queue behavior
-    ON_EMPTY_QUEUE=$(parse_yaml_value "on_empty_queue" "$CONFIG_FILE")
+    ON_EMPTY_QUEUE=$(parse_yaml_value_merged "on_empty_queue" "${MERGED_CONFIG_FILES[@]}")
     ON_EMPTY_QUEUE="${ON_EMPTY_QUEUE:-generate}"
 
     # Output settings
-    SHOW_TOOL_DETAILS=$(parse_yaml_nested "output" "show_tool_details" "$CONFIG_FILE")
+    SHOW_TOOL_DETAILS=$(parse_yaml_nested_merged "output" "show_tool_details" "${MERGED_CONFIG_FILES[@]}")
     SHOW_TOOL_DETAILS="${SHOW_TOOL_DETAILS:-true}"
-    SHOW_COST=$(parse_yaml_nested "output" "show_cost" "$CONFIG_FILE")
+    SHOW_COST=$(parse_yaml_nested_merged "output" "show_cost" "${MERGED_CONFIG_FILES[@]}")
     SHOW_COST="${SHOW_COST:-true}"
-    TRUNCATE_LENGTH=$(parse_yaml_nested "output" "truncate_length" "$CONFIG_FILE")
+    TRUNCATE_LENGTH=$(parse_yaml_nested_merged "output" "truncate_length" "${MERGED_CONFIG_FILES[@]}")
     TRUNCATE_LENGTH="${TRUNCATE_LENGTH:-60}"
 
     # Logging settings
-    local CONFIG_LOG_LEVEL=$(parse_yaml_nested "output" "log_level" "$CONFIG_FILE")
+    local CONFIG_LOG_LEVEL=$(parse_yaml_nested_merged "output" "log_level" "${MERGED_CONFIG_FILES[@]}")
     CONFIG_LOG_LEVEL="${CONFIG_LOG_LEVEL:-INFO}"
-    local CONFIG_LOG_FILE=$(parse_yaml_nested "output" "log_file" "$CONFIG_FILE")
+    local CONFIG_LOG_FILE=$(parse_yaml_nested_merged "output" "log_file" "${MERGED_CONFIG_FILES[@]}")
     CONFIG_LOG_FILE="${CONFIG_LOG_FILE:-./chadgi.log}"
-    LOG_FILE_MAX_SIZE_MB=$(parse_yaml_nested "output" "max_log_size_mb" "$CONFIG_FILE")
+    LOG_FILE_MAX_SIZE_MB=$(parse_yaml_nested_merged "output" "max_log_size_mb" "${MERGED_CONFIG_FILES[@]}")
     LOG_FILE_MAX_SIZE_MB="${LOG_FILE_MAX_SIZE_MB:-10}"
-    LOG_FILE_MAX_COUNT=$(parse_yaml_nested "output" "max_log_files" "$CONFIG_FILE")
+    LOG_FILE_MAX_COUNT=$(parse_yaml_nested_merged "output" "max_log_files" "${MERGED_CONFIG_FILES[@]}")
     LOG_FILE_MAX_COUNT="${LOG_FILE_MAX_COUNT:-5}"
 
     # Set log level (DEBUG_MODE from CLI overrides config)
@@ -406,123 +636,123 @@ load_config() {
     fi
 
     # Branding settings - Chad does what Chad wants
-    ISSUE_PREFIX=$(parse_yaml_nested "branding" "issue_prefix" "$CONFIG_FILE")
+    ISSUE_PREFIX=$(parse_yaml_nested_merged "branding" "issue_prefix" "${MERGED_CONFIG_FILES[@]}")
     ISSUE_PREFIX="${ISSUE_PREFIX:-[CHAD]}"
-    CHAD_LABEL=$(parse_yaml_nested "branding" "label" "$CONFIG_FILE")
+    CHAD_LABEL=$(parse_yaml_nested_merged "branding" "label" "${MERGED_CONFIG_FILES[@]}")
     CHAD_LABEL="${CHAD_LABEL:-touched-by-chad}"
-    INCLUDE_FOOTER=$(parse_yaml_nested "branding" "include_footer" "$CONFIG_FILE")
+    INCLUDE_FOOTER=$(parse_yaml_nested_merged "branding" "include_footer" "${MERGED_CONFIG_FILES[@]}")
     INCLUDE_FOOTER="${INCLUDE_FOOTER:-true}"
-    CHAD_TAGLINE=$(parse_yaml_nested "branding" "tagline" "$CONFIG_FILE")
+    CHAD_TAGLINE=$(parse_yaml_nested_merged "branding" "tagline" "${MERGED_CONFIG_FILES[@]}")
     CHAD_TAGLINE="${CHAD_TAGLINE:-Chad does what Chad wants.}"
 
     # Iteration settings (the core ChadGI pattern)
-    MAX_ITERATIONS=$(parse_yaml_nested "iteration" "max_iterations" "$CONFIG_FILE")
+    MAX_ITERATIONS=$(parse_yaml_nested_merged "iteration" "max_iterations" "${MERGED_CONFIG_FILES[@]}")
     MAX_ITERATIONS="${MAX_ITERATIONS:-5}"
-    COMPLETION_PROMISE=$(parse_yaml_nested "iteration" "completion_promise" "$CONFIG_FILE")
+    COMPLETION_PROMISE=$(parse_yaml_nested_merged "iteration" "completion_promise" "${MERGED_CONFIG_FILES[@]}")
     COMPLETION_PROMISE="${COMPLETION_PROMISE:-COMPLETE}"
-    READY_PROMISE=$(parse_yaml_nested "iteration" "ready_promise" "$CONFIG_FILE")
+    READY_PROMISE=$(parse_yaml_nested_merged "iteration" "ready_promise" "${MERGED_CONFIG_FILES[@]}")
     READY_PROMISE="${READY_PROMISE:-READY_FOR_PR}"
-    TEST_COMMAND=$(parse_yaml_nested "iteration" "test_command" "$CONFIG_FILE")
+    TEST_COMMAND=$(parse_yaml_nested_merged "iteration" "test_command" "${MERGED_CONFIG_FILES[@]}")
     TEST_COMMAND="${TEST_COMMAND:-}"
-    BUILD_COMMAND=$(parse_yaml_nested "iteration" "build_command" "$CONFIG_FILE")
+    BUILD_COMMAND=$(parse_yaml_nested_merged "iteration" "build_command" "${MERGED_CONFIG_FILES[@]}")
     BUILD_COMMAND="${BUILD_COMMAND:-}"
-    ON_MAX_ITERATIONS=$(parse_yaml_nested "iteration" "on_max_iterations" "$CONFIG_FILE")
+    ON_MAX_ITERATIONS=$(parse_yaml_nested_merged "iteration" "on_max_iterations" "${MERGED_CONFIG_FILES[@]}")
     ON_MAX_ITERATIONS="${ON_MAX_ITERATIONS:-skip}"
-    GIGACHAD_MODE=$(parse_yaml_nested "iteration" "gigachad_mode" "$CONFIG_FILE")
+    GIGACHAD_MODE=$(parse_yaml_nested_merged "iteration" "gigachad_mode" "${MERGED_CONFIG_FILES[@]}")
     GIGACHAD_MODE="${GIGACHAD_MODE:-false}"
-    GIGACHAD_COMMIT_PREFIX=$(parse_yaml_nested "iteration" "gigachad_commit_prefix" "$CONFIG_FILE")
+    GIGACHAD_COMMIT_PREFIX=$(parse_yaml_nested_merged "iteration" "gigachad_commit_prefix" "${MERGED_CONFIG_FILES[@]}")
     GIGACHAD_COMMIT_PREFIX="${GIGACHAD_COMMIT_PREFIX:-[GIGACHAD]}"
 
     # Task timeout (in minutes, 0 = no timeout)
-    TASK_TIMEOUT=$(parse_yaml_nested "iteration" "task_timeout" "$CONFIG_FILE")
+    TASK_TIMEOUT=$(parse_yaml_nested_merged "iteration" "task_timeout" "${MERGED_CONFIG_FILES[@]}")
     TASK_TIMEOUT="${TASK_TIMEOUT:-30}"
 
     # Retry settings
-    RETRY_DELAY=$(parse_yaml_nested "iteration" "retry_delay" "$CONFIG_FILE")
+    RETRY_DELAY=$(parse_yaml_nested_merged "iteration" "retry_delay" "${MERGED_CONFIG_FILES[@]}")
     RETRY_DELAY="${RETRY_DELAY:-5}"
-    RETRY_BACKOFF=$(parse_yaml_nested "iteration" "retry_backoff" "$CONFIG_FILE")
+    RETRY_BACKOFF=$(parse_yaml_nested_merged "iteration" "retry_backoff" "${MERGED_CONFIG_FILES[@]}")
     RETRY_BACKOFF="${RETRY_BACKOFF:-exponential}"
-    RETRY_MAX_DELAY=$(parse_yaml_nested "iteration" "retry_max_delay" "$CONFIG_FILE")
+    RETRY_MAX_DELAY=$(parse_yaml_nested_merged "iteration" "retry_max_delay" "${MERGED_CONFIG_FILES[@]}")
     RETRY_MAX_DELAY="${RETRY_MAX_DELAY:-60}"
-    RETRY_JITTER=$(parse_yaml_nested "iteration" "retry_jitter" "$CONFIG_FILE")
+    RETRY_JITTER=$(parse_yaml_nested_merged "iteration" "retry_jitter" "${MERGED_CONFIG_FILES[@]}")
     RETRY_JITTER="${RETRY_JITTER:-false}"
 
     # Error diagnostics settings
-    ERROR_DIAGNOSTICS=$(parse_yaml_nested "iteration" "error_diagnostics" "$CONFIG_FILE")
+    ERROR_DIAGNOSTICS=$(parse_yaml_nested_merged "iteration" "error_diagnostics" "${MERGED_CONFIG_FILES[@]}")
     ERROR_DIAGNOSTICS="${ERROR_DIAGNOSTICS:-true}"
 
     # Notification settings
-    NOTIFICATIONS_ENABLED=$(parse_yaml_nested "notifications" "enabled" "$CONFIG_FILE")
+    NOTIFICATIONS_ENABLED=$(parse_yaml_nested_merged "notifications" "enabled" "${MERGED_CONFIG_FILES[@]}")
     NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
 
     # Rate limiting
-    NOTIFY_RATE_MIN_INTERVAL=$(parse_yaml_nested_deep "notifications" "rate_limit" "min_interval" "$CONFIG_FILE")
+    NOTIFY_RATE_MIN_INTERVAL=$(parse_yaml_nested_deep_merged "notifications" "rate_limit" "min_interval" "${MERGED_CONFIG_FILES[@]}")
     NOTIFY_RATE_MIN_INTERVAL="${NOTIFY_RATE_MIN_INTERVAL:-10}"
-    NOTIFY_RATE_BURST_LIMIT=$(parse_yaml_nested_deep "notifications" "rate_limit" "burst_limit" "$CONFIG_FILE")
+    NOTIFY_RATE_BURST_LIMIT=$(parse_yaml_nested_deep_merged "notifications" "rate_limit" "burst_limit" "${MERGED_CONFIG_FILES[@]}")
     NOTIFY_RATE_BURST_LIMIT="${NOTIFY_RATE_BURST_LIMIT:-5}"
-    NOTIFY_RATE_BURST_WINDOW=$(parse_yaml_nested_deep "notifications" "rate_limit" "burst_window" "$CONFIG_FILE")
+    NOTIFY_RATE_BURST_WINDOW=$(parse_yaml_nested_deep_merged "notifications" "rate_limit" "burst_window" "${MERGED_CONFIG_FILES[@]}")
     NOTIFY_RATE_BURST_WINDOW="${NOTIFY_RATE_BURST_WINDOW:-60}"
 
     # Slack notifications
-    SLACK_ENABLED=$(parse_yaml_nested_deep "notifications" "slack" "enabled" "$CONFIG_FILE")
+    SLACK_ENABLED=$(parse_yaml_nested_deep_merged "notifications" "slack" "enabled" "${MERGED_CONFIG_FILES[@]}")
     SLACK_ENABLED="${SLACK_ENABLED:-false}"
-    SLACK_WEBHOOK_URL=$(parse_yaml_nested_deep "notifications" "slack" "webhook_url" "$CONFIG_FILE")
+    SLACK_WEBHOOK_URL=$(parse_yaml_nested_deep_merged "notifications" "slack" "webhook_url" "${MERGED_CONFIG_FILES[@]}")
     SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
-    SLACK_EVENT_TASK_STARTED=$(parse_yaml_nested_events "notifications" "slack" "task_started" "$CONFIG_FILE")
+    SLACK_EVENT_TASK_STARTED=$(parse_yaml_nested_events_merged "notifications" "slack" "task_started" "${MERGED_CONFIG_FILES[@]}")
     SLACK_EVENT_TASK_STARTED="${SLACK_EVENT_TASK_STARTED:-true}"
-    SLACK_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events "notifications" "slack" "task_completed" "$CONFIG_FILE")
+    SLACK_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events_merged "notifications" "slack" "task_completed" "${MERGED_CONFIG_FILES[@]}")
     SLACK_EVENT_TASK_COMPLETED="${SLACK_EVENT_TASK_COMPLETED:-true}"
-    SLACK_EVENT_TASK_FAILED=$(parse_yaml_nested_events "notifications" "slack" "task_failed" "$CONFIG_FILE")
+    SLACK_EVENT_TASK_FAILED=$(parse_yaml_nested_events_merged "notifications" "slack" "task_failed" "${MERGED_CONFIG_FILES[@]}")
     SLACK_EVENT_TASK_FAILED="${SLACK_EVENT_TASK_FAILED:-true}"
-    SLACK_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events "notifications" "slack" "gigachad_merge" "$CONFIG_FILE")
+    SLACK_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events_merged "notifications" "slack" "gigachad_merge" "${MERGED_CONFIG_FILES[@]}")
     SLACK_EVENT_GIGACHAD_MERGE="${SLACK_EVENT_GIGACHAD_MERGE:-true}"
-    SLACK_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "slack" "session_ended" "$CONFIG_FILE")
+    SLACK_EVENT_SESSION_ENDED=$(parse_yaml_nested_events_merged "notifications" "slack" "session_ended" "${MERGED_CONFIG_FILES[@]}")
     SLACK_EVENT_SESSION_ENDED="${SLACK_EVENT_SESSION_ENDED:-true}"
 
     # Discord notifications
-    DISCORD_ENABLED=$(parse_yaml_nested_deep "notifications" "discord" "enabled" "$CONFIG_FILE")
+    DISCORD_ENABLED=$(parse_yaml_nested_deep_merged "notifications" "discord" "enabled" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_ENABLED="${DISCORD_ENABLED:-false}"
-    DISCORD_WEBHOOK_URL=$(parse_yaml_nested_deep "notifications" "discord" "webhook_url" "$CONFIG_FILE")
+    DISCORD_WEBHOOK_URL=$(parse_yaml_nested_deep_merged "notifications" "discord" "webhook_url" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
-    DISCORD_EVENT_TASK_STARTED=$(parse_yaml_nested_events "notifications" "discord" "task_started" "$CONFIG_FILE")
+    DISCORD_EVENT_TASK_STARTED=$(parse_yaml_nested_events_merged "notifications" "discord" "task_started" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_EVENT_TASK_STARTED="${DISCORD_EVENT_TASK_STARTED:-true}"
-    DISCORD_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events "notifications" "discord" "task_completed" "$CONFIG_FILE")
+    DISCORD_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events_merged "notifications" "discord" "task_completed" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_EVENT_TASK_COMPLETED="${DISCORD_EVENT_TASK_COMPLETED:-true}"
-    DISCORD_EVENT_TASK_FAILED=$(parse_yaml_nested_events "notifications" "discord" "task_failed" "$CONFIG_FILE")
+    DISCORD_EVENT_TASK_FAILED=$(parse_yaml_nested_events_merged "notifications" "discord" "task_failed" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_EVENT_TASK_FAILED="${DISCORD_EVENT_TASK_FAILED:-true}"
-    DISCORD_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events "notifications" "discord" "gigachad_merge" "$CONFIG_FILE")
+    DISCORD_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events_merged "notifications" "discord" "gigachad_merge" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_EVENT_GIGACHAD_MERGE="${DISCORD_EVENT_GIGACHAD_MERGE:-true}"
-    DISCORD_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "discord" "session_ended" "$CONFIG_FILE")
+    DISCORD_EVENT_SESSION_ENDED=$(parse_yaml_nested_events_merged "notifications" "discord" "session_ended" "${MERGED_CONFIG_FILES[@]}")
     DISCORD_EVENT_SESSION_ENDED="${DISCORD_EVENT_SESSION_ENDED:-true}"
 
     # Generic webhook notifications
-    GENERIC_WEBHOOK_ENABLED=$(parse_yaml_nested_deep "notifications" "generic" "enabled" "$CONFIG_FILE")
+    GENERIC_WEBHOOK_ENABLED=$(parse_yaml_nested_deep_merged "notifications" "generic" "enabled" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_WEBHOOK_ENABLED="${GENERIC_WEBHOOK_ENABLED:-false}"
-    GENERIC_WEBHOOK_URL=$(parse_yaml_nested_deep "notifications" "generic" "webhook_url" "$CONFIG_FILE")
+    GENERIC_WEBHOOK_URL=$(parse_yaml_nested_deep_merged "notifications" "generic" "webhook_url" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_WEBHOOK_URL="${GENERIC_WEBHOOK_URL:-}"
-    GENERIC_EVENT_TASK_STARTED=$(parse_yaml_nested_events "notifications" "generic" "task_started" "$CONFIG_FILE")
+    GENERIC_EVENT_TASK_STARTED=$(parse_yaml_nested_events_merged "notifications" "generic" "task_started" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_EVENT_TASK_STARTED="${GENERIC_EVENT_TASK_STARTED:-true}"
-    GENERIC_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events "notifications" "generic" "task_completed" "$CONFIG_FILE")
+    GENERIC_EVENT_TASK_COMPLETED=$(parse_yaml_nested_events_merged "notifications" "generic" "task_completed" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_EVENT_TASK_COMPLETED="${GENERIC_EVENT_TASK_COMPLETED:-true}"
-    GENERIC_EVENT_TASK_FAILED=$(parse_yaml_nested_events "notifications" "generic" "task_failed" "$CONFIG_FILE")
+    GENERIC_EVENT_TASK_FAILED=$(parse_yaml_nested_events_merged "notifications" "generic" "task_failed" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_EVENT_TASK_FAILED="${GENERIC_EVENT_TASK_FAILED:-true}"
-    GENERIC_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events "notifications" "generic" "gigachad_merge" "$CONFIG_FILE")
+    GENERIC_EVENT_GIGACHAD_MERGE=$(parse_yaml_nested_events_merged "notifications" "generic" "gigachad_merge" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_EVENT_GIGACHAD_MERGE="${GENERIC_EVENT_GIGACHAD_MERGE:-true}"
-    GENERIC_EVENT_SESSION_ENDED=$(parse_yaml_nested_events "notifications" "generic" "session_ended" "$CONFIG_FILE")
+    GENERIC_EVENT_SESSION_ENDED=$(parse_yaml_nested_events_merged "notifications" "generic" "session_ended" "${MERGED_CONFIG_FILES[@]}")
     GENERIC_EVENT_SESSION_ENDED="${GENERIC_EVENT_SESSION_ENDED:-true}"
 
     # Priority settings - task queue ordering by priority labels
-    PRIORITY_ENABLED=$(parse_yaml_nested "priority" "enabled" "$CONFIG_FILE")
+    PRIORITY_ENABLED=$(parse_yaml_nested_merged "priority" "enabled" "${MERGED_CONFIG_FILES[@]}")
     PRIORITY_ENABLED="${PRIORITY_ENABLED:-true}"
 
     # Parse priority labels for each level (space-separated)
-    PRIORITY_LABELS_CRITICAL=$(parse_priority_labels "critical" "$CONFIG_FILE")
+    PRIORITY_LABELS_CRITICAL=$(parse_priority_labels_merged "critical" "${MERGED_CONFIG_FILES[@]}")
     PRIORITY_LABELS_CRITICAL="${PRIORITY_LABELS_CRITICAL:-priority:critical P0 urgent}"
-    PRIORITY_LABELS_HIGH=$(parse_priority_labels "high" "$CONFIG_FILE")
+    PRIORITY_LABELS_HIGH=$(parse_priority_labels_merged "high" "${MERGED_CONFIG_FILES[@]}")
     PRIORITY_LABELS_HIGH="${PRIORITY_LABELS_HIGH:-priority:high P1}"
-    PRIORITY_LABELS_NORMAL=$(parse_priority_labels "normal" "$CONFIG_FILE")
+    PRIORITY_LABELS_NORMAL=$(parse_priority_labels_merged "normal" "${MERGED_CONFIG_FILES[@]}")
     PRIORITY_LABELS_NORMAL="${PRIORITY_LABELS_NORMAL:-priority:normal P2}"
-    PRIORITY_LABELS_LOW=$(parse_priority_labels "low" "$CONFIG_FILE")
+    PRIORITY_LABELS_LOW=$(parse_priority_labels_merged "low" "${MERGED_CONFIG_FILES[@]}")
     PRIORITY_LABELS_LOW="${PRIORITY_LABELS_LOW:-priority:low P3 backlog}"
 
     # Resolve relative paths to CHADGI_DIR

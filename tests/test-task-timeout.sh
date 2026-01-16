@@ -41,7 +41,8 @@ echo ""
 #------------------------------------------------------------------------------
 echo "Test 1: load_config parses task_timeout"
 
-if grep -q 'TASK_TIMEOUT=$(parse_yaml_nested "iteration" "task_timeout"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+# Accept both old and new function names (parse_yaml_nested or parse_yaml_nested_merged)
+if grep -q 'TASK_TIMEOUT=$(parse_yaml_nested' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "task_timeout config parsing found"
 else
     fail "task_timeout should be parsed in load_config"
