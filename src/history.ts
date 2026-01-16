@@ -9,11 +9,9 @@ import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
 
 // Import shared types
-import type { SessionStats, TaskMetrics, HistoryEntry, HistoryResult } from './types/index.js';
+import type { BaseCommandOptions, SessionStats, TaskMetrics, HistoryEntry, HistoryResult } from './types/index.js';
 
-interface HistoryOptions {
-  config?: string;
-  json?: boolean;
+interface HistoryOptions extends BaseCommandOptions {
   limit?: number;
   since?: string;
   status?: string;

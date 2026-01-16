@@ -246,25 +246,27 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 20: doctor.ts defines HealthCheck interface
+# Test 20: doctor.ts imports HealthCheck from types/index.ts
 #------------------------------------------------------------------------------
-echo "Test 20: doctor.ts defines HealthCheck interface"
+echo "Test 20: doctor.ts imports HealthCheck from types/index.ts"
 
-if grep -q "interface HealthCheck" "$PROJECT_ROOT/src/doctor.ts"; then
-    pass "doctor.ts defines HealthCheck interface"
+if grep -q "HealthCheck" "$PROJECT_ROOT/src/doctor.ts" && \
+   grep -q "from './types/index.js'" "$PROJECT_ROOT/src/doctor.ts"; then
+    pass "doctor.ts imports HealthCheck from types/index.ts"
 else
-    fail "doctor.ts should define HealthCheck interface"
+    fail "doctor.ts should import HealthCheck from types/index.ts"
 fi
 
 #------------------------------------------------------------------------------
-# Test 21: doctor.ts defines HealthReport interface
+# Test 21: doctor.ts imports HealthReport from types/index.ts
 #------------------------------------------------------------------------------
-echo "Test 21: doctor.ts defines HealthReport interface"
+echo "Test 21: doctor.ts imports HealthReport from types/index.ts"
 
-if grep -q "interface HealthReport" "$PROJECT_ROOT/src/doctor.ts"; then
-    pass "doctor.ts defines HealthReport interface"
+if grep -q "HealthReport" "$PROJECT_ROOT/src/doctor.ts" && \
+   grep -q "from './types/index.js'" "$PROJECT_ROOT/src/doctor.ts"; then
+    pass "doctor.ts imports HealthReport from types/index.ts"
 else
-    fail "doctor.ts should define HealthReport interface"
+    fail "doctor.ts should import HealthReport from types/index.ts"
 fi
 
 #------------------------------------------------------------------------------

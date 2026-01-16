@@ -158,44 +158,45 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 12: replay.ts defines FailedTask interface
+# Test 12: replay.ts imports FailedTask from types/index.ts
 #------------------------------------------------------------------------------
-echo "Test 12: replay.ts defines FailedTask interface"
+echo "Test 12: replay.ts imports FailedTask from types/index.ts"
 
-if grep -q "interface FailedTask" "$PROJECT_ROOT/src/replay.ts"; then
-    pass "FailedTask interface defined"
+if grep -q "FailedTask" "$PROJECT_ROOT/src/replay.ts" && \
+   grep -q "from './types/index.js'" "$PROJECT_ROOT/src/replay.ts"; then
+    pass "FailedTask imported from types/index.ts"
 else
-    fail "FailedTask interface should be defined"
+    fail "FailedTask should be imported from types/index.ts"
 fi
 
 #------------------------------------------------------------------------------
-# Test 13: FailedTask includes issueNumber
+# Test 13: types/index.ts FailedTask includes issueNumber
 #------------------------------------------------------------------------------
-echo "Test 13: FailedTask includes issueNumber"
+echo "Test 13: types/index.ts FailedTask includes issueNumber"
 
-if grep -A20 "interface FailedTask" "$PROJECT_ROOT/src/replay.ts" | grep -q "issueNumber"; then
+if grep -A20 "interface FailedTask" "$PROJECT_ROOT/src/types/index.ts" | grep -q "issueNumber"; then
     pass "FailedTask includes issueNumber"
 else
     fail "FailedTask should include issueNumber"
 fi
 
 #------------------------------------------------------------------------------
-# Test 14: FailedTask includes failureReason
+# Test 14: types/index.ts FailedTask includes failureReason
 #------------------------------------------------------------------------------
-echo "Test 14: FailedTask includes failureReason"
+echo "Test 14: types/index.ts FailedTask includes failureReason"
 
-if grep -A20 "interface FailedTask" "$PROJECT_ROOT/src/replay.ts" | grep -q "failureReason"; then
+if grep -A20 "interface FailedTask" "$PROJECT_ROOT/src/types/index.ts" | grep -q "failureReason"; then
     pass "FailedTask includes failureReason"
 else
     fail "FailedTask should include failureReason"
 fi
 
 #------------------------------------------------------------------------------
-# Test 15: FailedTask includes retryCount
+# Test 15: types/index.ts FailedTask includes retryCount
 #------------------------------------------------------------------------------
-echo "Test 15: FailedTask includes retryCount"
+echo "Test 15: types/index.ts FailedTask includes retryCount"
 
-if grep -A20 "interface FailedTask" "$PROJECT_ROOT/src/replay.ts" | grep -q "retryCount"; then
+if grep -A20 "interface FailedTask" "$PROJECT_ROOT/src/types/index.ts" | grep -q "retryCount"; then
     pass "FailedTask includes retryCount"
 else
     fail "FailedTask should include retryCount for tracking retry attempts"
@@ -213,14 +214,15 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 17: replay.ts defines ReplayResult interface
+# Test 17: replay.ts imports ReplayResult from types/index.ts
 #------------------------------------------------------------------------------
-echo "Test 17: replay.ts defines ReplayResult interface"
+echo "Test 17: replay.ts imports ReplayResult from types/index.ts"
 
-if grep -q "interface ReplayResult" "$PROJECT_ROOT/src/replay.ts"; then
-    pass "ReplayResult interface defined"
+if grep -q "ReplayResult" "$PROJECT_ROOT/src/replay.ts" && \
+   grep -q "from './types/index.js'" "$PROJECT_ROOT/src/replay.ts"; then
+    pass "ReplayResult imported from types/index.ts"
 else
-    fail "ReplayResult interface should be defined for JSON output"
+    fail "ReplayResult should be imported from types/index.ts"
 fi
 
 #------------------------------------------------------------------------------
@@ -400,22 +402,22 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 34: FailedTask includes hasBranch flag
+# Test 34: types/index.ts FailedTask includes hasBranch flag
 #------------------------------------------------------------------------------
-echo "Test 34: FailedTask includes hasBranch flag"
+echo "Test 34: types/index.ts FailedTask includes hasBranch flag"
 
-if grep -A25 "interface FailedTask" "$PROJECT_ROOT/src/replay.ts" | grep -q "hasBranch"; then
+if grep -A25 "interface FailedTask" "$PROJECT_ROOT/src/types/index.ts" | grep -q "hasBranch"; then
     pass "FailedTask includes hasBranch"
 else
     fail "FailedTask should include hasBranch flag"
 fi
 
 #------------------------------------------------------------------------------
-# Test 35: FailedTask includes failurePhase
+# Test 35: types/index.ts FailedTask includes failurePhase
 #------------------------------------------------------------------------------
-echo "Test 35: FailedTask includes failurePhase"
+echo "Test 35: types/index.ts FailedTask includes failurePhase"
 
-if grep -A25 "interface FailedTask" "$PROJECT_ROOT/src/replay.ts" | grep -q "failurePhase"; then
+if grep -A25 "interface FailedTask" "$PROJECT_ROOT/src/types/index.ts" | grep -q "failurePhase"; then
     pass "FailedTask includes failurePhase"
 else
     fail "FailedTask should include failurePhase"
@@ -455,11 +457,11 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 39: ReplayResult includes replayedTasks array
+# Test 39: types/index.ts ReplayResult includes replayedTasks array
 #------------------------------------------------------------------------------
-echo "Test 39: ReplayResult includes replayedTasks array"
+echo "Test 39: types/index.ts ReplayResult includes replayedTasks array"
 
-if grep -A10 "interface ReplayResult" "$PROJECT_ROOT/src/replay.ts" | grep -q "replayedTasks"; then
+if grep -A10 "interface ReplayResult" "$PROJECT_ROOT/src/types/index.ts" | grep -q "replayedTasks"; then
     pass "ReplayResult includes replayedTasks"
 else
     fail "ReplayResult should include replayedTasks array for JSON output"

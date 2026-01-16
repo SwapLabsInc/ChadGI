@@ -1,71 +1,18 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 
-// Session stats from chadgi-stats.json
-interface TaskResult {
-  issue: number;
-  duration_secs?: number;
-  reason?: string;
-}
+// Import shared types
+import type {
+  BaseCommandOptions,
+  SessionStats,
+  TaskResult,
+  TaskMetrics,
+  MetricsData,
+  PhaseMetrics,
+  TokenMetrics,
+} from './types/index.js';
 
-interface SessionStats {
-  session_id: string;
-  started_at: string;
-  ended_at: string;
-  duration_secs: number;
-  tasks_attempted: number;
-  tasks_completed: number;
-  successful_tasks: TaskResult[];
-  failed_tasks: TaskResult[];
-  total_cost_usd: number;
-  gigachad_mode: boolean;
-  gigachad_merges: number;
-  repo: string;
-}
-
-// Extended metrics from chadgi-metrics.json
-interface PhaseMetrics {
-  phase1_duration_secs: number;
-  phase2_duration_secs: number;
-  verification_duration_secs: number;
-  git_operations_duration_secs: number;
-}
-
-interface TokenMetrics {
-  input_tokens?: number;
-  output_tokens?: number;
-  total_tokens?: number;
-}
-
-interface TaskMetrics {
-  issue_number: number;
-  started_at: string;
-  completed_at?: string;
-  duration_secs: number;
-  status: 'completed' | 'failed';
-  iterations: number;
-  cost_usd: number;
-  phases?: PhaseMetrics;
-  tokens?: TokenMetrics;
-  failure_reason?: string;
-  failure_phase?: 'phase1' | 'phase2' | 'verification';
-  error_recovery_time_secs?: number;
-  files_modified?: number;
-  lines_changed?: number;
-  retry_count?: number;
-  category?: string;
-}
-
-interface MetricsData {
-  version: string;
-  last_updated: string;
-  retention_days: number;
-  tasks: TaskMetrics[];
-}
-
-interface InsightsOptions {
-  config?: string;
-  json?: boolean;
+interface InsightsOptions extends BaseCommandOptions {
   export?: string;
   days?: number;
   category?: string;

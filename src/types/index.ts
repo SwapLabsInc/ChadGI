@@ -5,6 +5,20 @@
  */
 
 // ============================================================================
+// Command Options Types
+// ============================================================================
+
+/**
+ * Base command options shared across most CLI commands.
+ * Use this as a base interface and extend with command-specific options.
+ */
+export interface BaseCommandOptions {
+  config?: string;
+  json?: boolean;
+  debug?: boolean;
+}
+
+// ============================================================================
 // Task and Metrics Types
 // ============================================================================
 
@@ -36,12 +50,22 @@ export interface SessionStats {
 }
 
 /**
- * Phase-specific metrics for detailed task analysis
+ * Phase-specific metrics for detailed task analysis.
+ * Supports both naming conventions for backwards compatibility:
+ * - phase1_time_secs / phase1_duration_secs
+ * - phase2_time_secs / phase2_duration_secs
+ * - verification_time_secs / verification_duration_secs
  */
 export interface PhaseMetrics {
+  // Original naming convention
   phase1_time_secs?: number;
   phase2_time_secs?: number;
   verification_time_secs?: number;
+  // Alternative naming convention (used in insights.ts)
+  phase1_duration_secs?: number;
+  phase2_duration_secs?: number;
+  verification_duration_secs?: number;
+  git_operations_duration_secs?: number;
 }
 
 /**
@@ -141,6 +165,23 @@ export interface SessionProgress {
 }
 
 /**
+ * Iteration progress information
+ */
+export interface IterationProgress {
+  current: number;
+  max: number;
+}
+
+/**
+ * Recent tool call information
+ */
+export interface RecentTool {
+  name: string;
+  result?: string;
+  timestamp: string;
+}
+
+/**
  * Progress file data structure (chadgi-progress.json)
  */
 export interface ProgressData {
@@ -148,6 +189,12 @@ export interface ProgressData {
   current_task?: CurrentTask;
   session?: SessionProgress;
   last_updated: string;
+  // Extended fields (used by watch.ts and other commands)
+  phase?: string;
+  iteration?: IterationProgress;
+  recent_tools?: RecentTool[];
+  // Approval history (used by approve.ts)
+  approval_history?: ApprovalHistoryEntry[];
 }
 
 /**
@@ -172,6 +219,23 @@ export interface ApprovalLockData {
   files_changed?: number;
   insertions?: number;
   deletions?: number;
+  // Extended fields for approval tracking
+  approver?: string;
+  approved_at?: string;
+  rejected_at?: string;
+  comment?: string;
+  feedback?: string;
+}
+
+/**
+ * Approval history entry for tracking approval actions
+ */
+export interface ApprovalHistoryEntry {
+  issue_number: number;
+  phase: string;
+  action: 'approved' | 'rejected';
+  timestamp: string;
+  comment?: string;
 }
 
 // ============================================================================

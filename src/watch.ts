@@ -1,37 +1,12 @@
 import { existsSync, readFileSync, watchFile, unwatchFile, statSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 
-interface WatchOptions {
-  config?: string;
-  json?: boolean;
+// Import shared types
+import type { BaseCommandOptions, ProgressData, RecentTool } from './types/index.js';
+
+interface WatchOptions extends BaseCommandOptions {
   once?: boolean;
   interval?: number;
-}
-
-interface ProgressData {
-  status: string;
-  phase?: string;
-  current_task?: {
-    id: string;
-    title: string;
-    branch: string;
-    started_at: string;
-  };
-  session?: {
-    started_at: string;
-    tasks_completed: number;
-    total_cost_usd: number;
-  };
-  iteration?: {
-    current: number;
-    max: number;
-  };
-  recent_tools?: Array<{
-    name: string;
-    result?: string;
-    timestamp: string;
-  }>;
-  last_updated: string;
 }
 
 interface WatchStatus {
@@ -56,11 +31,7 @@ interface WatchStatus {
     totalCostUsd: number;
     elapsedSeconds: number;
   };
-  recentTools?: Array<{
-    name: string;
-    result?: string;
-    timestamp: string;
-  }>;
+  recentTools?: RecentTool[];
   lastUpdated?: string;
 }
 

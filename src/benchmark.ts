@@ -3,6 +3,9 @@ import { join, dirname, resolve, basename } from 'path';
 import { execSync, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 
+// Import shared types
+import type { BaseCommandOptions } from './types/index.js';
+
 // Benchmark task definition
 interface BenchmarkTask {
   id: string;
@@ -99,9 +102,7 @@ interface ComparisonResult {
   }>;
 }
 
-interface BenchmarkOptions {
-  config?: string;
-  json?: boolean;
+interface BenchmarkOptions extends BaseCommandOptions {
   quick?: boolean;
   full?: boolean;
   model?: string;

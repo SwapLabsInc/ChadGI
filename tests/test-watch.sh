@@ -345,14 +345,15 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 29: watch.ts has ProgressData interface
+# Test 29: watch.ts imports ProgressData from types/index.ts
 #------------------------------------------------------------------------------
-echo "Test 29: watch.ts has ProgressData interface"
+echo "Test 29: watch.ts imports ProgressData from types/index.ts"
 
-if grep -q 'interface ProgressData' "$PROJECT_ROOT/src/watch.ts"; then
-    pass "ProgressData interface exists"
+if grep -q 'ProgressData' "$PROJECT_ROOT/src/watch.ts" && \
+   grep -q "from './types/index.js'" "$PROJECT_ROOT/src/watch.ts"; then
+    pass "ProgressData is imported from types/index.ts"
 else
-    fail "watch should have ProgressData interface"
+    fail "watch should import ProgressData from types/index.ts"
 fi
 
 #------------------------------------------------------------------------------
