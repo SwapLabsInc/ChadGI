@@ -106,6 +106,7 @@ program
     .option('-j, --json', 'Output insights as JSON')
     .option('-e, --export <path>', 'Export metrics data to file')
     .option('-d, --days <n>', 'Show only data from the last N days', parseInt)
+    .option('--category <type>', 'Filter insights by task category (e.g., bug, feature, refactor)')
     .action(async (options) => {
     try {
         await insights(options);

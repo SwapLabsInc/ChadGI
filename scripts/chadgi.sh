@@ -317,6 +317,33 @@ parse_priority_labels() {
     ' "$FILE" 2>/dev/null || echo ""
 }
 
+# Parse category mappings array from config (category.mappings.bug, etc.)
+# Returns space-separated list of labels
+parse_category_mappings() {
+    local CATEGORY=$1
+    local FILE=$2
+    awk -v category="$CATEGORY" '
+        /^category:/ { in_category=1; next }
+        in_category && /^[a-z]/ { in_category=0; in_mappings=0 }
+        in_category && /^  mappings:/ { in_mappings=1; next }
+        in_category && in_mappings && /^  [a-z]/ { in_mappings=0 }
+        in_category && in_mappings && $0 ~ "^    "category":" {
+            # Extract the array: ["label1", "label2", ...] or [label1, label2]
+            gsub(/^    [a-z]+: */, "");
+            gsub(/ *#.*/, "");
+            gsub(/\[/, "");
+            gsub(/\]/, "");
+            gsub(/"/, "");
+            gsub(/,/, " ");
+            gsub(/  +/, " ");
+            gsub(/^ +/, "");
+            gsub(/ +$/, "");
+            print;
+            exit
+        }
+    ' "$FILE" 2>/dev/null || echo ""
+}
+
 #------------------------------------------------------------------------------
 # Config Inheritance Support
 #------------------------------------------------------------------------------
@@ -519,6 +546,24 @@ parse_priority_labels_merged() {
     for file in "${FILES[@]}"; do
         local value
         value=$(parse_priority_labels "$LEVEL" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
+# Parse category mappings from multiple config files
+parse_category_mappings_merged() {
+    local CATEGORY=$1
+    shift
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_category_mappings "$CATEGORY" "$file")
         if [ -n "$value" ]; then
             result="$value"
         fi
@@ -755,6 +800,24 @@ load_config() {
     PRIORITY_LABELS_LOW=$(parse_priority_labels_merged "low" "${MERGED_CONFIG_FILES[@]}")
     PRIORITY_LABELS_LOW="${PRIORITY_LABELS_LOW:-priority:low P3 backlog}"
 
+    # Task categorization settings - classify tasks by type
+    CATEGORY_ENABLED=$(parse_yaml_nested_merged "category" "enabled" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_ENABLED="${CATEGORY_ENABLED:-true}"
+
+    # Parse category mappings (label -> category mappings)
+    CATEGORY_LABELS_BUG=$(parse_category_mappings_merged "bug" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_LABELS_BUG="${CATEGORY_LABELS_BUG:-bug bugfix fix hotfix}"
+    CATEGORY_LABELS_FEATURE=$(parse_category_mappings_merged "feature" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_LABELS_FEATURE="${CATEGORY_LABELS_FEATURE:-feature enhancement new-feature}"
+    CATEGORY_LABELS_REFACTOR=$(parse_category_mappings_merged "refactor" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_LABELS_REFACTOR="${CATEGORY_LABELS_REFACTOR:-refactor refactoring cleanup tech-debt}"
+    CATEGORY_LABELS_DOCS=$(parse_category_mappings_merged "docs" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_LABELS_DOCS="${CATEGORY_LABELS_DOCS:-docs documentation}"
+    CATEGORY_LABELS_TEST=$(parse_category_mappings_merged "test" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_LABELS_TEST="${CATEGORY_LABELS_TEST:-test testing tests}"
+    CATEGORY_LABELS_CHORE=$(parse_category_mappings_merged "chore" "${MERGED_CONFIG_FILES[@]}")
+    CATEGORY_LABELS_CHORE="${CATEGORY_LABELS_CHORE:-chore maintenance ci build}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -861,6 +924,15 @@ set_defaults() {
     PRIORITY_LABELS_HIGH="${PRIORITY_LABELS_HIGH:-priority:high P1}"
     PRIORITY_LABELS_NORMAL="${PRIORITY_LABELS_NORMAL:-priority:normal P2}"
     PRIORITY_LABELS_LOW="${PRIORITY_LABELS_LOW:-priority:low P3 backlog}"
+
+    # Category settings
+    CATEGORY_ENABLED="${CATEGORY_ENABLED:-true}"
+    CATEGORY_LABELS_BUG="${CATEGORY_LABELS_BUG:-bug bugfix fix hotfix}"
+    CATEGORY_LABELS_FEATURE="${CATEGORY_LABELS_FEATURE:-feature enhancement new-feature}"
+    CATEGORY_LABELS_REFACTOR="${CATEGORY_LABELS_REFACTOR:-refactor refactoring cleanup tech-debt}"
+    CATEGORY_LABELS_DOCS="${CATEGORY_LABELS_DOCS:-docs documentation}"
+    CATEGORY_LABELS_TEST="${CATEGORY_LABELS_TEST:-test testing tests}"
+    CATEGORY_LABELS_CHORE="${CATEGORY_LABELS_CHORE:-chore maintenance ci build}"
 }
 
 #------------------------------------------------------------------------------
@@ -2231,7 +2303,8 @@ save_task_metrics() {
   "error_recovery_time_secs": ${TASK_ERROR_RECOVERY_TIME:-0},
   "files_modified": ${FILES_MODIFIED:-0},
   "lines_changed": ${LINES_CHANGED:-0},
-  "retry_count": ${TASK_RETRY_COUNT:-0}
+  "retry_count": ${TASK_RETRY_COUNT:-0},
+  "category": $([ -n "$CURRENT_TASK_CATEGORY" ] && echo "\"$CURRENT_TASK_CATEGORY\"" || echo "null")
 }
 METRIC_EOF
 )
@@ -3468,6 +3541,79 @@ get_priority_name() {
     esac
 }
 
+# Determine task category for an issue based on its labels
+# Returns: category name (bug, feature, refactor, docs, test, chore, or empty)
+# Also sets CURRENT_TASK_CATEGORY to the detected category
+get_issue_category() {
+    local ISSUE_NUM=$1
+    local LABELS=$(get_issue_labels "$ISSUE_NUM")
+
+    # If category detection is disabled, return empty
+    if [ "$CATEGORY_ENABLED" != "true" ]; then
+        CURRENT_TASK_CATEGORY=""
+        echo ""
+        return
+    fi
+
+    # Check for bug labels
+    for label in $CATEGORY_LABELS_BUG; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_TASK_CATEGORY="bug"
+            echo "bug"
+            return
+        fi
+    done
+
+    # Check for feature labels
+    for label in $CATEGORY_LABELS_FEATURE; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_TASK_CATEGORY="feature"
+            echo "feature"
+            return
+        fi
+    done
+
+    # Check for refactor labels
+    for label in $CATEGORY_LABELS_REFACTOR; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_TASK_CATEGORY="refactor"
+            echo "refactor"
+            return
+        fi
+    done
+
+    # Check for docs labels
+    for label in $CATEGORY_LABELS_DOCS; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_TASK_CATEGORY="docs"
+            echo "docs"
+            return
+        fi
+    done
+
+    # Check for test labels
+    for label in $CATEGORY_LABELS_TEST; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_TASK_CATEGORY="test"
+            echo "test"
+            return
+        fi
+    done
+
+    # Check for chore labels
+    for label in $CATEGORY_LABELS_CHORE; do
+        if echo " $LABELS " | grep -qi " $label "; then
+            CURRENT_TASK_CATEGORY="chore"
+            echo "chore"
+            return
+        fi
+    done
+
+    # No matching category found
+    CURRENT_TASK_CATEGORY=""
+    echo ""
+}
+
 # Move an item to a different column
 move_to_column() {
     local ITEM_ID=$1
@@ -3562,6 +3708,9 @@ get_project_task() {
 
     # Get issue body
     ISSUE_BODY=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body -q '.body' 2>/dev/null || echo "No description")
+
+    # Get issue category for metrics tracking
+    get_issue_category "$ISSUE_NUMBER" > /dev/null
 
     return 0
 }
