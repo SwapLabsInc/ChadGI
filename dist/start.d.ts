@@ -3,6 +3,7 @@ interface StartOptions {
     dryRun?: boolean;
     timeout?: number;
     debug?: boolean;
+    ignoreDeps?: boolean;
 }
 export declare function start(options?: StartOptions): Promise<void>;
 export {};

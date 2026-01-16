@@ -52,7 +52,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 2: load_config parses PRIORITY_ENABLED"
 
-if grep -q 'PRIORITY_ENABLED=$(parse_yaml_nested "priority" "enabled"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+if grep -q 'PRIORITY_ENABLED=$(parse_yaml_nested_merged "priority" "enabled"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "PRIORITY_ENABLED config parsing found"
 else
     fail "PRIORITY_ENABLED should be parsed in load_config"
@@ -63,7 +63,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 3: load_config parses PRIORITY_LABELS_CRITICAL"
 
-if grep -q 'PRIORITY_LABELS_CRITICAL=$(parse_priority_labels "critical"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+if grep -q 'PRIORITY_LABELS_CRITICAL=$(parse_priority_labels_merged "critical"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "PRIORITY_LABELS_CRITICAL config parsing found"
 else
     fail "PRIORITY_LABELS_CRITICAL should be parsed in load_config"
@@ -74,7 +74,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 4: load_config parses PRIORITY_LABELS_HIGH"
 
-if grep -q 'PRIORITY_LABELS_HIGH=$(parse_priority_labels "high"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+if grep -q 'PRIORITY_LABELS_HIGH=$(parse_priority_labels_merged "high"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "PRIORITY_LABELS_HIGH config parsing found"
 else
     fail "PRIORITY_LABELS_HIGH should be parsed in load_config"
@@ -85,7 +85,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 5: load_config parses PRIORITY_LABELS_NORMAL"
 
-if grep -q 'PRIORITY_LABELS_NORMAL=$(parse_priority_labels "normal"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+if grep -q 'PRIORITY_LABELS_NORMAL=$(parse_priority_labels_merged "normal"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "PRIORITY_LABELS_NORMAL config parsing found"
 else
     fail "PRIORITY_LABELS_NORMAL should be parsed in load_config"
@@ -96,7 +96,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 6: load_config parses PRIORITY_LABELS_LOW"
 
-if grep -q 'PRIORITY_LABELS_LOW=$(parse_priority_labels "low"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
+if grep -q 'PRIORITY_LABELS_LOW=$(parse_priority_labels_merged "low"' "$PROJECT_ROOT/scripts/chadgi.sh"; then
     pass "PRIORITY_LABELS_LOW config parsing found"
 else
     fail "PRIORITY_LABELS_LOW should be parsed in load_config"

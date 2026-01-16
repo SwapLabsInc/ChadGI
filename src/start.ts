@@ -12,6 +12,7 @@ interface StartOptions {
   dryRun?: boolean;
   timeout?: number;
   debug?: boolean;
+  ignoreDeps?: boolean;
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
@@ -21,6 +22,7 @@ export async function start(options: StartOptions = {}): Promise<void> {
   const dryRun = options.dryRun ?? false;
   const timeout = options.timeout;
   const debugMode = options.debug ?? false;
+  const ignoreDeps = options.ignoreDeps ?? false;
 
   if (dryRun) {
     console.log('Starting ChadGI in DRY-RUN mode...\n');
@@ -42,6 +44,10 @@ export async function start(options: StartOptions = {}): Promise<void> {
 
   if (debugMode) {
     console.log('Debug mode: ENABLED (log level set to DEBUG)\n');
+  }
+
+  if (ignoreDeps) {
+    console.log('Dependency checking: DISABLED (via --ignore-deps flag)\n');
   }
 
   // Validate configuration first
@@ -72,7 +78,8 @@ export async function start(options: StartOptions = {}): Promise<void> {
     CHADGI_DIR: chadgiDir,
     CONFIG_FILE: configPath,
     DRY_RUN: dryRun ? 'true' : 'false',
-    DEBUG_MODE: debugMode ? 'true' : 'false'
+    DEBUG_MODE: debugMode ? 'true' : 'false',
+    IGNORE_DEPS: ignoreDeps ? 'true' : 'false'
   };
 
   // Add timeout override if specified via CLI

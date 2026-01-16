@@ -33,6 +33,9 @@ DRY_RUN="${DRY_RUN:-false}"
 # Debug mode - passed from CLI via environment variable (overrides config log_level)
 DEBUG_MODE="${DEBUG_MODE:-false}"
 
+# Ignore dependencies - passed from CLI via environment variable
+IGNORE_DEPS="${IGNORE_DEPS:-false}"
+
 # Task timeout override - passed from CLI via environment variable (in minutes)
 # Empty means use config value, otherwise override
 CLI_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
@@ -818,6 +821,22 @@ load_config() {
     CATEGORY_LABELS_CHORE=$(parse_category_mappings_merged "chore" "${MERGED_CONFIG_FILES[@]}")
     CATEGORY_LABELS_CHORE="${CATEGORY_LABELS_CHORE:-chore maintenance ci build}"
 
+    # Task dependency settings - check dependencies before processing tasks
+    DEPENDENCIES_ENABLED=$(parse_yaml_nested_merged "dependencies" "enabled" "${MERGED_CONFIG_FILES[@]}")
+    DEPENDENCIES_ENABLED="${DEPENDENCIES_ENABLED:-true}"
+
+    # Parse dependency patterns (regex patterns to match in issue body)
+    DEPENDENCY_PATTERNS=$(parse_yaml_value_merged "dependency_patterns" "${MERGED_CONFIG_FILES[@]}")
+    DEPENDENCY_PATTERNS="${DEPENDENCY_PATTERNS:-depends on blocked by requires}"
+
+    # Whether to check GitHub linked issues for blocking relationships
+    DEPENDENCIES_CHECK_LINKED=$(parse_yaml_nested_merged "dependencies" "check_linked_issues" "${MERGED_CONFIG_FILES[@]}")
+    DEPENDENCIES_CHECK_LINKED="${DEPENDENCIES_CHECK_LINKED:-true}"
+
+    # Cache timeout for dependency resolution (in seconds)
+    DEPENDENCY_CACHE_TIMEOUT=$(parse_yaml_nested_merged "dependencies" "cache_timeout" "${MERGED_CONFIG_FILES[@]}")
+    DEPENDENCY_CACHE_TIMEOUT="${DEPENDENCY_CACHE_TIMEOUT:-300}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -884,6 +903,11 @@ set_defaults() {
     RETRY_JITTER="${RETRY_JITTER:-false}"
     # Error diagnostics
     ERROR_DIAGNOSTICS="${ERROR_DIAGNOSTICS:-true}"
+    # Task dependency defaults
+    DEPENDENCIES_ENABLED="${DEPENDENCIES_ENABLED:-true}"
+    DEPENDENCY_PATTERNS="${DEPENDENCY_PATTERNS:-depends on blocked by requires}"
+    DEPENDENCIES_CHECK_LINKED="${DEPENDENCIES_CHECK_LINKED:-true}"
+    DEPENDENCY_CACHE_TIMEOUT="${DEPENDENCY_CACHE_TIMEOUT:-300}"
 
     # Notification settings
     NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
@@ -3614,6 +3638,222 @@ get_issue_category() {
     echo ""
 }
 
+#------------------------------------------------------------------------------
+# Task Dependency Functions
+#------------------------------------------------------------------------------
+
+# Global cache for dependency resolution
+declare -A DEPENDENCY_CACHE=()
+DEPENDENCY_CACHE_TIME=0
+
+# Extract issue numbers that this issue depends on from the issue body
+# Looks for patterns like "depends on #123", "blocked by #456", "requires #789"
+# Returns space-separated list of issue numbers
+parse_issue_dependencies() {
+    local ISSUE_BODY="$1"
+
+    if [ -z "$ISSUE_BODY" ] || [ "$ISSUE_BODY" = "null" ]; then
+        echo ""
+        return
+    fi
+
+    # Build regex pattern from DEPENDENCY_PATTERNS
+    # Patterns: "depends on", "blocked by", "requires" -> matches "depends on #123", etc.
+    local PATTERN_PARTS=""
+    for pattern in $DEPENDENCY_PATTERNS; do
+        if [ -n "$PATTERN_PARTS" ]; then
+            PATTERN_PARTS="$PATTERN_PARTS|"
+        fi
+        PATTERN_PARTS="${PATTERN_PARTS}${pattern}"
+    done
+
+    # Extract issue numbers following dependency patterns
+    # Handles formats like:
+    #   - "depends on #123"
+    #   - "blocked by #123, #456"
+    #   - "depends on #123 and #456"
+    #   - "requires #789"
+    local DEPS=""
+    DEPS=$(echo "$ISSUE_BODY" | grep -oiE "(${PATTERN_PARTS})[ :]*(#[0-9]+(,[ ]*#[0-9]+|[ ]+and[ ]+#[0-9]+)*)" | \
+        grep -oE '#[0-9]+' | tr -d '#' | sort -u | tr '\n' ' ')
+
+    echo "$DEPS"
+}
+
+# Check if an issue is closed or in the Done column
+# Returns: 0 (true) if completed, 1 (false) if not
+is_issue_completed() {
+    local ISSUE_NUM=$1
+
+    # Check cache first
+    local CACHE_KEY="completed_$ISSUE_NUM"
+    local NOW=$(date +%s)
+    if [ -n "${DEPENDENCY_CACHE[$CACHE_KEY]:-}" ]; then
+        local CACHED_TIME="${DEPENDENCY_CACHE[${CACHE_KEY}_time]:-0}"
+        if [ $((NOW - CACHED_TIME)) -lt "$DEPENDENCY_CACHE_TIMEOUT" ]; then
+            [ "${DEPENDENCY_CACHE[$CACHE_KEY]}" = "true" ] && return 0 || return 1
+        fi
+    fi
+
+    # Check if issue is closed
+    local STATE=$(gh issue view "$ISSUE_NUM" --repo "$REPO" --json state -q '.state' 2>/dev/null)
+
+    if [ "$STATE" = "CLOSED" ]; then
+        DEPENDENCY_CACHE[$CACHE_KEY]="true"
+        DEPENDENCY_CACHE[${CACHE_KEY}_time]="$NOW"
+        return 0
+    fi
+
+    # Check if issue is in Done column on the project board
+    local ITEMS=$(gh project item-list "$PROJECT_NUMBER" --owner "$REPO_OWNER" --format json --limit 200 2>/dev/null)
+    local IN_DONE=$(echo "$ITEMS" | jq -r --argjson num "$ISSUE_NUM" --arg done "$DONE_COLUMN" '
+        .items[] |
+        select(.content.type == "Issue") |
+        select(.content.number == $num) |
+        select(.status == $done) |
+        .content.number
+    ' 2>/dev/null)
+
+    if [ -n "$IN_DONE" ]; then
+        DEPENDENCY_CACHE[$CACHE_KEY]="true"
+        DEPENDENCY_CACHE[${CACHE_KEY}_time]="$NOW"
+        return 0
+    fi
+
+    DEPENDENCY_CACHE[$CACHE_KEY]="false"
+    DEPENDENCY_CACHE[${CACHE_KEY}_time]="$NOW"
+    return 1
+}
+
+# Get linked blocking issues from GitHub (issues that block this one)
+# Uses GitHub's issue linking feature
+get_linked_blocking_issues() {
+    local ISSUE_NUM=$1
+
+    if [ "$DEPENDENCIES_CHECK_LINKED" != "true" ]; then
+        echo ""
+        return
+    fi
+
+    # Use GitHub API to get timeline events and find linked issues
+    # Look for cross-references that mention blocking relationships
+    local TIMELINE=$(gh api "repos/$REPO/issues/$ISSUE_NUM/timeline" --paginate 2>/dev/null || echo "[]")
+
+    # Extract issue numbers from cross-references
+    # Note: GitHub doesn't have a direct "blocked by" relationship via API,
+    # but we can find linked issues through cross-references
+    local LINKED=$(echo "$TIMELINE" | jq -r '
+        .[] |
+        select(.event == "cross-referenced") |
+        .source.issue.number // empty
+    ' 2>/dev/null | sort -u | tr '\n' ' ')
+
+    echo "$LINKED"
+}
+
+# Check if all dependencies for an issue are completed
+# Sets BLOCKING_ISSUES to list of unresolved dependencies
+# Returns: 0 (true) if all deps completed, 1 (false) if blocked
+check_issue_dependencies() {
+    local ISSUE_NUM=$1
+    local ISSUE_BODY="$2"
+
+    BLOCKING_ISSUES=""
+    BLOCKING_ISSUES_TITLES=""
+
+    # If dependencies are disabled or ignored, always return success
+    if [ "$DEPENDENCIES_ENABLED" != "true" ] || [ "$IGNORE_DEPS" = "true" ]; then
+        return 0
+    fi
+
+    # Parse dependencies from issue body
+    local BODY_DEPS=$(parse_issue_dependencies "$ISSUE_BODY")
+
+    # Get linked blocking issues
+    local LINKED_DEPS=$(get_linked_blocking_issues "$ISSUE_NUM")
+
+    # Combine all dependencies
+    local ALL_DEPS=$(echo "$BODY_DEPS $LINKED_DEPS" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ')
+
+    if [ -z "$ALL_DEPS" ]; then
+        log_debug "Issue #$ISSUE_NUM has no dependencies"
+        return 0
+    fi
+
+    log_debug "Issue #$ISSUE_NUM depends on: $ALL_DEPS"
+
+    # Check each dependency
+    for DEP in $ALL_DEPS; do
+        if ! is_issue_completed "$DEP"; then
+            if [ -n "$BLOCKING_ISSUES" ]; then
+                BLOCKING_ISSUES="$BLOCKING_ISSUES $DEP"
+            else
+                BLOCKING_ISSUES="$DEP"
+            fi
+            # Get title for better logging
+            local TITLE=$(gh issue view "$DEP" --repo "$REPO" --json title -q '.title' 2>/dev/null || echo "Unknown")
+            if [ -n "$BLOCKING_ISSUES_TITLES" ]; then
+                BLOCKING_ISSUES_TITLES="$BLOCKING_ISSUES_TITLES, #$DEP ($TITLE)"
+            else
+                BLOCKING_ISSUES_TITLES="#$DEP ($TITLE)"
+            fi
+        fi
+    done
+
+    if [ -n "$BLOCKING_ISSUES" ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+# Get dependency status summary for an issue
+# Returns a human-readable string about dependency status
+get_dependency_status() {
+    local ISSUE_NUM=$1
+    local ISSUE_BODY="$2"
+
+    if [ "$DEPENDENCIES_ENABLED" != "true" ]; then
+        echo "dependencies disabled"
+        return
+    fi
+
+    if [ "$IGNORE_DEPS" = "true" ]; then
+        echo "dependencies ignored (--ignore-deps)"
+        return
+    fi
+
+    # Parse dependencies from issue body
+    local BODY_DEPS=$(parse_issue_dependencies "$ISSUE_BODY")
+    local LINKED_DEPS=$(get_linked_blocking_issues "$ISSUE_NUM")
+    local ALL_DEPS=$(echo "$BODY_DEPS $LINKED_DEPS" | tr ' ' '\n' | sort -u | grep -v '^$' | tr '\n' ' ')
+
+    if [ -z "$ALL_DEPS" ]; then
+        echo "no dependencies"
+        return
+    fi
+
+    local TOTAL=0
+    local COMPLETED=0
+    for DEP in $ALL_DEPS; do
+        TOTAL=$((TOTAL + 1))
+        if is_issue_completed "$DEP"; then
+            COMPLETED=$((COMPLETED + 1))
+        fi
+    done
+
+    if [ "$COMPLETED" -eq "$TOTAL" ]; then
+        echo "all $TOTAL dependencies resolved"
+    else
+        local PENDING=$((TOTAL - COMPLETED))
+        echo "$PENDING of $TOTAL dependencies pending"
+    fi
+}
+
+# Global variables to track skipped tasks for status reporting
+SKIPPED_TASKS=""
+SKIPPED_REASONS=""
+
 # Move an item to a different column
 move_to_column() {
     local ITEM_ID=$1
@@ -3649,11 +3889,16 @@ move_to_column() {
 }
 
 # Get next task from project board "Ready" column
+# Respects task dependencies - only returns tasks whose dependencies are completed
 get_project_task() {
     local READY_ITEMS=$(get_issues_in_column "$READY_COLUMN")
 
     # Count items in ready column first
     ISSUE_COUNT=$(echo "$READY_ITEMS" | jq -s 'length' 2>/dev/null)
+
+    # Reset skipped tasks tracking
+    SKIPPED_TASKS=""
+    SKIPPED_REASONS=""
 
     if [ -z "$READY_ITEMS" ] || [ "$ISSUE_COUNT" -eq 0 ]; then
         ISSUE_COUNT=0
@@ -3661,13 +3906,12 @@ get_project_task() {
         return 1
     fi
 
-    # If priority is enabled, sort by priority
-    if [ "$PRIORITY_ENABLED" = "true" ]; then
-        # Build a list of issue numbers with their priorities
-        local SORTED_ITEMS=""
-        local ITEM_NUMBERS=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null)
+    # Build a list of issue numbers with their priorities
+    local ITEM_NUMBERS=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null)
 
-        # Get priority for each item and store as "priority:number" pairs
+    # If priority is enabled, sort by priority first
+    local SORTED_NUMBERS=""
+    if [ "$PRIORITY_ENABLED" = "true" ]; then
         local PRIORITY_LIST=""
         for num in $ITEM_NUMBERS; do
             local priority=$(get_issue_priority "$num")
@@ -3675,44 +3919,69 @@ get_project_task() {
         done
 
         # Sort by priority (numeric sort on first field)
-        # Format: "0:42 1:15 2:99 3:1" -> sorted -> pick first
-        local SORTED=$(echo "$PRIORITY_LIST" | tr ' ' '\n' | grep -v '^$' | sort -t: -k1 -n | head -1)
-        local HIGHEST_PRIORITY_NUM=$(echo "$SORTED" | cut -d: -f2)
-
-        if [ -n "$HIGHEST_PRIORITY_NUM" ]; then
-            ISSUE_NUMBER="$HIGHEST_PRIORITY_NUM"
-            ISSUE_PRIORITY=$(get_issue_priority "$ISSUE_NUMBER")
-        else
-            # Fallback to first item if sorting fails
-            ISSUE_NUMBER=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null | head -1)
-            ISSUE_PRIORITY=$(get_issue_priority "$ISSUE_NUMBER")
-        fi
+        SORTED_NUMBERS=$(echo "$PRIORITY_LIST" | tr ' ' '\n' | grep -v '^$' | sort -t: -k1 -n | cut -d: -f2)
     else
-        # Priority disabled - use first item as before
-        ISSUE_NUMBER=$(echo "$READY_ITEMS" | jq -r '.number' 2>/dev/null | head -1)
-        ISSUE_PRIORITY=""
-        CURRENT_PRIORITY_NAME=""
+        SORTED_NUMBERS="$ITEM_NUMBERS"
     fi
 
-    # Get full item details for the selected issue
-    local SELECTED_ITEM=$(echo "$READY_ITEMS" | jq -s --argjson num "$ISSUE_NUMBER" '.[] | select(.number == $num)' 2>/dev/null)
+    # Iterate through items in order (by priority) and find first one with resolved dependencies
+    for num in $SORTED_NUMBERS; do
+        # Get issue body for dependency checking
+        local BODY=$(gh issue view "$num" --repo "$REPO" --json body -q '.body' 2>/dev/null || echo "No description")
 
-    if [ -z "$SELECTED_ITEM" ] || [ "$SELECTED_ITEM" = "null" ]; then
-        ISSUE_COUNT=0
-        return 1
+        # Check dependencies
+        if check_issue_dependencies "$num" "$BODY"; then
+            # Dependencies resolved - this is our task
+            ISSUE_NUMBER="$num"
+
+            if [ "$PRIORITY_ENABLED" = "true" ]; then
+                ISSUE_PRIORITY=$(get_issue_priority "$ISSUE_NUMBER")
+            else
+                ISSUE_PRIORITY=""
+                CURRENT_PRIORITY_NAME=""
+            fi
+
+            # Get full item details for the selected issue
+            local SELECTED_ITEM=$(echo "$READY_ITEMS" | jq -s --argjson num "$ISSUE_NUMBER" '.[] | select(.number == $num)' 2>/dev/null)
+
+            if [ -z "$SELECTED_ITEM" ] || [ "$SELECTED_ITEM" = "null" ]; then
+                continue
+            fi
+
+            ISSUE_TITLE=$(echo "$SELECTED_ITEM" | jq -r '.title' 2>/dev/null)
+            ISSUE_URL=$(echo "$SELECTED_ITEM" | jq -r '.url' 2>/dev/null)
+            ITEM_ID=$(echo "$SELECTED_ITEM" | jq -r '.item_id' 2>/dev/null)
+            ISSUE_BODY="$BODY"
+
+            # Get issue category for metrics tracking
+            get_issue_category "$ISSUE_NUMBER" > /dev/null
+
+            return 0
+        else
+            # Dependencies not resolved - track as skipped
+            log_debug "Skipping issue #$num - blocked by: $BLOCKING_ISSUES"
+            if [ -n "$SKIPPED_TASKS" ]; then
+                SKIPPED_TASKS="$SKIPPED_TASKS $num"
+                SKIPPED_REASONS="${SKIPPED_REASONS}|#$num blocked by: $BLOCKING_ISSUES_TITLES"
+            else
+                SKIPPED_TASKS="$num"
+                SKIPPED_REASONS="#$num blocked by: $BLOCKING_ISSUES_TITLES"
+            fi
+        fi
+    done
+
+    # All tasks have unresolved dependencies
+    if [ -n "$SKIPPED_TASKS" ]; then
+        log_warn "All $ISSUE_COUNT task(s) in Ready column have unresolved dependencies"
+        # Log each skipped task
+        echo "$SKIPPED_REASONS" | tr '|' '\n' | while read -r reason; do
+            [ -n "$reason" ] && log_info "  $reason"
+        done
     fi
 
-    ISSUE_TITLE=$(echo "$SELECTED_ITEM" | jq -r '.title' 2>/dev/null)
-    ISSUE_URL=$(echo "$SELECTED_ITEM" | jq -r '.url' 2>/dev/null)
-    ITEM_ID=$(echo "$SELECTED_ITEM" | jq -r '.item_id' 2>/dev/null)
-
-    # Get issue body
-    ISSUE_BODY=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json body -q '.body' 2>/dev/null || echo "No description")
-
-    # Get issue category for metrics tracking
-    get_issue_category "$ISSUE_NUMBER" > /dev/null
-
-    return 0
+    ISSUE_COUNT=0
+    ISSUE_PRIORITY=""
+    return 1
 }
 
 # Add issue to project board
@@ -3889,6 +4158,14 @@ else
 fi
 [ -n "$TEST_COMMAND" ] && log_info "Test Command: $TEST_COMMAND"
 [ -n "$BUILD_COMMAND" ] && log_info "Build Command: $BUILD_COMMAND"
+# Show dependency checking status
+if [ "$IGNORE_DEPS" = "true" ]; then
+    log_info "Dependencies: disabled (--ignore-deps)"
+elif [ "$DEPENDENCIES_ENABLED" = "true" ]; then
+    log_info "Dependencies: enabled (checking before task selection)"
+else
+    log_info "Dependencies: disabled (config)"
+fi
 log_info "Log Level: $(get_log_level_name $CURRENT_LOG_LEVEL)"
 log_info "Log File: $LOG_FILE"
 
@@ -3967,7 +4244,17 @@ while true; do
     if [ "$PRIORITY_ENABLED" = "true" ] && [ -n "$CURRENT_PRIORITY_NAME" ]; then
         echo -e "${BLUE}   Priority: ${NC}$CURRENT_PRIORITY_NAME"
     fi
+    # Show dependency status if enabled
+    if [ "$DEPENDENCIES_ENABLED" = "true" ] && [ "$IGNORE_DEPS" != "true" ]; then
+        local DEP_STATUS=$(get_dependency_status "$ISSUE_NUMBER" "$ISSUE_BODY")
+        echo -e "${BLUE}   Dependencies: ${NC}$DEP_STATUS"
+    fi
     log_info "Queue depth: $ISSUE_COUNT issue(s)"
+    # Show skipped tasks if any
+    if [ -n "$SKIPPED_TASKS" ]; then
+        local SKIPPED_COUNT=$(echo "$SKIPPED_TASKS" | wc -w | tr -d ' ')
+        log_info "Skipped $SKIPPED_COUNT task(s) with unresolved dependencies"
+    fi
 
     log_header "MOVING ISSUE #$ISSUE_NUMBER TO $IN_PROGRESS_COLUMN"
 

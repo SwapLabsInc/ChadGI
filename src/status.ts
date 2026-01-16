@@ -49,6 +49,10 @@ interface StatusInfo {
     resumeAt?: string;
     pausedSeconds: number;
   };
+  blockedTasks?: {
+    count: number;
+    issues: string[];
+  };
   lastUpdated?: string;
 }
 
