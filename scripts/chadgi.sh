@@ -2694,6 +2694,10 @@ init_progress() {
                 else
                     log_info "You may want to check its status before continuing"
                     log_info "Hint: Use --resume flag to continue on existing branch"
+                    # Clear resume variables since we're not in resume mode
+                    # This prevents using the old branch for a new task
+                    RESUME_BRANCH=""
+                    RESUME_TASK_ID=""
                 fi
             fi
         fi
@@ -3727,6 +3731,7 @@ process_template() {
         -e "s|{{IN_PROGRESS_COLUMN}}|${IN_PROGRESS_COLUMN}|g" \
         -e "s|{{REVIEW_COLUMN}}|${REVIEW_COLUMN}|g" \
         -e "s|{{COMPLETION_PROMISE}}|${COMPLETION_PROMISE}|g" \
+        -e "s|{{READY_PROMISE}}|${READY_PROMISE}|g" \
         -e "s|{{GITHUB_USERNAME}}|${GITHUB_USERNAME}|g" \
         -e "s|{{ISSUE_PREFIX}}|${ISSUE_PREFIX}|g" \
         -e "s|{{CHAD_LABEL}}|${CHAD_LABEL}|g" \
@@ -4415,18 +4420,23 @@ Do NOT re-run all tests blindly - focus on the specific failure first.
 
 "
             else
-                CONTINUE_PROMPT="${CONTINUE_PROMPT}## TESTS PASSED - Complete the Pre-PR Checklist
+                CONTINUE_PROMPT="${CONTINUE_PROMPT}## TESTS PASSED - Signal Completion Now
 
-Tests and build passed. Before signaling ready, you MUST output the Pre-PR Checklist from the original instructions:
+Tests and build passed. Your implementation is verified working.
 
-1. **Tests Added** - List the test files you created/modified
-2. **Requirements Verification** - Map each issue requirement to where you implemented it
-3. **Test Results** - Confirm tests pass (they do)
-4. **Self-Review** - Run \`git diff HEAD~1\`, note any issues found and fixed
+**CRITICAL: You must now signal completion by outputting the promise marker.**
 
-After completing the checklist, output: <promise>${READY_PROMISE}</promise>
+Complete this brief checklist, then output the promise:
+1. Tests Added: [list files or 'used existing tests']
+2. Requirements: [confirm all met]
+3. Self-Review: [any issues? 'none' if clean]
 
-If you're still implementing features, continue working. Don't signal until ALL requirements are done.
+**YOUR FINAL OUTPUT MUST BE EXACTLY:**
+\`\`\`
+<promise>${READY_PROMISE}</promise>
+\`\`\`
+
+The automation system is waiting for this exact marker to proceed. Without it, this iteration will fail and retry. Output the promise now.
 
 "
             fi
