@@ -13,6 +13,20 @@ jest.unstable_mockModule('fs', () => ({
   existsSync: jest.fn((path: string) => vol.existsSync(path)),
   readFileSync: jest.fn((path: string, encoding?: string) => vol.readFileSync(path, encoding)),
   readdirSync: jest.fn((dir: string) => vol.readdirSync(dir)),
+  mkdirSync: jest.fn((path: string, options?: object) => vol.mkdirSync(path, options)),
+  unlinkSync: jest.fn((path: string) => vol.unlinkSync(path)),
+  writeFileSync: jest.fn((path: string, content: string, encoding?: string) => {
+    const dir = path.substring(0, path.lastIndexOf('/'));
+    if (dir && !vol.existsSync(dir)) {
+      vol.mkdirSync(dir, { recursive: true });
+    }
+    vol.writeFileSync(path, content);
+  }),
+  renameSync: jest.fn((oldPath: string, newPath: string) => {
+    const content = vol.readFileSync(oldPath);
+    vol.writeFileSync(newPath, content);
+    vol.unlinkSync(oldPath);
+  }),
 }));
 
 // Import after mocking

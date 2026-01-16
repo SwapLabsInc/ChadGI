@@ -4,10 +4,10 @@ import { existsSync } from 'fs';
 import { colors } from './utils/colors.js';
 import { resolveConfigPath } from './utils/config.js';
 import { formatDuration } from './utils/formatting.js';
-import { loadProgressData, loadPauseLock, findPendingApproval } from './utils/data.js';
+import { loadProgressData, loadPauseLock, findPendingApproval, loadAllTaskLocks } from './utils/data.js';
 
 // Import shared types
-import type { ProgressData, PauseLockData, ApprovalLockData, StatusInfo } from './types/index.js';
+import type { ProgressData, PauseLockData, ApprovalLockData, StatusInfo, TaskLockInfo } from './types/index.js';
 
 interface StatusOptions {
   config?: string;
@@ -70,8 +70,9 @@ function formatPhaseName(phase: string): string {
 function buildStatusInfo(
   progress: ProgressData | null,
   pauseInfo: PauseLockData | null,
-  pendingApproval: ApprovalLockData | null
-): StatusInfo {
+  pendingApproval: ApprovalLockData | null,
+  taskLocks: TaskLockInfo[] = []
+): StatusInfo & { taskLocks?: TaskLockInfo[] } {
   const statusInfo: StatusInfo = {
     state: 'unknown',
   };
@@ -149,10 +150,14 @@ function buildStatusInfo(
     };
   }
 
-  return statusInfo;
+  // Add task locks
+  return {
+    ...statusInfo,
+    taskLocks: taskLocks.length > 0 ? taskLocks : undefined,
+  };
 }
 
-function printStatus(statusInfo: StatusInfo): void {
+function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): void {
   console.log(`${colors.purple}${colors.bold}`);
   console.log('==========================================================');
   console.log('                    CHADGI STATUS                          ');
@@ -234,6 +239,33 @@ function printStatus(statusInfo: StatusInfo): void {
     console.log('');
   }
 
+  // Task locks info
+  if (statusInfo.taskLocks && statusInfo.taskLocks.length > 0) {
+    const activeLocks = statusInfo.taskLocks.filter((l) => !l.isStale);
+    const staleLocks = statusInfo.taskLocks.filter((l) => l.isStale);
+
+    console.log(`${colors.cyan}${colors.bold}TASK LOCKS${colors.reset}`);
+    console.log(`  Active:        ${activeLocks.length} lock(s)`);
+    if (staleLocks.length > 0) {
+      console.log(`  Stale:         ${colors.yellow}${staleLocks.length} lock(s)${colors.reset}`);
+    }
+
+    // Show first few locks
+    const locksToShow = statusInfo.taskLocks.slice(0, 5);
+    for (const lock of locksToShow) {
+      const staleIndicator = lock.isStale ? ` ${colors.yellow}(stale)${colors.reset}` : '';
+      console.log(`  - Issue #${lock.issueNumber}: locked ${formatDuration(lock.lockedSeconds)} ago${staleIndicator}`);
+    }
+    if (statusInfo.taskLocks.length > 5) {
+      console.log(`  ${colors.dim}... and ${statusInfo.taskLocks.length - 5} more${colors.reset}`);
+    }
+    console.log('');
+    if (staleLocks.length > 0) {
+      console.log(`  ${colors.dim}Run 'chadgi unlock --stale' to clean up stale locks.${colors.reset}`);
+      console.log('');
+    }
+  }
+
   // Last updated
   if (statusInfo.lastUpdated) {
     console.log(`${colors.dim}Last updated: ${formatDate(statusInfo.lastUpdated)}${colors.reset}`);
@@ -272,9 +304,10 @@ export async function status(options: StatusOptions = {}): Promise<void> {
   const progress = loadProgressData(chadgiDir);
   const pauseInfo = loadPauseLock(chadgiDir);
   const pendingApproval = findPendingApproval(chadgiDir);
+  const taskLocks = loadAllTaskLocks(chadgiDir);
 
   // Build status info
-  const statusInfo = buildStatusInfo(progress, pauseInfo, pendingApproval);
+  const statusInfo = buildStatusInfo(progress, pauseInfo, pendingApproval, taskLocks);
 
   // Output as JSON if requested
   if (options.json) {

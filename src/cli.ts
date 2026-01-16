@@ -25,6 +25,7 @@ import { approve, reject } from './approve.js';
 import { benchmark } from './benchmark.js';
 import { logs, logsList, logsClear } from './logs.js';
 import { version } from './version.js';
+import { unlock } from './unlock.js';
 import {
   workspaceInit,
   workspaceAdd,
@@ -94,6 +95,7 @@ program
   .option('--parallel <n>', 'Process up to N tasks concurrently in workspace mode', createNumericParser('parallel', 'parallel'))
   .option('-i, --interactive', 'Enable human-in-the-loop approval mode for reviewing changes')
   .option('--no-mask', 'Disable secret masking in logs (warning: exposes sensitive data)')
+  .option('--force-claim', 'Override stale task locks when claiming tasks')
   .action(wrapCommand(start));
 
 program
@@ -453,6 +455,30 @@ program
         issueNumber = result.value;
       }
       await reject({ ...options, issueNumber });
+    })
+  );
+
+// Unlock command for manual lock release
+program
+  .command('unlock [issue-number]')
+  .description('Manually release task locks')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output result as JSON')
+  .option('-a, --all', 'Release all locks (use with --force for active locks)')
+  .option('-s, --stale', 'Release only stale locks')
+  .option('-f, --force', 'Force release of active locks')
+  .action(
+    wrapCommandWithArg(async (issueNumberArg: string | undefined, options) => {
+      let issueNumber: number | undefined;
+      if (issueNumberArg) {
+        const result = validateNumeric(issueNumberArg, 'issue-number', 'issueNumber');
+        if (!result.valid) {
+          console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
+          process.exit(1);
+        }
+        issueNumber = result.value;
+      }
+      await unlock(issueNumber, options);
     })
   );
 

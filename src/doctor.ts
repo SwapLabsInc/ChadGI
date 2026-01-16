@@ -5,6 +5,12 @@ import { validateTemplateVariables, TemplateValidationResult } from './validate.
 import { maskSecrets, maskObject, setMaskingDisabled } from './utils/secrets.js';
 import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested } from './utils/config.js';
+import {
+  listTaskLocks,
+  findStaleLocks,
+  cleanupStaleLocks,
+  DEFAULT_LOCK_TIMEOUT_MINUTES,
+} from './utils/locks.js';
 
 // Import shared types
 import type {
@@ -91,6 +97,71 @@ async function checkRateLimit(): Promise<HealthCheck[]> {
       category: 'api',
       status: 'error',
       message: `Could not check rate limit: ${(error as Error).message}`,
+    });
+  }
+
+  return checks;
+}
+
+/**
+ * Check for stale task locks (issue-*.lock files)
+ */
+function checkStaleTaskLocks(chadgiDir: string, fix: boolean, timeoutMinutes: number = DEFAULT_LOCK_TIMEOUT_MINUTES): HealthCheck[] {
+  const checks: HealthCheck[] = [];
+
+  try {
+    const allLocks = listTaskLocks(chadgiDir, timeoutMinutes);
+    const staleLocks = findStaleLocks(chadgiDir, timeoutMinutes);
+
+    if (allLocks.length === 0) {
+      checks.push({
+        name: 'Task Locks Check',
+        category: 'locks',
+        status: 'ok',
+        message: 'No task locks present',
+      });
+      return checks;
+    }
+
+    const activeLocks = allLocks.filter((l) => !l.isStale);
+
+    if (staleLocks.length === 0) {
+      checks.push({
+        name: 'Task Locks Check',
+        category: 'locks',
+        status: 'ok',
+        message: `${allLocks.length} active task lock(s) found`,
+      });
+      return checks;
+    }
+
+    if (fix) {
+      const removedCount = cleanupStaleLocks(chadgiDir, timeoutMinutes);
+      checks.push({
+        name: 'Task Locks Check',
+        category: 'locks',
+        status: 'warning',
+        message: `Removed ${removedCount} stale task lock(s). ${activeLocks.length} active lock(s) remain.`,
+        fixable: true,
+        fixed: true,
+      });
+    } else {
+      const issueNumbers = staleLocks.map((l) => `#${l.issueNumber}`).join(', ');
+      checks.push({
+        name: 'Task Locks Check',
+        category: 'locks',
+        status: 'warning',
+        message: `${staleLocks.length} stale task lock(s) found (issues: ${issueNumbers}). Use --fix to remove.`,
+        fixable: true,
+        fixed: false,
+      });
+    }
+  } catch (error) {
+    checks.push({
+      name: 'Task Locks Check',
+      category: 'locks',
+      status: 'error',
+      message: `Error checking task locks: ${(error as Error).message}`,
     });
   }
 
@@ -719,6 +790,7 @@ function calculateHealthScore(checks: HealthCheck[]): number {
     templates: 15,
     environment: 10,
     diagnostics: 5,
+    locks: 10,
   };
 
   // Penalty multipliers by status
@@ -778,6 +850,9 @@ function generateRecommendations(checks: HealthCheck[]): string[] {
       }
       if (check.name.includes('Progress File') && check.message.includes('interrupted')) {
         recommendations.push('Check if an interrupted task needs manual resolution');
+      }
+      if (check.name === 'Task Locks Check' && check.message.includes('stale')) {
+        recommendations.push('Run `chadgi unlock --stale` to clean up stale task locks');
       }
     }
   }
@@ -958,6 +1033,9 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
 
   // File checks
   checks.push(...checkStaleLockFiles(chadgiDir, fix));
+
+  // Task locks checks
+  checks.push(...checkStaleTaskLocks(chadgiDir, fix));
 
   // Git checks (only if repo is configured)
   if (repo !== 'owner/repo') {

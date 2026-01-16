@@ -14,7 +14,16 @@ import type {
   ProgressData,
   PauseLockData,
   ApprovalLockData,
+  TaskLockData,
+  TaskLockInfo,
 } from '../types/index.js';
+import {
+  readTaskLock,
+  listTaskLocks,
+  findStaleLocks,
+  isLockStale,
+  DEFAULT_LOCK_TIMEOUT_MINUTES,
+} from './locks.js';
 
 // ============================================================================
 // Session Stats
@@ -232,6 +241,63 @@ export function listApprovalLocks(chadgiDir: string): ApprovalLockData[] {
     // Directory read error
   }
   return approvals;
+}
+
+// ============================================================================
+// Task Locks
+// ============================================================================
+
+/**
+ * Load a specific task lock
+ *
+ * @param chadgiDir - Path to the .chadgi directory
+ * @param issueNumber - The issue number
+ * @returns Task lock data or null if no lock exists
+ */
+export function loadTaskLock(chadgiDir: string, issueNumber: number): TaskLockData | null {
+  return readTaskLock(chadgiDir, issueNumber);
+}
+
+/**
+ * Get all current task locks with status information
+ *
+ * @param chadgiDir - Path to the .chadgi directory
+ * @param timeoutMinutes - Timeout for staleness determination
+ * @returns Array of task lock info objects
+ */
+export function loadAllTaskLocks(
+  chadgiDir: string,
+  timeoutMinutes: number = DEFAULT_LOCK_TIMEOUT_MINUTES
+): TaskLockInfo[] {
+  return listTaskLocks(chadgiDir, timeoutMinutes);
+}
+
+/**
+ * Get all stale task locks
+ *
+ * @param chadgiDir - Path to the .chadgi directory
+ * @param timeoutMinutes - Timeout in minutes for staleness
+ * @returns Array of stale task lock info objects
+ */
+export function loadStaleLocks(
+  chadgiDir: string,
+  timeoutMinutes: number = DEFAULT_LOCK_TIMEOUT_MINUTES
+): TaskLockInfo[] {
+  return findStaleLocks(chadgiDir, timeoutMinutes);
+}
+
+/**
+ * Check if a task lock is stale
+ *
+ * @param lock - The task lock data
+ * @param timeoutMinutes - Timeout in minutes
+ * @returns true if the lock is stale
+ */
+export function isTaskLockStale(
+  lock: TaskLockData,
+  timeoutMinutes: number = DEFAULT_LOCK_TIMEOUT_MINUTES
+): boolean {
+  return isLockStale(lock, timeoutMinutes);
 }
 
 // ============================================================================
