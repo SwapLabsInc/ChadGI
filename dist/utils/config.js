@@ -6,6 +6,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { colors } from './colors.js';
+import { debugLog, debugFileOp } from './debug.js';
 /**
  * Parse a simple YAML value (top-level key: value extraction)
  *
@@ -95,8 +96,10 @@ export function resolveConfigPath(configOption, cwd = process.cwd()) {
  * @returns The configuration object with all values parsed
  */
 export function loadConfig(configPath) {
+    debugFileOp('check', configPath);
     const exists = existsSync(configPath);
     if (!exists) {
+        debugLog('Config file not found, using defaults', { path: configPath });
         return {
             content: '',
             github: {
@@ -113,8 +116,9 @@ export function loadConfig(configPath) {
             exists: false,
         };
     }
+    debugFileOp('read', configPath);
     const content = readFileSync(configPath, 'utf-8');
-    return {
+    const config = {
         content,
         github: {
             repo: parseYamlNested(content, 'github', 'repo') || 'owner/repo',
@@ -130,6 +134,13 @@ export function loadConfig(configPath) {
         },
         exists: true,
     };
+    debugLog('Config loaded', {
+        path: configPath,
+        repo: config.github.repo,
+        projectNumber: config.github.project_number,
+        baseBranch: config.branch.base,
+    });
+    return config;
 }
 /**
  * Check if the ChadGI directory exists
@@ -466,6 +477,12 @@ export function loadConfigWithEnv(configPath, options = {}) {
     }
     // Parse and apply environment variable overrides
     const envOverrides = parseEnvOverrides(envPrefix, env);
+    if (envOverrides.length > 0) {
+        debugLog('Applying environment variable overrides', {
+            count: envOverrides.length,
+            overrides: envOverrides.map(o => ({ envVar: o.envVar, configPath: o.configPath })),
+        });
+    }
     applyEnvOverrides(config, envOverrides);
     return {
         config: config,

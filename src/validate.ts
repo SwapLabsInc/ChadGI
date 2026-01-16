@@ -11,6 +11,7 @@ import {
   formatEnvVarHelp,
 } from './utils/config.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
+import { debugLog, debugDecision, startTiming } from './utils/debug.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -315,6 +316,8 @@ export function validateTemplateVariables(
 }
 
 export async function validate(options: ValidateOptions = {}): Promise<boolean> {
+  const endValidateTiming = startTiming('validate');
+
   // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
   const noMask = options.mask === false;
   if (noMask) {
@@ -326,6 +329,8 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
   const cwd = process.cwd();
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;
+
+  debugLog('Starting validation', { configPath, cwd, options: { ...options, verbose: undefined } });
   const quiet = options.quiet || false;
 
   if (!quiet) {
@@ -788,6 +793,9 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
       console.log('\nAll checks passed! Run `chadgi start` to begin.');
     }
   }
+
+  debugLog('Validation complete', { errors: errors.length, warnings: warnings.length });
+  endValidateTiming();
 
   return errors.length === 0;
 }

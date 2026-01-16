@@ -5,6 +5,7 @@
  * Includes retry logic with exponential backoff for transient failures.
  */
 import { execSync } from 'child_process';
+import { traceApi, traceApiResponse, debugLog } from './debug.js';
 const DEFAULT_TIMEOUT = 10000;
 // ============================================================================
 // Retry Configuration
@@ -155,11 +156,16 @@ export function isRecoverableError(error) {
  */
 export function execGh(command, options = {}) {
     const { timeout = DEFAULT_TIMEOUT } = options;
-    return execSync(`gh ${command}`, {
+    const startTime = performance.now();
+    traceApi('gh', command);
+    const output = execSync(`gh ${command}`, {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout,
     });
+    const duration = performance.now() - startTime;
+    traceApiResponse(command.split(' ')[0], output.substring(0, 500), duration);
+    return output;
 }
 /**
  * Execute a gh CLI command and return parsed JSON
@@ -208,8 +214,10 @@ export function safeExecGhJson(command, options = {}) {
  */
 function defaultRetryCallback(attempt, maxAttempts, error, delayMs) {
     const classification = classifyError(error);
-    console.log(`GitHub API ${classification.type} error, retrying in ${Math.round(delayMs)}ms ` +
-        `(attempt ${attempt}/${maxAttempts}): ${error.message.slice(0, 100)}`);
+    const message = `GitHub API ${classification.type} error, retrying in ${Math.round(delayMs)}ms ` +
+        `(attempt ${attempt}/${maxAttempts}): ${error.message.slice(0, 100)}`;
+    console.log(message);
+    debugLog('Retry scheduled', { attempt, maxAttempts, errorType: classification.type, delayMs });
 }
 /**
  * Execute a gh CLI command with automatic retry for transient failures

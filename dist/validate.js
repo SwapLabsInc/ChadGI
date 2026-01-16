@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { maskSecrets, setMaskingDisabled } from './utils/secrets.js';
 import { parseYamlValue, parseYamlNested, parseEnvOverrides, DEFAULT_ENV_PREFIX, } from './utils/config.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
+import { debugLog, startTiming } from './utils/debug.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function checkCommand(command) {
@@ -238,6 +239,7 @@ export function validateTemplateVariables(templatePath, customVariables = []) {
     };
 }
 export async function validate(options = {}) {
+    const endValidateTiming = startTiming('validate');
     // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
     const noMask = options.mask === false;
     if (noMask) {
@@ -248,6 +250,7 @@ export async function validate(options = {}) {
     const cwd = process.cwd();
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
+    debugLog('Starting validation', { configPath, cwd, options: { ...options, verbose: undefined } });
     const quiet = options.quiet || false;
     if (!quiet) {
         console.log('Validating ChadGI configuration...\n');
@@ -685,6 +688,8 @@ export async function validate(options = {}) {
             console.log('\nAll checks passed! Run `chadgi start` to begin.');
         }
     }
+    debugLog('Validation complete', { errors: errors.length, warnings: warnings.length });
+    endValidateTiming();
     return errors.length === 0;
 }
 //# sourceMappingURL=validate.js.map

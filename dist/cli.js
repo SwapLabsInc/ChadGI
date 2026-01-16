@@ -34,16 +34,38 @@ import { dirname, join } from 'path';
 import { createNumericParser, validateNumeric } from './utils/validation.js';
 import { colors } from './utils/colors.js';
 import { wrapCommand, wrapCommandWithArg } from './utils/cli-error-handler.js';
+import { initDebugFromEnv, enableVerbose, enableTrace, isVerbose, isTrace, } from './utils/debug.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Read version from package.json
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 const program = new Command();
+// Initialize debug settings from environment variables first
+initDebugFromEnv();
 program
     .name('chadgi')
     .description('ChadGI - Autonomous Task Worker powered by Claude Code')
-    .version(packageJson.version);
+    .version(packageJson.version)
+    .option('-v, --verbose', 'Enable verbose output for debugging')
+    .option('--trace', 'Enable trace output (includes verbose, shows API payloads)')
+    .hook('preAction', () => {
+    // Apply global verbose/trace flags from CLI
+    const opts = program.opts();
+    if (opts.trace) {
+        enableTrace();
+    }
+    else if (opts.verbose) {
+        enableVerbose();
+    }
+    // Show verbose/trace status if enabled
+    if (isTrace()) {
+        console.error(`${colors.magenta}[TRACE]${colors.reset} Trace mode enabled - showing detailed API calls and timing`);
+    }
+    else if (isVerbose()) {
+        console.error(`${colors.cyan}[DEBUG]${colors.reset} Verbose mode enabled - showing debug output`);
+    }
+});
 program
     .command('version')
     .description('Display version information and check for updates')
