@@ -5,6 +5,7 @@ import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested, parseYamlBoolean, ensureChadgiDirExists } from './utils/config.js';
 import { gh, GhClientError } from './utils/gh-client.js';
 import { Section, Table, Badge, type TableColumn } from './utils/textui.js';
+import { logSilentError, ErrorCategory } from './utils/diagnostics.js';
 
 // Queue task from GitHub project board
 interface QueueTask {
@@ -148,7 +149,9 @@ async function getIssueLabelsAsync(issueNumber: number, repo: string): Promise<s
     const issue = await gh.issue.get(issueNumber, repo);
     if (!issue) return [];
     return issue.labels.map(l => l.name.toLowerCase());
-  } catch {
+  } catch (e) {
+    // Label fetching is optional - issues may not have labels or may be inaccessible
+    logSilentError(e, `fetching labels for issue #${issueNumber}`, ErrorCategory.EXPECTED);
     return [];
   }
 }
@@ -161,7 +164,9 @@ function getIssueLabels(issueNumber: number, repo: string): string[] {
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     return output.trim().split('\n').filter(l => l).map(l => l.toLowerCase());
-  } catch {
+  } catch (e) {
+    // Label fetching is optional - issues may not have labels or GitHub CLI may fail
+    logSilentError(e, `fetching labels for issue #${issueNumber} (sync)`, ErrorCategory.EXPECTED);
     return [];
   }
 }
@@ -174,7 +179,9 @@ function getIssueBody(issueNumber: number, repo: string): string {
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     return output.trim();
-  } catch {
+  } catch (e) {
+    // Body fetching is optional for dependency parsing - issues may lack body content
+    logSilentError(e, `fetching body for issue #${issueNumber}`, ErrorCategory.EXPECTED);
     return '';
   }
 }
@@ -263,7 +270,9 @@ function isIssueCompleted(issueNumber: number, repo: string, doneColumn: string,
     }
 
     return false;
-  } catch {
+  } catch (e) {
+    // Issue completion check may fail due to network issues or permissions
+    logSilentError(e, `checking completion status for issue #${issueNumber}`, ErrorCategory.TRANSIENT);
     return false;
   }
 }
@@ -419,7 +428,9 @@ function getProjectBoardMetadata(projectNumber: string, repoOwner: string): {
       statusFieldId: statusField.id,
       optionIds,
     };
-  } catch {
+  } catch (e) {
+    // Project metadata fetch may fail due to permissions or network issues
+    logSilentError(e, `fetching project board metadata for project #${projectNumber}`, ErrorCategory.TRANSIENT);
     return null;
   }
 }
@@ -437,7 +448,9 @@ function moveItemToColumn(
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     return true;
-  } catch {
+  } catch (e) {
+    // Column move may fail due to permissions or project configuration issues
+    logSilentError(e, `moving item ${itemId} to new column`, ErrorCategory.RETRIABLE);
     return false;
   }
 }

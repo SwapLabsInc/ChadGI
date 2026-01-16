@@ -13,6 +13,7 @@ import { writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { isVerbose } from './debug.js';
 import type { DataSchema, ValidationResult } from './data-schema.js';
+import { logSilentError, ErrorCategory } from './diagnostics.js';
 
 /**
  * Default number of retry attempts for transient failures
@@ -104,8 +105,9 @@ export function atomicWriteFile(filePath: string, content: string): void {
       if (existsSync(tempPath)) {
         unlinkSync(tempPath);
       }
-    } catch {
-      // Ignore cleanup errors - the original error is more important
+    } catch (cleanupError) {
+      // Cleanup errors are secondary - the original error takes priority
+      logSilentError(cleanupError, `cleaning up temp file ${tempPath}`, ErrorCategory.EXPECTED);
     }
 
     // Re-throw the original error

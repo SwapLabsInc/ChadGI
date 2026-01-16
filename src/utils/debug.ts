@@ -194,7 +194,13 @@ function formatData(data: unknown): string {
   } else if (typeof data === 'object' && data !== null) {
     try {
       stringified = JSON.stringify(data, null, 2);
-    } catch {
+    } catch (e) {
+      // JSON.stringify can fail for circular references or BigInt values
+      // This is expected for certain object types, fall back to String()
+      if (isVerbose()) {
+        const errorMsg = e instanceof Error ? e.message : String(e);
+        process.stderr.write(`${colors.dim}[silent-expected] formatting debug data: ${errorMsg}${colors.reset}\n`);
+      }
       stringified = String(data);
     }
   } else {
