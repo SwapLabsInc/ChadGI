@@ -57,10 +57,34 @@ import {
   isVerbose,
   isTrace,
 } from './utils/debug.js';
-import { addStandardOptions } from './utils/cli-options.js';
+import { addStandardOptions, validateOptionConflicts } from './utils/cli-options.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/**
+ * Get the full command name including parent commands for subcommands.
+ * For example, "logs view" for the view subcommand of logs.
+ *
+ * @param command - The Commander command object
+ * @returns Full command name (e.g., "cleanup", "logs view")
+ */
+function getFullCommandName(command: Command): string {
+  const names: string[] = [];
+  let current: Command | null = command;
+
+  while (current) {
+    const name = current.name();
+    // Stop at the root program (named 'chadgi')
+    if (name === 'chadgi' || !name) {
+      break;
+    }
+    names.unshift(name);
+    current = current.parent;
+  }
+
+  return names.join(' ');
+}
 
 // Read version from package.json
 const packageJsonPath = join(__dirname, '..', 'package.json');
@@ -77,7 +101,7 @@ program
   .version(packageJson.version)
   .option('-v, --verbose', 'Enable verbose output for debugging')
   .option('--trace', 'Enable trace output (includes verbose, shows API payloads)')
-  .hook('preAction', () => {
+  .hook('preAction', (thisCommand, actionCommand) => {
     // Apply global verbose/trace flags from CLI
     const opts = program.opts();
     if (opts.trace) {
@@ -91,6 +115,30 @@ program
       console.error(`${colors.magenta}[TRACE]${colors.reset} Trace mode enabled - showing detailed API calls and timing`);
     } else if (isVerbose()) {
       console.error(`${colors.cyan}[DEBUG]${colors.reset} Verbose mode enabled - showing debug output`);
+    }
+
+    // Validate option conflicts for the command being executed
+    // Build command name including parent for subcommands (e.g., "logs view")
+    const commandName = getFullCommandName(actionCommand);
+    const commandOpts = actionCommand.opts();
+
+    // Also include positional arguments as options for conflict checking
+    // (e.g., issueNumber from 'replay [issue-number]')
+    const args = actionCommand.processedArgs || [];
+    const optsWithArgs = { ...commandOpts };
+
+    // Check if the command has a positional argument that looks like an issue number
+    if (args.length > 0 && args[0] !== undefined) {
+      // First positional arg is typically issue number for commands like replay, diff, unlock
+      optsWithArgs.issueNumber = args[0];
+    }
+
+    const conflictResult = validateOptionConflicts(commandName, optsWithArgs);
+    if (!conflictResult.valid) {
+      for (const error of conflictResult.errors) {
+        console.error(`${colors.red}Error:${colors.reset} ${error}`);
+      }
+      process.exit(1);
     }
   });
 
