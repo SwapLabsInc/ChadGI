@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { init } from './init.js';
+import { setup } from './setup.js';
 import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
@@ -15,6 +16,7 @@ import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
 import { queue, queueSkip, queuePromote } from './queue.js';
+import { configExport, configImport } from './config-export-import.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -35,6 +37,21 @@ program
     .action(async (options) => {
     try {
         await init(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('setup')
+    .description('Interactive configuration wizard for ChadGI')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-n, --non-interactive', 'Run with sensible defaults for CI environments')
+    .option('-r, --reconfigure <section>', 'Reconfigure a specific section (github, branch, budget, notifications)')
+    .action(async (options) => {
+    try {
+        await setup(options);
     }
     catch (error) {
         console.error('Error:', error.message);
@@ -301,6 +318,45 @@ queueCommand
             process.exit(1);
         }
         await queuePromote({ ...options, issueNumber: num });
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+// Config command with subcommands
+const configCommand = program
+    .command('config')
+    .description('Manage ChadGI configuration');
+configCommand
+    .command('export')
+    .description('Export configuration to a portable format for sharing')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-e, --exclude-secrets', 'Strip webhook URLs and sensitive data from export')
+    .option('-o, --output <file>', 'Output file path (default: stdout)')
+    .option('-f, --format <format>', 'Output format: json or yaml (default: json)', 'json')
+    .action(async (options) => {
+    try {
+        if (options.format && !['json', 'yaml'].includes(options.format)) {
+            console.error('Error: Format must be "json" or "yaml"');
+            process.exit(1);
+        }
+        await configExport(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+configCommand
+    .command('import <file>')
+    .description('Import configuration from an exported bundle')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-m, --merge', 'Merge imported config with existing (instead of replacing)')
+    .option('-d, --dry-run', 'Preview changes without writing files')
+    .action(async (file, options) => {
+    try {
+        await configImport({ ...options, file });
     }
     catch (error) {
         console.error('Error:', error.message);

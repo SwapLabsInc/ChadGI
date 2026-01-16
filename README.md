@@ -278,6 +278,84 @@ Supported time formats for `--since`:
 - Relative: `7d` (days), `2w` (weeks), `1m` (months), `24h` (hours)
 - Absolute: `2024-01-01` (ISO date format)
 
+### `chadgi config export`
+
+Export your ChadGI configuration to a portable format for sharing with teammates or backing up.
+
+```bash
+chadgi config export                             # Export to stdout as JSON
+chadgi config export -o team-config.json         # Export to file
+chadgi config export --format yaml -o config.yaml  # Export as YAML
+chadgi config export --exclude-secrets           # Strip sensitive data (webhook URLs, tokens)
+chadgi config export -e -o shareable.json        # Combine flags for safe sharing
+```
+
+The export bundle includes:
+- Configuration values from `chadgi-config.yaml`
+- Template files (`chadgi-task.md`, `chadgi-generate-task.md`)
+- Metadata: ChadGI version, export timestamp, source repository
+
+Example export format (JSON):
+```json
+{
+  "_meta": {
+    "chadgi_version": "1.0.5",
+    "exported_at": "2026-01-15T10:30:00Z",
+    "source_repo": "SwapLabsInc/ChadGI"
+  },
+  "config": {
+    "github": {
+      "project_number": 7,
+      "ready_column": "Ready"
+    },
+    "iteration": {
+      "max_iterations": 5,
+      "gigachad_mode": false
+    }
+  },
+  "templates": {
+    "chadgi-task.md": "...",
+    "chadgi-generate-task.md": "..."
+  }
+}
+```
+
+### `chadgi config import`
+
+Import a ChadGI configuration from an exported bundle.
+
+```bash
+chadgi config import team-config.json            # Import and replace existing config
+chadgi config import config.yaml --merge         # Merge with existing config
+chadgi config import config.json --dry-run       # Preview changes without writing
+```
+
+**Options:**
+- `--merge`: Overlay imported config onto existing (instead of replacing)
+- `--dry-run`: Preview changes without modifying files
+
+**Features:**
+- Validates imported config against current ChadGI version
+- Warns about version mismatches (major version incompatibility is highlighted)
+- Prompts for missing secrets (webhook URLs, API keys) during import
+- Supports both JSON and YAML export formats
+
+**Typical workflows:**
+
+```bash
+# Share configuration with teammates (exclude secrets)
+chadgi config export --exclude-secrets > team-config.yaml
+
+# Teammate imports and provides their own webhook URL
+chadgi config import team-config.yaml
+
+# Backup before making changes
+chadgi config export -o backup-$(date +%Y%m%d).json
+
+# Preview an import before applying
+chadgi config import shared-config.json --dry-run
+```
+
 ## Configuration
 
 ### Configuration File (`chadgi-config.yaml`)
