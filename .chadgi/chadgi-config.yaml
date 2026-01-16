@@ -72,6 +72,22 @@ branding:
   include_footer: true                # Include ASCII art Chad in issues/PRs
   tagline: "Chad does what Chad wants."  # The ChadGI motto
 
+# Task dependency settings - check dependencies before processing tasks
+# Tasks with unresolved dependencies are skipped until their dependencies are completed
+# Use --ignore-deps flag to force processing regardless of dependencies
+dependencies:
+  enabled: true                       # Enable/disable dependency checking
+  # Check GitHub linked/referenced issues for blocking relationships
+  check_linked_issues: true
+  # Cache timeout in seconds for dependency resolution (avoids repeated API calls)
+  cache_timeout: 300
+
+# Dependency patterns - phrases that indicate task dependencies
+# ChadGI will look for these patterns followed by issue numbers in issue body
+# Examples: "depends on #123", "blocked by #456", "requires #789"
+# Multiple issues can be specified: "depends on #1, #2 and #3"
+dependency_patterns: "depends on blocked by requires"
+
 # Local file task source (used when task_source: local-file)
 local_file:
   path: ./chadgi-tasks.txt

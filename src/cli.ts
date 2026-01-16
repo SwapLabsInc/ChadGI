@@ -50,6 +50,7 @@ program
   .option('-d, --dry-run', 'Run in dry-run mode - show what would happen without making changes')
   .option('-t, --timeout <minutes>', 'Override task timeout in minutes (0 = disabled)', parseInt)
   .option('--debug', 'Enable debug log level (overrides config log_level)')
+  .option('--ignore-deps', 'Process tasks regardless of dependency status')
   .action(async (options) => {
     try {
       await start(options);
