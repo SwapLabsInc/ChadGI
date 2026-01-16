@@ -1,5 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SwapLabsInc/ChadGI/main/schemas/chadgi-config.schema.json
 # ChadGI Configuration
 # Autonomous task worker configuration
+
+# Configuration schema version - used for automatic migrations
+# Do not change this manually; use 'chadgi config migrate' when upgrading
+config_version: "1.1"
+
+# Config inheritance - extend from a base config file
+# Specify a relative or absolute path to a base config file
+# Local values override base config values (child takes precedence)
+# Supports chained inheritance (A extends B extends C)
+# extends: ../shared/chadgi-base.yaml
+# Or use base_config (alias for extends):
+# base_config: /path/to/base-config.yaml
 
 # Task source - where to get tasks from
 # Options: github-issues, local-file, manual
@@ -24,6 +37,7 @@ branch:
   base: master
   prefix: feature/issue-
 
+
 # Polling and timing
 poll_interval: 10          # Seconds between task checks
 consecutive_empty_threshold: 2  # Empty checks before generating tasks
@@ -38,6 +52,7 @@ on_empty_queue: generate
 #   Phase 2: PR Creation - After verification passes, Claude creates PR (outputs completion_promise)
 iteration:
   max_iterations: 5           # Max attempts per task before giving up
+  task_timeout: 30            # Timeout per task in minutes (0 = disabled)
   completion_promise: "COMPLETE"    # String Claude outputs after PR is created
   ready_promise: "READY_FOR_PR"     # String Claude outputs when implementation is done (before PR)
   # Commands to verify work (run after implementation, BEFORE PR creation)
@@ -54,16 +69,25 @@ iteration:
   # Prefix added to commit messages when GigaChad auto-merges
   # Makes it easy to identify autonomous merges in git history for rollbacks
   gigachad_commit_prefix: "[GIGACHAD]"
+  # Retry delay settings for when tests fail
+  retry_delay: 5              # Initial delay in seconds between retries
+  retry_backoff: exponential  # Options: fixed, linear, exponential
+  retry_max_delay: 60         # Maximum delay cap (seconds) for exponential backoff
+  retry_jitter: false         # Add ±20% randomness to prevent thundering herd
   # Error diagnostics - auto-capture diagnostic artifacts on failure
   # Saves git diff, build output, and system state to .chadgi/diagnostics/
-  error_diagnostics: true
+  error_diagnostics: true     # Enable/disable diagnostic artifact collection
 
 # Output settings
 output:
   show_tool_details: true   # Show rich tool output (commands, files, etc.)
   show_cost: true           # Show cost at end of run
   truncate_length: 60       # Max length for command/path display
-  show_timestamps: true     # Show timestamps in output
+  # Structured logging settings
+  log_level: INFO           # DEBUG, INFO, WARN, ERROR - controls verbosity
+  log_file: ./chadgi.log    # Log file path (relative to .chadgi directory)
+  max_log_size_mb: 10       # Rotate log when it exceeds this size
+  max_log_files: 5          # Keep this many rotated log files
 
 # Branding settings - Chad does what Chad wants
 branding:
@@ -71,6 +95,52 @@ branding:
   label: "touched-by-chad"            # GitHub label added to issues (set to "" to disable)
   include_footer: true                # Include ASCII art Chad in issues/PRs
   tagline: "Chad does what Chad wants."  # The ChadGI motto
+
+# Priority settings - task queue ordering by priority labels
+# When enabled, tasks with higher priority labels are processed first
+priority:
+  enabled: true                       # Enable/disable priority-based ordering
+  # Map priority levels to GitHub labels (case-insensitive matching)
+  # Tasks are processed in order: critical -> high -> normal -> low
+  # Issues without priority labels default to "normal"
+  labels:
+    critical: ["priority:critical", "P0", "urgent"]
+    high: ["priority:high", "P1"]
+    normal: ["priority:normal", "P2"]
+    low: ["priority:low", "P3", "backlog"]
+
+# Budget limits - protect against runaway costs
+# Set limits per-task and per-session to automatically stop when exceeded
+# Budget tracking integrates with existing cost tracking from Claude output
+budget:
+  # Maximum cost (USD) for a single task before action is taken
+  per_task_limit: 2.00
+  # Maximum total cost (USD) for the entire ChadGI session
+  per_session_limit: 20.00
+  # What to do when per-task budget is exceeded
+  # Options: skip (move to next task), fail (treat as failure), warn (log warning but continue)
+  on_task_budget_exceeded: skip
+  # What to do when per-session budget is exceeded
+  # Options: stop (end session gracefully), warn (log warning but continue)
+  on_session_budget_exceeded: stop
+  # Percentage threshold for warning (0-100) - warns when approaching limit
+  warning_threshold: 80
+
+# Task categorization - classify tasks by type for enhanced insights
+# Categories are detected from issue labels and stored with task metrics
+# Use `chadgi insights` to see breakdown by category
+category:
+  enabled: true                       # Enable/disable task categorization
+  # Map GitHub labels to standard category types (case-insensitive)
+  # First matching label determines the category
+  # Tasks without matching labels are marked as "uncategorized"
+  mappings:
+    bug: ["bug", "bugfix", "fix", "hotfix"]
+    feature: ["feature", "enhancement", "new-feature"]
+    refactor: ["refactor", "refactoring", "cleanup", "tech-debt"]
+    docs: ["docs", "documentation"]
+    test: ["test", "testing", "tests"]
+    chore: ["chore", "maintenance", "ci", "build"]
 
 # Task dependency settings - check dependencies before processing tasks
 # Tasks with unresolved dependencies are skipped until their dependencies are completed
@@ -96,3 +166,109 @@ local_file:
 # Manual mode settings (used when task_source: manual)
 manual:
   prompt_on_completion: true  # Ask for next task when done
+
+# Lifecycle hooks - Run custom scripts at key points in the ChadGI workflow
+# Scripts receive context via environment variables:
+#   CHADGI_ISSUE_NUMBER - Current issue number
+#   CHADGI_BRANCH - Current branch name
+#   CHADGI_PR_URL - PR URL (when applicable)
+#   CHADGI_COST - Current task/session cost
+#   CHADGI_PHASE - Current phase (pre_task, phase1, phase2, etc.)
+#   CHADGI_REPO - Repository in owner/repo format
+#   CHADGI_HOOK_NAME - Name of the hook being executed
+hooks:
+  # Pre-task hook: Runs before a task starts
+  # Use for: Validation, setup, notifications, team alerts
+  # pre_task:
+  #   script: .chadgi/hooks/pre-task.sh    # Path to script (relative to .chadgi or absolute)
+  #   timeout: 30                           # Max execution time in seconds (default: 30)
+  #   can_abort: true                       # If true, non-zero exit aborts the task
+
+  # Post-implementation hook: Runs after Claude finishes implementation (READY_FOR_PR)
+  # Use for: Code quality checks, security scans, custom validation
+  # post_implementation:
+  #   script: .chadgi/hooks/post-impl.sh
+  #   timeout: 60
+
+  # Pre-PR hook: Runs before PR creation
+  # Use for: Final validation, changelog updates, commit message checks
+  # pre_pr:
+  #   script: .chadgi/hooks/pre-pr.sh
+  #   timeout: 30
+  #   can_abort: true                       # Block PR creation on failure
+
+  # Post-PR hook: Runs after PR is created
+  # Use for: Notifications, labeling, CI triggers
+  # post_pr:
+  #   script: .chadgi/hooks/notify-slack.sh
+  #   timeout: 30
+
+  # Post-merge hook: Runs after GigaChad mode auto-merge
+  # Use for: Deployment triggers, release notes, downstream notifications
+  # post_merge:
+  #   script: .chadgi/hooks/post-merge.sh
+  #   timeout: 60
+
+  # On-failure hook: Runs when a task fails
+  # Use for: Error reporting, rollback triggers, alert escalation
+  # on_failure:
+  #   script: .chadgi/hooks/on-failure.sh
+  #   timeout: 30
+
+  # On-budget-warning hook: Runs when approaching budget limit
+  # Use for: Cost alerts, Slack notifications, auto-pause triggers
+  # on_budget_warning:
+  #   script: .chadgi/hooks/budget-alert.sh
+  #   timeout: 10
+
+# Webhook notifications - Chad keeps you informed
+# Supports Slack, Discord, and generic webhook endpoints
+notifications:
+  # Enable/disable all notifications (master switch)
+  enabled: false
+
+  # Rate limiting to prevent webhook spam
+  rate_limit:
+    min_interval: 10         # Minimum seconds between notifications
+    burst_limit: 5           # Max notifications in burst window
+    burst_window: 60         # Burst window in seconds
+
+  # Slack webhook configuration
+  slack:
+    enabled: false
+    webhook_url: ""          # Your Slack incoming webhook URL
+    # Which events to notify on (all optional)
+    events:
+      task_started: true
+      task_completed: true
+      task_failed: true
+      gigachad_merge: true
+      session_ended: true
+
+  # Discord webhook configuration
+  discord:
+    enabled: false
+    webhook_url: ""          # Your Discord webhook URL
+    # Which events to notify on (all optional)
+    events:
+      task_started: true
+      task_completed: true
+      task_failed: true
+      gigachad_merge: true
+      session_ended: true
+
+  # Generic webhook configuration (custom endpoint)
+  generic:
+    enabled: false
+    webhook_url: ""          # Your custom webhook endpoint
+    # Optional custom headers (key: value pairs)
+    headers:
+      # Authorization: "Bearer your-token"
+      # X-Custom-Header: "custom-value"
+    # Which events to notify on (all optional)
+    events:
+      task_started: true
+      task_completed: true
+      task_failed: true
+      gigachad_merge: true
+      session_ended: true
