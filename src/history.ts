@@ -1,49 +1,15 @@
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
-import { execSync } from 'child_process';
+import { dirname, resolve } from 'path';
 
-// Session stats from chadgi-stats.json
-interface TaskResult {
-  issue: number;
-  duration_secs?: number;
-  reason?: string;
-}
+// Import shared utilities
+import { colors } from './utils/colors.js';
+import { parseYamlNested, resolveConfigPath } from './utils/config.js';
+import { formatDuration, formatDate, formatCost, parseSince, horizontalLine, truncate } from './utils/formatting.js';
+import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
+import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
 
-interface SessionStats {
-  session_id: string;
-  started_at: string;
-  ended_at: string;
-  duration_secs: number;
-  tasks_attempted: number;
-  tasks_completed: number;
-  successful_tasks: TaskResult[];
-  failed_tasks: TaskResult[];
-  total_cost_usd: number;
-  gigachad_mode: boolean;
-  gigachad_merges: number;
-  repo: string;
-}
-
-// Extended metrics from chadgi-metrics.json
-interface TaskMetrics {
-  issue_number: number;
-  started_at: string;
-  completed_at?: string;
-  duration_secs: number;
-  status: 'completed' | 'failed';
-  iterations: number;
-  cost_usd: number;
-  failure_reason?: string;
-  failure_phase?: string;
-  category?: string;
-}
-
-interface MetricsData {
-  version: string;
-  last_updated: string;
-  retention_days: number;
-  tasks: TaskMetrics[];
-}
+// Import shared types
+import type { SessionStats, TaskMetrics, HistoryEntry, HistoryResult } from './types/index.js';
 
 interface HistoryOptions {
   config?: string;
@@ -53,221 +19,11 @@ interface HistoryOptions {
   status?: string;
 }
 
-// Unified history entry combining data from both sources
-interface HistoryEntry {
-  issueNumber: number;
-  issueTitle?: string;
-  outcome: 'success' | 'skipped' | 'failed';
-  elapsedTime: number;
-  cost?: number;
-  prUrl?: string;
-  startedAt: string;
-  completedAt?: string;
-  failureReason?: string;
-  category?: string;
-  iterations?: number;
-}
-
-// History result for JSON output
-interface HistoryResult {
-  entries: HistoryEntry[];
-  total: number;
-  filtered: number;
-  dateRange?: { since: string; until: string };
-  statusFilter?: string;
-}
-
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  purple: '\x1b[35m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-};
-
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.round(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m ${secs}s`;
-  } else if (minutes > 0) {
-    return `${minutes}m ${secs}s`;
-  } else {
-    return `${secs}s`;
-  }
-}
-
-function formatDate(isoDate: string): string {
-  const date = new Date(isoDate);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatCost(cost: number): string {
-  return `$${cost.toFixed(4)}`;
-}
-
-// Parse --since option: supports "7d", "2w", "1m", "2024-01-01"
-function parseSince(since: string): Date | null {
-  if (!since) return null;
-
-  // Try relative format first (e.g., "7d", "2w", "1m")
-  const relativeMatch = since.match(/^(\d+)([dwmhDWMH])$/);
-  if (relativeMatch) {
-    const value = parseInt(relativeMatch[1], 10);
-    const unit = relativeMatch[2].toLowerCase();
-    const now = new Date();
-
-    switch (unit) {
-      case 'h':
-        now.setHours(now.getHours() - value);
-        break;
-      case 'd':
-        now.setDate(now.getDate() - value);
-        break;
-      case 'w':
-        now.setDate(now.getDate() - value * 7);
-        break;
-      case 'm':
-        now.setMonth(now.getMonth() - value);
-        break;
-      default:
-        return null;
-    }
-    return now;
-  }
-
-  // Try ISO date format (e.g., "2024-01-01")
-  const dateMatch = since.match(/^\d{4}-\d{2}-\d{2}$/);
-  if (dateMatch) {
-    const parsed = new Date(since);
-    if (!isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  }
-
-  // Try full ISO datetime format
-  const parsed = new Date(since);
-  if (!isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  return null;
-}
-
-// Parse YAML value (simple key: value extraction)
-function parseYamlNested(content: string, parent: string, key: string): string | null {
-  const lines = content.split('\n');
-  let inParent = false;
-
-  for (const line of lines) {
-    if (line.match(new RegExp(`^${parent}:`))) {
-      inParent = true;
-      continue;
-    }
-    if (inParent && line.match(/^[a-z]/)) {
-      inParent = false;
-    }
-    if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-      const value = line.split(':')[1];
-      if (value) {
-        return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-      }
-    }
-  }
-  return null;
-}
-
-// Load session stats from chadgi-stats.json
-function loadSessionStats(chadgiDir: string): SessionStats[] {
-  const statsFile = join(chadgiDir, 'chadgi-stats.json');
-  if (!existsSync(statsFile)) {
-    return [];
-  }
-
-  try {
-    const content = readFileSync(statsFile, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return [];
-  }
-}
-
-// Load task metrics from chadgi-metrics.json
-function loadTaskMetrics(chadgiDir: string): TaskMetrics[] {
-  const metricsFile = join(chadgiDir, 'chadgi-metrics.json');
-  if (!existsSync(metricsFile)) {
-    return [];
-  }
-
-  try {
-    const content = readFileSync(metricsFile, 'utf-8');
-    const data: MetricsData = JSON.parse(content);
-    return data.tasks || [];
-  } catch {
-    return [];
-  }
-}
-
-// Try to fetch PR URL for an issue from GitHub
-function fetchPrUrl(repo: string, issueNumber: number): string | null {
-  try {
-    // Search for PRs that mention this issue in their title or body
-    const output = execSync(
-      `gh pr list --repo "${repo}" --state merged --search "fixes #${issueNumber} OR closes #${issueNumber} OR resolves #${issueNumber} OR issue-${issueNumber}" --json number,url --limit 1`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }
-    );
-    const prs = JSON.parse(output);
-    if (prs.length > 0) {
-      return prs[0].url;
-    }
-
-    // Also check by branch pattern
-    const branchOutput = execSync(
-      `gh pr list --repo "${repo}" --state merged --search "head:feature/issue-${issueNumber}" --json url --limit 1`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }
-    );
-    const branchPrs = JSON.parse(branchOutput);
-    if (branchPrs.length > 0) {
-      return branchPrs[0].url;
-    }
-  } catch {
-    // Ignore errors - PR URL is optional
-  }
-  return null;
-}
-
-// Fetch issue title from GitHub
-function fetchIssueTitle(repo: string, issueNumber: number): string | null {
-  try {
-    const output = execSync(
-      `gh issue view ${issueNumber} --repo "${repo}" --json title`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 }
-    );
-    const data = JSON.parse(output);
-    return data.title || null;
-  } catch {
-    return null;
-  }
-}
-
 // Build unified history entries from both data sources
 function buildHistoryEntries(
   sessions: SessionStats[],
   metrics: TaskMetrics[],
-  repo: string
+  _repo: string
 ): HistoryEntry[] {
   const entries: HistoryEntry[] = [];
   const processedIssues = new Set<string>(); // Use issue+timestamp to avoid duplicates
@@ -383,7 +139,7 @@ function printHistory(
   total: number,
   sinceDate?: Date,
   statusFilter?: string,
-  repo?: string
+  _repo?: string
 ): void {
   console.log(`${colors.purple}${colors.bold}`);
   console.log('==========================================================');
@@ -436,7 +192,7 @@ function printHistory(
 
   // Task list header
   console.log(`${colors.cyan}${colors.bold}Task History${colors.reset}`);
-  console.log(`${colors.dim}${'─'.repeat(78)}${colors.reset}`);
+  console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
 
   // Task entries
   for (const entry of entries) {
@@ -461,7 +217,7 @@ function printHistory(
 
     // Title if available
     if (entry.issueTitle) {
-      console.log(`  ${colors.dim}${entry.issueTitle.substring(0, 60)}${entry.issueTitle.length > 60 ? '...' : ''}${colors.reset}`);
+      console.log(`  ${colors.dim}${truncate(entry.issueTitle, 60)}${colors.reset}`);
     }
 
     // Details
@@ -490,7 +246,7 @@ function printHistory(
       console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
     }
 
-    console.log(`${colors.dim}${'─'.repeat(78)}${colors.reset}`);
+    console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
   }
 
   console.log('');
@@ -501,9 +257,7 @@ function printHistory(
 
 export async function history(options: HistoryOptions = {}): Promise<void> {
   const cwd = process.cwd();
-  const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
-  const configPath = options.config ? resolve(options.config) : defaultConfigPath;
-  const chadgiDir = dirname(configPath);
+  const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
 
   // Check if .chadgi directory exists
   if (!existsSync(chadgiDir)) {
@@ -540,12 +294,12 @@ export async function history(options: HistoryOptions = {}): Promise<void> {
     for (const entry of filtered) {
       // Fetch issue title if not already set
       if (!entry.issueTitle) {
-        entry.issueTitle = fetchIssueTitle(repo, entry.issueNumber) || undefined;
+        entry.issueTitle = fetchIssueTitle(entry.issueNumber, repo) || undefined;
       }
 
       // Fetch PR URL for successful tasks
       if (entry.outcome === 'success' && !entry.prUrl) {
-        entry.prUrl = fetchPrUrl(repo, entry.issueNumber) || undefined;
+        entry.prUrl = fetchPrUrl(entry.issueNumber, repo) || undefined;
       }
     }
   }
