@@ -486,3 +486,62 @@ export interface RateLimitData {
     };
   };
 }
+
+// ============================================================================
+// Logs Types
+// ============================================================================
+
+/**
+ * Log level severity
+ */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/**
+ * Log entry structure
+ */
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  context?: string;
+  taskId?: number;
+  phase?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Logs command options
+ */
+export interface LogsCommandOptions extends BaseCommandOptions {
+  limit?: number;
+  since?: string;
+  follow?: boolean;
+  level?: string;
+  task?: number;
+  grep?: string;
+}
+
+/**
+ * Logs result for JSON output
+ */
+export interface LogsResult {
+  entries: LogEntry[];
+  total: number;
+  filtered: number;
+  logFile: string;
+  dateRange?: { since: string; until: string };
+  levelFilter?: string;
+  taskFilter?: number;
+  grepPattern?: string;
+}
+
+/**
+ * Log file info for logs list subcommand
+ */
+export interface LogFileInfo {
+  name: string;
+  path: string;
+  size: number;
+  modified: string;
+  entries?: number;
+}
