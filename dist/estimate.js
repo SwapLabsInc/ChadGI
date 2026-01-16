@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
-import { parseYamlNested } from './utils/config.js';
+import { parseYamlNested, parseModelsByCategory } from './utils/config.js';
 // Default estimates when no historical data is available
 const DEFAULT_ESTIMATES = {
     feature: { avgCost: 0.25, minCost: 0.10, maxCost: 0.50 },
@@ -252,6 +252,7 @@ function getTaskEstimate(task, categoryEstimates, overallEstimate) {
         issueNumber: task.number,
         title: task.title,
         category,
+        model: task.model,
         minCost,
         maxCost,
         expectedCost,
@@ -354,7 +355,8 @@ function printEstimate(result) {
                 ? colors.yellow
                 : colors.dim;
         const categoryStr = estimate.category !== 'uncategorized' ? ` (${estimate.category})` : '';
-        console.log(`  Task #${estimate.issueNumber}${categoryStr}:`);
+        const modelStr = estimate.model ? ` [${estimate.model}]` : '';
+        console.log(`  Task #${estimate.issueNumber}${categoryStr}${modelStr}:`);
         console.log(`    ${colors.dim}${estimate.title.substring(0, 50)}${estimate.title.length > 50 ? '...' : ''}${colors.reset}`);
         console.log(`    Cost:     ${formatCost(estimate.minCost)} - ${formatCost(estimate.maxCost)}`);
         console.log(`    Duration: ${formatDuration(estimate.minDuration)} - ${formatDuration(estimate.maxDuration)}`);
@@ -417,20 +419,32 @@ export async function estimate(options = {}) {
         console.error('Run `chadgi init` to initialize ChadGI in this directory.');
         process.exit(1);
     }
-    // Load config for GitHub settings
+    // Load config for GitHub settings and models
     let repo = 'owner/repo';
     let projectNumber = '1';
     let readyColumn = 'Ready';
+    let modelsDefault = '';
+    let modelsByCategory = {};
     if (existsSync(configPath)) {
         const configContent = readFileSync(configPath, 'utf-8');
         repo = parseYamlNested(configContent, 'github', 'repo') || repo;
         projectNumber = parseYamlNested(configContent, 'github', 'project_number') || projectNumber;
         readyColumn = parseYamlNested(configContent, 'github', 'ready_column') || readyColumn;
+        // Load model configuration
+        modelsDefault = parseYamlNested(configContent, 'models', 'default') || '';
+        modelsByCategory = parseModelsByCategory(configContent);
     }
     else {
         console.error(`Error: Config file not found: ${configPath}`);
         process.exit(1);
     }
+    // Helper function to get model for a category
+    const getModelForCategory = (category) => {
+        if (category && modelsByCategory[category]) {
+            return modelsByCategory[category];
+        }
+        return modelsDefault || undefined;
+    };
     // Validate repo is configured
     if (repo === 'owner/repo') {
         console.error('Error: Repository not configured in chadgi-config.yaml');
@@ -454,6 +468,10 @@ export async function estimate(options = {}) {
             console.log(`Available tasks (${readyTasks.length}) have categories: ${[...new Set(readyTasks.map((t) => t.category || 'uncategorized'))].join(', ')}`);
             return;
         }
+    }
+    // Add model information to tasks
+    for (const task of filteredTasks) {
+        task.model = getModelForCategory(task.category);
     }
     // Generate estimate
     const result = generateEstimate(filteredTasks, categoryEstimates, overallEstimate, options.budget);

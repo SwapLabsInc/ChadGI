@@ -19,6 +19,7 @@ const {
   parseYamlNested,
   parseYamlBoolean,
   parseYamlNumber,
+  parseModelsByCategory,
   resolveConfigPath,
   resolveChadgiDir,
   getRepoOwner,
@@ -49,6 +50,8 @@ import {
   minimalConfig,
   configWithPriority,
   configWithDependencies,
+  configWithModels,
+  configWithPartialModels,
 } from '../fixtures/configs.js';
 
 describe('parseYamlValue', () => {
@@ -153,6 +156,75 @@ describe('parseYamlNumber', () => {
   it('should return undefined for non-numeric values', () => {
     expect(parseYamlNumber(validConfig, 'github', 'repo')).toBeUndefined();
     expect(parseYamlNumber(validConfig, 'iteration', 'completion_promise')).toBeUndefined();
+  });
+});
+
+describe('parseModelsByCategory', () => {
+  it('should parse all category model mappings', () => {
+    const result = parseModelsByCategory(configWithModels);
+    expect(result).toEqual({
+      bug: 'claude-3-haiku-20240307',
+      feature: 'claude-3-opus-20240229',
+      refactor: 'claude-3-5-sonnet-20241022',
+      docs: 'claude-3-haiku-20240307',
+      test: 'claude-sonnet-4-20250514',
+      chore: 'claude-3-haiku-20240307',
+    });
+  });
+
+  it('should parse partial category model mappings', () => {
+    const result = parseModelsByCategory(configWithPartialModels);
+    expect(result).toEqual({
+      bug: 'claude-3-haiku-20240307',
+      feature: 'claude-3-opus-20240229',
+    });
+    expect(result.refactor).toBeUndefined();
+    expect(result.docs).toBeUndefined();
+  });
+
+  it('should return empty object when no models section', () => {
+    const result = parseModelsByCategory(validConfig);
+    expect(result).toEqual({});
+  });
+
+  it('should return empty object when models section has no by_category', () => {
+    const configWithOnlyDefault = `
+github:
+  repo: owner/repo
+
+models:
+  default: claude-sonnet-4-20250514
+
+other:
+  setting: value
+`;
+    const result = parseModelsByCategory(configWithOnlyDefault);
+    expect(result).toEqual({});
+  });
+
+  it('should handle models with quoted values', () => {
+    const configWithQuotes = `
+models:
+  default: "claude-sonnet-4-20250514"
+  by_category:
+    bug: "claude-3-haiku-20240307"
+    feature: 'claude-3-opus-20240229'
+`;
+    const result = parseModelsByCategory(configWithQuotes);
+    expect(result.bug).toBe('claude-3-haiku-20240307');
+    expect(result.feature).toBe('claude-3-opus-20240229');
+  });
+
+  it('should handle models with inline comments', () => {
+    const configWithComments = `
+models:
+  by_category:
+    bug: claude-3-haiku-20240307 # fast for bug fixes
+    feature: claude-3-opus-20240229 # better for complex work
+`;
+    const result = parseModelsByCategory(configWithComments);
+    expect(result.bug).toBe('claude-3-haiku-20240307');
+    expect(result.feature).toBe('claude-3-opus-20240229');
   });
 });
 

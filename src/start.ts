@@ -33,6 +33,7 @@ interface StartOptions {
   config?: string;
   dryRun?: boolean;
   timeout?: number;
+  model?: string;  // --model flag to override per-category model selection
   debug?: boolean;
   ignoreDeps?: boolean;
   workspace?: boolean;
@@ -220,6 +221,10 @@ export async function start(options: StartOptions = {}): Promise<void> {
     console.log('Resume mode: ENABLED (will continue on existing branch from progress file)\n');
   }
 
+  if (options.model) {
+    console.log(`Model override: ${options.model} (all tasks will use this model)\n`);
+  }
+
   // Check for pending migrations
   if (hasPendingMigrations(configPath)) {
     const migrationMessage = getMigrationStatusMessage(configPath);
@@ -304,6 +309,11 @@ export async function start(options: StartOptions = {}): Promise<void> {
     env.TASK_TIMEOUT = String(timeout);
   }
 
+  // Add model override if specified via CLI
+  if (options.model) {
+    env.MODEL_OVERRIDE = options.model;
+  }
+
   // Spawn the bash script
   const child = spawn('bash', [scriptPath], {
     env,
@@ -353,6 +363,10 @@ function runRepoTask(
 
     if (options.timeout !== undefined) {
       env.TASK_TIMEOUT = String(options.timeout);
+    }
+
+    if (options.model) {
+      env.MODEL_OVERRIDE = options.model;
     }
 
     const child = spawn('bash', [scriptPath], {
@@ -678,6 +692,10 @@ function runWorkerTask(
 
     if (options.timeout !== undefined) {
       env.TASK_TIMEOUT = String(options.timeout);
+    }
+
+    if (options.model) {
+      env.MODEL_OVERRIDE = options.model;
     }
 
     // Track cost from stdout/stderr

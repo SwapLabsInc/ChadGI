@@ -144,4 +144,43 @@ Issue: #{{ISSUE_NUMBER}}
 Custom: {{UNKNOWN_VARIABLE}}
 Another: {{ANOTHER_UNKNOWN}}
 `;
+export const configWithModels = `# ChadGI Configuration with Models
+github:
+  repo: SwapLabsInc/ChadGI
+  project_number: 7
+  ready_column: Ready
+
+models:
+  default: claude-sonnet-4-20250514
+  by_category:
+    bug: claude-3-haiku-20240307
+    feature: claude-3-opus-20240229
+    refactor: claude-3-5-sonnet-20241022
+    docs: claude-3-haiku-20240307
+    test: claude-sonnet-4-20250514
+    chore: claude-3-haiku-20240307
+`;
+export const configWithPartialModels = `# ChadGI Configuration with Partial Models
+github:
+  repo: owner/repo
+  project_number: 1
+  ready_column: Ready
+
+models:
+  default: claude-sonnet-4-20250514
+  by_category:
+    bug: claude-3-haiku-20240307
+    feature: claude-3-opus-20240229
+`;
+export const configWithInvalidModels = `# ChadGI Configuration with Invalid Models
+github:
+  repo: owner/repo
+  project_number: 1
+  ready_column: Ready
+
+models:
+  default: invalid-model-name
+  by_category:
+    bug: not-a-real-model
+`;
 //# sourceMappingURL=configs.js.map

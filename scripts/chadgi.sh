@@ -52,6 +52,13 @@ RESUME_MODE="${RESUME_MODE:-false}"
 # Empty means use config value, otherwise override
 CLI_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
 
+# Model override - passed from CLI via environment variable
+# When set, overrides per-category model selection from config
+MODEL_OVERRIDE="${MODEL_OVERRIDE:-}"
+
+# Current task model tracking (set by get_model_for_category)
+CURRENT_TASK_MODEL=""
+
 # Template paths - also from CHADGI_DIR
 TASK_TEMPLATE="$CHADGI_DIR/chadgi-task.md"
 GENERATE_TASK_TEMPLATE="$CHADGI_DIR/chadgi-generate-task.md"
@@ -648,6 +655,44 @@ parse_category_mappings_merged() {
     echo "$result"
 }
 
+# Parse model by category from config (models.by_category.{category})
+parse_model_by_category() {
+    local CATEGORY=$1
+    local FILE=$2
+    awk -v category="$CATEGORY" '
+        /^models:/ { in_models=1; next }
+        in_models && /^[a-z]/ { in_models=0; in_by_category=0 }
+        in_models && /^  by_category:/ { in_by_category=1; next }
+        in_models && in_by_category && /^  [a-z]/ { in_by_category=0 }
+        in_models && in_by_category && $0 ~ "^    "category":" {
+            sub(/^    [a-z]+:[ \t]*/, "")
+            gsub(/["'\'']/, "")
+            gsub(/#.*$/, "")
+            gsub(/^[ \t]+|[ \t]+$/, "")
+            print
+            exit
+        }
+    ' "$FILE" 2>/dev/null
+}
+
+# Parse model by category from multiple config files
+parse_model_by_category_merged() {
+    local CATEGORY=$1
+    shift
+    local FILES=("$@")
+    local result=""
+
+    for file in "${FILES[@]}"; do
+        local value
+        value=$(parse_model_by_category "$CATEGORY" "$file")
+        if [ -n "$value" ]; then
+            result="$value"
+        fi
+    done
+
+    echo "$result"
+}
+
 # Load configuration from YAML file
 # Supports config inheritance via 'extends' or 'base_config' field
 load_config() {
@@ -893,6 +938,23 @@ load_config() {
     CATEGORY_LABELS_TEST="${CATEGORY_LABELS_TEST:-test testing tests}"
     CATEGORY_LABELS_CHORE=$(parse_category_mappings_merged "chore" "${MERGED_CONFIG_FILES[@]}")
     CATEGORY_LABELS_CHORE="${CATEGORY_LABELS_CHORE:-chore maintenance ci build}"
+
+    # Model selection settings - per-category Claude model selection
+    MODELS_DEFAULT=$(parse_yaml_nested_merged "models" "default" "${MERGED_CONFIG_FILES[@]}")
+    MODELS_DEFAULT="${MODELS_DEFAULT:-}"
+    # Per-category model mappings
+    MODEL_BUG=$(parse_model_by_category_merged "bug" "${MERGED_CONFIG_FILES[@]}")
+    MODEL_BUG="${MODEL_BUG:-}"
+    MODEL_FEATURE=$(parse_model_by_category_merged "feature" "${MERGED_CONFIG_FILES[@]}")
+    MODEL_FEATURE="${MODEL_FEATURE:-}"
+    MODEL_REFACTOR=$(parse_model_by_category_merged "refactor" "${MERGED_CONFIG_FILES[@]}")
+    MODEL_REFACTOR="${MODEL_REFACTOR:-}"
+    MODEL_DOCS=$(parse_model_by_category_merged "docs" "${MERGED_CONFIG_FILES[@]}")
+    MODEL_DOCS="${MODEL_DOCS:-}"
+    MODEL_TEST=$(parse_model_by_category_merged "test" "${MERGED_CONFIG_FILES[@]}")
+    MODEL_TEST="${MODEL_TEST:-}"
+    MODEL_CHORE=$(parse_model_by_category_merged "chore" "${MERGED_CONFIG_FILES[@]}")
+    MODEL_CHORE="${MODEL_CHORE:-}"
 
     # Task lock settings - prevent concurrent processing of same issue
     TASK_LOCK_TIMEOUT_MINUTES=$(parse_yaml_value_merged "task_lock_timeout_minutes" "${MERGED_CONFIG_FILES[@]}")
@@ -3564,7 +3626,8 @@ save_task_metrics() {
   "files_modified": ${FILES_MODIFIED:-0},
   "lines_changed": ${LINES_CHANGED:-0},
   "retry_count": ${TASK_RETRY_COUNT:-0},
-  "category": $([ -n "$CURRENT_TASK_CATEGORY" ] && echo "\"$CURRENT_TASK_CATEGORY\"" || echo "null")
+  "category": $([ -n "$CURRENT_TASK_CATEGORY" ] && echo "\"$CURRENT_TASK_CATEGORY\"" || echo "null"),
+  "model": $([ -n "$CURRENT_TASK_MODEL" ] && echo "\"$CURRENT_TASK_MODEL\"" || echo "null")
 }
 METRIC_EOF
 )
@@ -3958,8 +4021,9 @@ run_claude_streaming() {
     local LAST_TOOL=""
     local LAST_INPUT=""
     local TASK_COST=0
+    local MODEL_FLAG=$(build_model_flag)
 
-    cat "$PROMPT_FILE" | claude --dangerously-skip-permissions --print --verbose --output-format stream-json 2>&1 | \
+    cat "$PROMPT_FILE" | claude --dangerously-skip-permissions --print --verbose --output-format stream-json $MODEL_FLAG 2>&1 | \
         while IFS= read -r line; do
             # Skip empty lines
             [ -z "$line" ] && continue
@@ -4043,10 +4107,11 @@ run_claude_with_output() {
     local RAW_OUTPUT=$(mktemp)
     local CLAUDE_PID_FILE=$(mktemp)
     local EXIT_CODE=0
+    local MODEL_FLAG=$(build_model_flag)
 
     # Run Claude in background so we can monitor timeout
     (
-        cat "$PROMPT_FILE" | claude --dangerously-skip-permissions --print --verbose --output-format stream-json 2>&1 | tee "$RAW_OUTPUT" | \
+        cat "$PROMPT_FILE" | claude --dangerously-skip-permissions --print --verbose --output-format stream-json $MODEL_FLAG 2>&1 | tee "$RAW_OUTPUT" | \
             while IFS= read -r line; do
                 [ -z "$line" ] && continue
                 local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
@@ -4335,7 +4400,8 @@ Do not run any commands that would modify the repository.
 DRY_RUN_EOF
 
     # Run Claude with --print only (no dangerous permissions)
-    cat "$DRY_RUN_PROMPT" | claude --print 2>&1 || true
+    local MODEL_FLAG=$(build_model_flag)
+    cat "$DRY_RUN_PROMPT" | claude --print $MODEL_FLAG 2>&1 || true
 
     rm -f "$DRY_RUN_PROMPT"
 
@@ -4453,7 +4519,8 @@ The automation system is waiting for this exact marker to proceed. Without it, t
             CONTINUE_PROMPT="${CONTINUE_PROMPT}Do NOT create a PR yet - that comes after verification passes."
 
             # Continue the same session
-            claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json "$CONTINUE_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
+            local MODEL_FLAG=$(build_model_flag)
+            claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json $MODEL_FLAG "$CONTINUE_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
                 while IFS= read -r line; do
                     [ -z "$line" ] && continue
                     local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
@@ -4624,7 +4691,8 @@ Do NOT create a PR yet - that comes after the review is approved."
                 > "$OUTPUT_FILE"
 
                 # Continue the session with feedback
-                claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json "$CONTINUE_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
+                local MODEL_FLAG=$(build_model_flag)
+                claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json $MODEL_FLAG "$CONTINUE_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
                     while IFS= read -r line; do
                         [ -z "$line" ] && continue
                         local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
@@ -4745,7 +4813,8 @@ EOF
 
 After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
 
-    claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json "$PR_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
+    local MODEL_FLAG=$(build_model_flag)
+    claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json $MODEL_FLAG "$PR_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
         while IFS= read -r line; do
             [ -z "$line" ] && continue
             local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
@@ -5056,6 +5125,63 @@ get_issue_category() {
     # No matching category found
     CURRENT_TASK_CATEGORY=""
     echo ""
+}
+
+# Get the appropriate Claude model for a given task category
+# Uses MODEL_OVERRIDE (from CLI --model flag) if set, otherwise uses
+# category-specific model from config, falling back to MODELS_DEFAULT
+# Also sets CURRENT_TASK_MODEL to the selected model
+get_model_for_category() {
+    local CATEGORY=$1
+
+    # CLI --model flag takes highest precedence
+    if [ -n "$MODEL_OVERRIDE" ]; then
+        CURRENT_TASK_MODEL="$MODEL_OVERRIDE"
+        echo "$MODEL_OVERRIDE"
+        return
+    fi
+
+    # Look up category-specific model
+    local MODEL=""
+    case "$CATEGORY" in
+        bug)
+            MODEL="$MODEL_BUG"
+            ;;
+        feature)
+            MODEL="$MODEL_FEATURE"
+            ;;
+        refactor)
+            MODEL="$MODEL_REFACTOR"
+            ;;
+        docs)
+            MODEL="$MODEL_DOCS"
+            ;;
+        test)
+            MODEL="$MODEL_TEST"
+            ;;
+        chore)
+            MODEL="$MODEL_CHORE"
+            ;;
+    esac
+
+    # Fall back to default model if category-specific not set
+    if [ -z "$MODEL" ]; then
+        MODEL="$MODELS_DEFAULT"
+    fi
+
+    CURRENT_TASK_MODEL="$MODEL"
+    echo "$MODEL"
+}
+
+# Build the --model flag for Claude CLI invocation
+# Returns empty string if no model is configured
+build_model_flag() {
+    local MODEL=$(get_model_for_category "$CURRENT_TASK_CATEGORY")
+    if [ -n "$MODEL" ]; then
+        echo "--model $MODEL"
+    else
+        echo ""
+    fi
 }
 
 #------------------------------------------------------------------------------
@@ -5603,6 +5729,14 @@ else
 fi
 [ -n "$TEST_COMMAND" ] && log_info "Test Command: $TEST_COMMAND"
 [ -n "$BUILD_COMMAND" ] && log_info "Build Command: $BUILD_COMMAND"
+# Show model configuration
+if [ -n "$MODEL_OVERRIDE" ]; then
+    log_info "Model: $MODEL_OVERRIDE (CLI override)"
+elif [ -n "$MODELS_DEFAULT" ]; then
+    log_info "Model: $MODELS_DEFAULT (default, per-category enabled)"
+else
+    log_info "Model: (system default)"
+fi
 # Show dependency checking status
 if [ "$IGNORE_DEPS" = "true" ]; then
     log_info "Dependencies: disabled (--ignore-deps)"

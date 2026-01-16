@@ -40,6 +40,14 @@ export declare function parseYamlBoolean(content: string, parent: string, key: s
  */
 export declare function parseYamlNumber(content: string, parent: string, key: string): number | undefined;
 /**
+ * Parse the models.by_category section from YAML content
+ * This handles the double-nested structure: models.by_category.{category}
+ *
+ * @param content - The YAML content string
+ * @returns Object mapping category names to model names
+ */
+export declare function parseModelsByCategory(content: string): Record<string, string>;
+/**
  * Resolve the config file path from options or use default
  *
  * @param configOption - Optional config path from command options
@@ -218,7 +226,7 @@ export declare function loadConfigWithEnv(configPath: string, options?: LoadConf
  * List of all supported environment variable config paths.
  * Used for documentation and validation.
  */
-export declare const SUPPORTED_ENV_CONFIG_PATHS: readonly ["github.repo", "github.project_number", "github.ready_column", "github.in_progress_column", "github.review_column", "github.done_column", "branch.base", "branch.prefix", "task_source", "prompt_template", "generate_template", "progress_file", "poll_interval", "consecutive_empty_threshold", "on_empty_queue", "iteration.max_iterations", "iteration.completion_promise", "iteration.ready_promise", "iteration.test_command", "iteration.build_command", "iteration.on_max_iterations", "iteration.gigachad_mode", "iteration.gigachad_commit_prefix", "budget.per_task_limit", "budget.per_session_limit", "budget.on_task_budget_exceeded", "budget.on_session_budget_exceeded", "budget.warning_threshold", "output.show_tool_details", "output.show_cost", "output.truncate_length", "output.hyperlinks"];
+export declare const SUPPORTED_ENV_CONFIG_PATHS: readonly ["github.repo", "github.project_number", "github.ready_column", "github.in_progress_column", "github.review_column", "github.done_column", "branch.base", "branch.prefix", "task_source", "prompt_template", "generate_template", "progress_file", "poll_interval", "consecutive_empty_threshold", "on_empty_queue", "iteration.max_iterations", "iteration.completion_promise", "iteration.ready_promise", "iteration.test_command", "iteration.build_command", "iteration.on_max_iterations", "iteration.gigachad_mode", "iteration.gigachad_commit_prefix", "budget.per_task_limit", "budget.per_session_limit", "budget.on_task_budget_exceeded", "budget.on_session_budget_exceeded", "budget.warning_threshold", "output.show_tool_details", "output.show_cost", "output.truncate_length", "output.hyperlinks", "models.default", "models.by_category.bug", "models.by_category.feature", "models.by_category.refactor", "models.by_category.docs", "models.by_category.test", "models.by_category.chore"];
 /**
  * Get all supported environment variable names for a given prefix.
  *

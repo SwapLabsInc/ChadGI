@@ -142,6 +142,23 @@ category:
     test: ["test", "testing", "tests"]
     chore: ["chore", "maintenance", "ci", "build"]
 
+# Model selection - configure which Claude model to use per task category
+# Different task types may benefit from different models:
+#   - Simple tasks (docs, chore) can use faster/cheaper models
+#   - Complex tasks (feature, refactor) may benefit from more capable models
+# Use --model <name> CLI flag to override config for the session
+models:
+  default: claude-sonnet-4-20250514    # Fallback model when category not detected
+  # Model selection by task category
+  # Uncomment and customize based on your needs
+  by_category:
+    bug: claude-sonnet-4-20250514      # Balanced for bug fixes
+    feature: claude-sonnet-4-20250514  # More capable for complex features
+    refactor: claude-sonnet-4-20250514 # Needs deep understanding
+    docs: claude-sonnet-4-20250514     # Fast for documentation
+    test: claude-sonnet-4-20250514     # Balanced for test writing
+    chore: claude-sonnet-4-20250514    # Quick for routine tasks
+
 # Task dependency settings - check dependencies before processing tasks
 # Tasks with unresolved dependencies are skipped until their dependencies are completed
 # Use --ignore-deps flag to force processing regardless of dependencies

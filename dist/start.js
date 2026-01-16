@@ -168,6 +168,9 @@ export async function start(options = {}) {
     if (options.resume) {
         console.log('Resume mode: ENABLED (will continue on existing branch from progress file)\n');
     }
+    if (options.model) {
+        console.log(`Model override: ${options.model} (all tasks will use this model)\n`);
+    }
     // Check for pending migrations
     if (hasPendingMigrations(configPath)) {
         const migrationMessage = getMigrationStatusMessage(configPath);
@@ -242,6 +245,10 @@ export async function start(options = {}) {
     if (timeout !== undefined) {
         env.TASK_TIMEOUT = String(timeout);
     }
+    // Add model override if specified via CLI
+    if (options.model) {
+        env.MODEL_OVERRIDE = options.model;
+    }
     // Spawn the bash script
     const child = spawn('bash', [scriptPath], {
         env,
@@ -281,6 +288,9 @@ function runRepoTask(repoPath, configPath, options) {
         };
         if (options.timeout !== undefined) {
             env.TASK_TIMEOUT = String(options.timeout);
+        }
+        if (options.model) {
+            env.MODEL_OVERRIDE = options.model;
         }
         const child = spawn('bash', [scriptPath], {
             env,
@@ -566,6 +576,9 @@ function runWorkerTask(workerInfo, configPath, options, onProgress) {
         };
         if (options.timeout !== undefined) {
             env.TASK_TIMEOUT = String(options.timeout);
+        }
+        if (options.model) {
+            env.MODEL_OVERRIDE = options.model;
         }
         // Track cost from stdout/stderr
         let taskCost = 0;

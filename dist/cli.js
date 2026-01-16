@@ -152,6 +152,7 @@ program
     .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
     .option('-d, --dry-run', 'Run in dry-run mode - show what would happen without making changes')
     .option('-t, --timeout <minutes>', 'Override task timeout in minutes (0 = disabled)', createNumericParser('timeout', 'timeout'))
+    .option('-m, --model <name>', 'Override Claude model for this session (e.g., claude-sonnet-4-20250514)')
     .option('--debug', 'Enable debug log level (overrides config log_level)')
     .option('--ignore-deps', 'Process tasks regardless of dependency status')
     .option('-w, --workspace', 'Process tasks across all workspace repositories')
