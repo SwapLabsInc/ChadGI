@@ -313,3 +313,34 @@ export {
   type GitHubActor,
   type GitHubLabel,
 } from './gh-client.js';
+
+// Text UI (CLI output formatting components)
+export {
+  // Terminal utilities
+  getTerminalWidth,
+  // Table component
+  Table,
+  type TableColumn,
+  type TableOptions,
+  // Section component
+  Section,
+  type SectionOptions,
+  // Badge utilities
+  Badge,
+  BracketedBadge,
+  BadgeStyles,
+  type BadgeStyle,
+  // Status icons
+  StatusIcon,
+  StatusIcons,
+  type StatusIconType,
+  // InfoBox component
+  InfoBox,
+  type InfoBoxOptions,
+  // Convenience functions
+  printSectionHeader,
+  printTable,
+  printInfoBox,
+  keyValue,
+  divider,
+} from './textui.js';
