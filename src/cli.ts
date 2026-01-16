@@ -30,6 +30,13 @@ import {
   workspaceList,
   workspaceStatus,
 } from './workspace.js';
+import {
+  snapshotSave,
+  snapshotRestore,
+  snapshotList,
+  snapshotDiff,
+  snapshotDelete,
+} from './snapshot.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -646,6 +653,82 @@ program
   .action(async (options) => {
     try {
       await benchmark(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+// Snapshot command with subcommands for configuration state management
+const snapshotCommand = program
+  .command('snapshot')
+  .description('Save and restore configuration states');
+
+snapshotCommand
+  .command('save <name>')
+  .description('Save current configuration as a named snapshot')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-d, --description <text>', 'Add a description to the snapshot')
+  .option('-a, --alias <alias>', 'Set an alias for quick reference')
+  .action(async (name: string, options) => {
+    try {
+      await snapshotSave(name, options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+snapshotCommand
+  .command('restore <name>')
+  .description('Restore configuration from a saved snapshot')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-f, --force', 'Overwrite without prompting for confirmation')
+  .action(async (name: string, options) => {
+    try {
+      await snapshotRestore(name, options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+snapshotCommand
+  .command('list', { isDefault: true })
+  .description('List all saved snapshots with metadata')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output snapshots as JSON')
+  .action(async (options) => {
+    try {
+      await snapshotList(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+snapshotCommand
+  .command('diff <name>')
+  .description('Compare current configuration with a snapshot')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output diff as JSON')
+  .action(async (name: string, options) => {
+    try {
+      await snapshotDiff(name, options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+snapshotCommand
+  .command('delete <name>')
+  .description('Delete a saved snapshot')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-f, --force', 'Delete without prompting for confirmation')
+  .action(async (name: string, options) => {
+    try {
+      await snapshotDelete(name, options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
