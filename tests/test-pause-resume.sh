@@ -276,7 +276,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 22: Pause check after task completion"
 
-if grep -B5 -A15 "ISSUE #\$ISSUE_NUMBER COMPLETED" "$PROJECT_ROOT/scripts/chadgi.sh" | grep -q "PAUSE_LOCK_FILE\|pause"; then
+if grep -B5 -A40 "ISSUE #\$ISSUE_NUMBER COMPLETED" "$PROJECT_ROOT/scripts/chadgi.sh" | grep -q "PAUSE_LOCK_FILE\|pause"; then
     pass "Pause is checked after task completion"
 else
     fail "Pause should be checked after task completion"

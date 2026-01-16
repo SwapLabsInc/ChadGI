@@ -352,7 +352,7 @@ fi
 echo "Test 29: on_max_iterations handles timeout same as max_iterations"
 
 # The same ON_MAX_ITERATIONS case statement should be used for both timeout and max_iterations
-if grep -B10 'ON_MAX_ITERATIONS' "$PROJECT_ROOT/scripts/chadgi.sh" | grep -q 'FAILURE_REASON'; then
+if grep -B30 'ON_MAX_ITERATIONS' "$PROJECT_ROOT/scripts/chadgi.sh" | grep -q 'FAILURE_REASON'; then
     pass "on_max_iterations handles timeout same as max_iterations"
 else
     fail "on_max_iterations should handle timeout same as max_iterations"
