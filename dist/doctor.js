@@ -7,16 +7,17 @@ import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested } from './utils/config.js';
 import { listTaskLocks, findStaleLocks, cleanupStaleLocks, DEFAULT_LOCK_TIMEOUT_MINUTES, } from './utils/locks.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
+import { gh, GhClientError } from './utils/gh-client.js';
 /**
  * Check GitHub API rate limit status
  */
 async function checkRateLimit() {
     const checks = [];
     try {
-        const output = execSync('gh api rate_limit', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-        const rateData = JSON.parse(output);
+        // Use the new gh client for rate limit checking
+        const rateData = await gh.api.getRateLimit();
         // Check core API rate limit
-        const core = rateData.resources.core;
+        const core = rateData.core;
         const corePercentRemaining = (core.remaining / core.limit) * 100;
         if (corePercentRemaining > 20) {
             checks.push({
@@ -35,7 +36,7 @@ async function checkRateLimit() {
             });
         }
         else {
-            const resetTime = new Date(core.reset * 1000).toLocaleTimeString();
+            const resetTime = core.reset.toLocaleTimeString();
             checks.push({
                 name: 'GitHub API Rate Limit (Core)',
                 category: 'api',
@@ -44,7 +45,7 @@ async function checkRateLimit() {
             });
         }
         // Check GraphQL API rate limit
-        const graphql = rateData.resources.graphql;
+        const graphql = rateData.graphql;
         const graphqlPercentRemaining = (graphql.remaining / graphql.limit) * 100;
         if (graphqlPercentRemaining > 20) {
             checks.push({
@@ -63,7 +64,7 @@ async function checkRateLimit() {
             });
         }
         else {
-            const resetTime = new Date(graphql.reset * 1000).toLocaleTimeString();
+            const resetTime = graphql.reset.toLocaleTimeString();
             checks.push({
                 name: 'GitHub API Rate Limit (GraphQL)',
                 category: 'api',
@@ -73,11 +74,12 @@ async function checkRateLimit() {
         }
     }
     catch (error) {
+        const errorMsg = error instanceof GhClientError ? error.message : error.message;
         checks.push({
             name: 'GitHub API Rate Limit',
             category: 'api',
             status: 'error',
-            message: `Could not check rate limit: ${error.message}`,
+            message: `Could not check rate limit: ${errorMsg}`,
         });
     }
     return checks;

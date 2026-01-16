@@ -5,6 +5,7 @@ import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
 import { parseYamlNested, resolveChadgiDir } from './utils/config.js';
+import { gh } from './utils/gh-client.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function execCommandSilent(command) {
@@ -26,16 +27,13 @@ function detectRepository() {
     return null;
 }
 async function listGitHubProjects(owner) {
-    const result = execCommandSilent(`gh project list --owner "${owner}" --format json`);
-    if (!result) {
-        return [];
-    }
     try {
-        const data = JSON.parse(result);
-        return data.projects.map((p) => ({
+        // Use the new gh client for listing projects
+        const projects = await gh.project.list(owner);
+        return projects.map((p) => ({
             number: p.number,
             title: p.title,
-            url: p.url,
+            url: p.url || '',
         }));
     }
     catch {
@@ -43,13 +41,9 @@ async function listGitHubProjects(owner) {
     }
 }
 async function validateProjectColumns(owner, projectNumber) {
-    const result = execCommandSilent(`gh project field-list ${projectNumber} --owner "${owner}" --format json`);
-    if (!result) {
-        return { valid: false, columns: [], missing: [] };
-    }
     try {
-        const data = JSON.parse(result);
-        const statusField = data.fields.find((f) => f.name === 'Status');
+        // Use the new gh client for getting project fields
+        const statusField = await gh.project.getStatusField(projectNumber, owner);
         if (!statusField) {
             return { valid: false, columns: [], missing: ['Status field not found'] };
         }

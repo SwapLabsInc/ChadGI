@@ -1,0 +1,1 @@
+{"version":3,"file":"status-middleware.d.ts","sourceRoot":"","sources":["../src/status-middleware.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAsBH,OAAO,KAAK,EAAE,kBAAkB,EAA2E,MAAM,kBAAkB,CAAC;AAEpI;;GAEG;AACH,UAAU,aAAc,SAAQ,kBAAkB;IAChD,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,IAAI,CAAC,EAAE,OAAO,CAAC;IACf,WAAW,CAAC,EAAE,OAAO,CAAC;CACvB;AA+TD;;;;;;;;;GASG;AACH,eAAO,MAAM,gBAAgB,wDAG5B,CAAC"}

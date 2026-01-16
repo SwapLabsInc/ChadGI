@@ -4,6 +4,7 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
 import { ensureChadgiDirExists } from './utils/config.js';
+import { safeParseJson } from './utils/fileOps.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 export async function resume(options = {}) {
@@ -19,11 +20,12 @@ export async function resume(options = {}) {
         // Check if ChadGI is running or stopped
         let progress = null;
         if (existsSync(progressFile)) {
-            try {
-                progress = JSON.parse(readFileSync(progressFile, 'utf-8'));
-            }
-            catch {
-                // Ignore parse errors
+            const content = readFileSync(progressFile, 'utf-8');
+            const result = safeParseJson(content, {
+                filePath: progressFile,
+            });
+            if (result.success) {
+                progress = result.data;
             }
         }
         if (progress && progress.status === 'in_progress') {
@@ -55,11 +57,12 @@ export async function resume(options = {}) {
     }
     // Read pause lock info before removing
     let pauseInfo = null;
-    try {
-        pauseInfo = JSON.parse(readFileSync(pauseLockFile, 'utf-8'));
-    }
-    catch {
-        // Ignore parse errors
+    const pauseContent = readFileSync(pauseLockFile, 'utf-8');
+    const pauseResult = safeParseJson(pauseContent, {
+        filePath: pauseLockFile,
+    });
+    if (pauseResult.success) {
+        pauseInfo = pauseResult.data;
     }
     // Remove the pause lock file
     unlinkSync(pauseLockFile);
@@ -83,11 +86,12 @@ export async function resume(options = {}) {
     // Check current progress state
     let progress = null;
     if (existsSync(progressFile)) {
-        try {
-            progress = JSON.parse(readFileSync(progressFile, 'utf-8'));
-        }
-        catch {
-            // Ignore parse errors
+        const progressContent = readFileSync(progressFile, 'utf-8');
+        const progressResult = safeParseJson(progressContent, {
+            filePath: progressFile,
+        });
+        if (progressResult.success) {
+            progress = progressResult.data;
         }
     }
     if (progress && progress.status === 'paused') {

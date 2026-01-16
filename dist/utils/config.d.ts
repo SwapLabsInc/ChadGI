@@ -3,7 +3,7 @@
  *
  * Provides functions for parsing YAML configuration files and loading config values.
  */
-import type { GitHubConfig, BranchConfig, EnvVarOverride, ConfigWithSources, LoadConfigEnvOptions } from '../types/index.js';
+import type { ChadGIConfig, GitHubConfig, BranchConfig, EnvVarOverride, ConfigWithSources, LoadConfigEnvOptions } from '../types/index.js';
 /**
  * Parse a simple YAML value (top-level key: value extraction)
  *
@@ -233,4 +233,50 @@ export declare function getSupportedEnvVars(prefix?: string): string[];
  * @returns Formatted string with environment variable documentation
  */
 export declare function formatEnvVarHelp(prefix?: string): string;
+/**
+ * Validation error indicating a logical constraint violation
+ */
+export interface ConfigValidationError {
+    /** The config field(s) that caused the error */
+    fields: string[];
+    /** Human-readable error message */
+    message: string;
+    /** Error severity: 'error' means invalid config, 'warning' is informational */
+    severity: 'error' | 'warning';
+}
+/**
+ * Result of configuration logic validation
+ */
+export interface ConfigValidationResult {
+    /** Whether the configuration is valid (no errors) */
+    valid: boolean;
+    /** List of validation errors found */
+    errors: ConfigValidationError[];
+    /** List of validation warnings found */
+    warnings: ConfigValidationError[];
+}
+/**
+ * Validates cross-field logical constraints in the configuration.
+ *
+ * This function runs after schema validation to catch logically invalid
+ * configurations that are technically valid YAML but would cause runtime
+ * errors or unexpected behavior.
+ *
+ * Validates:
+ * - Budget constraints (per_task_limit <= per_session_limit, warning_threshold 0-100, no negatives)
+ * - Column name uniqueness (ready, in_progress, review, done must be different)
+ * - Iteration constraints (max_iterations >= 1, poll_interval >= 100)
+ * - Branch prefix doesn't conflict with base branch
+ *
+ * @param config - The configuration object to validate
+ * @returns Validation result with errors and warnings
+ */
+export declare function validateConfigLogic(config: ChadGIConfig): ConfigValidationResult;
+/**
+ * Formats validation errors for display.
+ *
+ * @param result - The validation result to format
+ * @returns Array of formatted error strings
+ */
+export declare function formatConfigValidationErrors(result: ConfigValidationResult): string[];
 //# sourceMappingURL=config.d.ts.map

@@ -4,9 +4,15 @@
  * Provides crash-safe file writing operations using the write-to-temp-then-rename
  * pattern. This ensures that files are never left in a corrupted or partial state
  * even if the process is killed during a write operation.
+ *
+ * Also provides safe JSON parsing utilities with structured error logging for
+ * debugging corrupted or malformed JSON files.
  */
-import { writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
+import { writeFileSync, renameSync, unlinkSync, existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
+import { isVerbose } from './debug.js';
+import { logSilentError, ErrorCategory } from './diagnostics.js';
+import { withContext, withContextAsync } from './errors.js';
 /**
  * Default number of retry attempts for transient failures
  */
@@ -82,8 +88,9 @@ export function atomicWriteFile(filePath, content) {
                 unlinkSync(tempPath);
             }
         }
-        catch {
-            // Ignore cleanup errors - the original error is more important
+        catch (cleanupError) {
+            // Cleanup errors are secondary - the original error takes priority
+            logSilentError(cleanupError, `cleaning up temp file ${tempPath}`, ErrorCategory.EXPECTED);
         }
         // Re-throw the original error
         throw error;
@@ -168,5 +175,322 @@ export async function safeWriteFile(filePath, content, options = {}) {
 export async function safeWriteJson(filePath, data, options = {}) {
     const content = JSON.stringify(data, null, 2);
     await safeWriteFile(filePath, content, options);
+}
+// ============================================================================
+// Safe JSON Parsing
+// ============================================================================
+/**
+ * Maximum length for content preview in error messages (protects against exposing secrets)
+ */
+const CONTENT_PREVIEW_LENGTH = 100;
+/**
+ * Extract position information from JSON parse error message
+ *
+ * @param errorMessage - The error message from JSON.parse
+ * @returns Object with line, column, and position if found
+ */
+function extractJsonErrorPosition(errorMessage) {
+    // Try to extract position from error like "Unexpected token at position 142"
+    const positionMatch = errorMessage.match(/position\s+(\d+)/i);
+    if (positionMatch) {
+        return { position: parseInt(positionMatch[1], 10) };
+    }
+    // Try to extract line/column from error like "at line 5 column 12"
+    const lineColMatch = errorMessage.match(/line\s+(\d+)\s+column\s+(\d+)/i);
+    if (lineColMatch) {
+        return {
+            line: parseInt(lineColMatch[1], 10),
+            column: parseInt(lineColMatch[2], 10),
+        };
+    }
+    return {};
+}
+/**
+ * Create a safe content preview that won't expose sensitive data
+ *
+ * @param content - The raw content string
+ * @returns A truncated preview safe for logging
+ */
+function createContentPreview(content) {
+    if (!content || content.length === 0) {
+        return '<empty>';
+    }
+    // Check for binary content (non-printable characters)
+    const printableRatio = content.substring(0, Math.min(200, content.length))
+        .split('')
+        .filter(c => {
+        const code = c.charCodeAt(0);
+        // Allow printable ASCII and common whitespace
+        return (code >= 32 && code <= 126) || code === 9 || code === 10 || code === 13;
+    }).length / Math.min(200, content.length);
+    if (printableRatio < 0.8) {
+        return '<binary content>';
+    }
+    // Truncate and indicate if truncated
+    const preview = content.substring(0, CONTENT_PREVIEW_LENGTH);
+    const truncated = content.length > CONTENT_PREVIEW_LENGTH;
+    // Replace newlines for cleaner single-line output
+    const cleaned = preview.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+    return truncated ? `${cleaned}...` : cleaned;
+}
+/**
+ * Log a JSON parse error to stderr with context
+ *
+ * @param error - The parse error
+ * @param content - The content that failed to parse
+ * @param options - Options containing file path and other context
+ */
+function logJsonParseError(error, content, options) {
+    const { filePath } = options;
+    const verbose = isVerbose();
+    // Build error message components
+    const errorMsg = error.message;
+    const positionInfo = extractJsonErrorPosition(errorMsg);
+    const preview = createContentPreview(content);
+    // Basic error message to stderr
+    const fileContext = filePath ? ` in ${filePath}` : '';
+    process.stderr.write(`[WARN] JSON parse error${fileContext}: ${errorMsg}\n`);
+    // Additional details in verbose/debug mode
+    if (verbose) {
+        if (positionInfo.position !== undefined) {
+            process.stderr.write(`[DEBUG]   Position: ${positionInfo.position}\n`);
+        }
+        if (positionInfo.line !== undefined && positionInfo.column !== undefined) {
+            process.stderr.write(`[DEBUG]   Line: ${positionInfo.line}, Column: ${positionInfo.column}\n`);
+        }
+        process.stderr.write(`[DEBUG]   Content preview: ${preview}\n`);
+        process.stderr.write(`[DEBUG]   Content length: ${content.length} bytes\n`);
+    }
+}
+/**
+ * Safely parse JSON content with structured error logging and optional schema validation.
+ *
+ * Unlike JSON.parse which throws on invalid input, this function:
+ * - Returns a typed result object indicating success or failure
+ * - Logs parse errors to stderr with context (file path, error position, content preview)
+ * - Shows additional details when --verbose/--debug flag is set
+ * - Protects against exposing sensitive data in error logs
+ * - Optionally returns a fallback value instead of a failure result
+ * - Optionally validates parsed data against a schema with bounds checking
+ * - Supports recovery of invalid fields using default values
+ *
+ * @param content - The JSON string to parse
+ * @param options - Options for error logging, validation, and fallback behavior
+ * @returns A result object with either { success: true, data: T } or { success: false, error: string }
+ *
+ * @example
+ * ```typescript
+ * // Basic usage with result checking
+ * const result = safeParseJson<Config>(content, { filePath: '/path/to/config.json' });
+ * if (result.success) {
+ *   console.log(result.data);
+ * } else {
+ *   console.error(result.error);
+ * }
+ *
+ * // With fallback value - always returns data
+ * const result = safeParseJson<Config[]>(content, {
+ *   filePath: '/path/to/stats.json',
+ *   fallback: [],
+ * });
+ * // result.success is always true when fallback is provided
+ * // If parse fails, result.data is the fallback value
+ *
+ * // With schema validation
+ * import { SESSION_STATS_SCHEMA } from './data-schema.js';
+ * const result = safeParseJson<SessionStats>(content, {
+ *   filePath: '/path/to/stats.json',
+ *   schema: SESSION_STATS_SCHEMA,
+ *   recover: true,
+ * });
+ * ```
+ */
+export function safeParseJson(content, options = {}) {
+    try {
+        const data = JSON.parse(content);
+        return { success: true, data };
+    }
+    catch (error) {
+        const parseError = error instanceof Error ? error : new Error(String(error));
+        // Log the error with context
+        logJsonParseError(parseError, content, options);
+        // If fallback is provided, return success with fallback value
+        if ('fallback' in options && options.fallback !== undefined) {
+            return { success: true, data: options.fallback };
+        }
+        return { success: false, error: parseError.message };
+    }
+}
+/**
+ * Parse and validate JSON content against a schema with recovery support.
+ *
+ * This is a convenience wrapper that combines JSON parsing with schema validation.
+ * It's designed for loading persisted data structures that need bounds checking.
+ *
+ * Note: This function requires validateSchema to be passed in to avoid circular
+ * dependency issues in ES modules. Use the version from data.ts which has
+ * proper imports configured.
+ *
+ * @param content - The JSON string to parse
+ * @param validateFn - The validateSchema function from data-schema module
+ * @param schema - The schema to validate against
+ * @param options - Options for validation and error handling
+ * @returns Validated data or null on failure
+ *
+ * @example
+ * ```typescript
+ * import { validateSchema, TASK_LOCK_DATA_SCHEMA } from './data-schema.js';
+ * const lockData = safeParseAndValidate<TaskLockData>(
+ *   content,
+ *   validateSchema,
+ *   TASK_LOCK_DATA_SCHEMA,
+ *   { filePath: lockPath }
+ * );
+ * if (lockData) {
+ *   // Use validated lock data
+ * }
+ * ```
+ */
+export function safeParseAndValidate(content, validateFn, schema, options = {}) {
+    const parseResult = safeParseJson(content, {
+        filePath: options.filePath,
+    });
+    if (!parseResult.success) {
+        return null;
+    }
+    const validation = validateFn(parseResult.data, schema, {
+        recover: options.recover !== false,
+        filePath: options.filePath,
+    });
+    if (!validation.valid) {
+        const errorMessages = validation.errors
+            .filter(e => !e.recovered)
+            .map(e => `${e.path}: ${e.message}`)
+            .join('; ');
+        const fileContext = options.filePath ? ` in ${options.filePath}` : '';
+        process.stderr.write(`[WARN] Schema validation failed for ${schema.name}${fileContext}: ${errorMessages}\n`);
+        return null;
+    }
+    return validation.data ?? null;
+}
+// ============================================================================
+// Context-Aware File Operations
+// ============================================================================
+/**
+ * Read a file with automatic error context attachment.
+ *
+ * Wraps fs.readFileSync with error context that includes:
+ * - Operation type ('file-read')
+ * - File path
+ * - Timing information
+ *
+ * @param filePath - The file path to read
+ * @param encoding - File encoding (default: 'utf-8')
+ * @returns File contents as string
+ * @throws ChadGIError with context if read fails
+ *
+ * @example
+ * ```typescript
+ * const content = readFileWithContext('/path/to/config.json');
+ * ```
+ */
+export function readFileWithContext(filePath, encoding = 'utf-8') {
+    return withContext('file-read', { filePath }, () => readFileSync(filePath, encoding));
+}
+/**
+ * Write a file atomically with automatic error context attachment.
+ *
+ * Combines atomic write safety with error context enrichment.
+ *
+ * @param filePath - The target file path
+ * @param content - The content to write
+ * @throws ChadGIError with context if write fails
+ *
+ * @example
+ * ```typescript
+ * writeFileWithContext('/path/to/config.json', JSON.stringify(data));
+ * ```
+ */
+export function writeFileWithContext(filePath, content) {
+    withContext('file-write', { filePath }, () => atomicWriteFile(filePath, content));
+}
+/**
+ * Write JSON data atomically with automatic error context attachment.
+ *
+ * @param filePath - The target file path
+ * @param data - The data to serialize and write
+ * @throws ChadGIError with context if write fails
+ *
+ * @example
+ * ```typescript
+ * writeJsonWithContext('/path/to/progress.json', { status: 'running' });
+ * ```
+ */
+export function writeJsonWithContext(filePath, data) {
+    withContext('file-write', { filePath }, () => atomicWriteJson(filePath, data), { contentType: 'json' });
+}
+/**
+ * Safely write a file with retries and error context attachment.
+ *
+ * @param filePath - The target file path
+ * @param content - The content to write
+ * @param options - Write options (retries, delay)
+ * @returns Promise that resolves when write succeeds
+ * @throws ChadGIError with context if all retries fail
+ *
+ * @example
+ * ```typescript
+ * await safeWriteFileWithContext('/path/to/file.txt', content, { maxRetries: 5 });
+ * ```
+ */
+export async function safeWriteFileWithContext(filePath, content, options = {}) {
+    await withContextAsync('file-write', { filePath }, () => safeWriteFile(filePath, content, options), { retryable: true, maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES });
+}
+/**
+ * Safely write JSON with retries and error context attachment.
+ *
+ * @param filePath - The target file path
+ * @param data - The data to serialize and write
+ * @param options - Write options (retries, delay)
+ * @returns Promise that resolves when write succeeds
+ * @throws ChadGIError with context if all retries fail
+ *
+ * @example
+ * ```typescript
+ * await safeWriteJsonWithContext('/path/to/config.json', { key: 'value' });
+ * ```
+ */
+export async function safeWriteJsonWithContext(filePath, data, options = {}) {
+    await withContextAsync('file-write', { filePath }, () => safeWriteJson(filePath, data, options), { contentType: 'json', retryable: true, maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES });
+}
+/**
+ * Check if a file exists with error context on failure.
+ *
+ * Note: This function doesn't throw on "file not found" - it returns false.
+ * It only throws (with context) on unexpected errors like permission issues.
+ *
+ * @param filePath - The file path to check
+ * @returns true if file exists, false otherwise
+ */
+export function existsWithContext(filePath) {
+    return withContext('file-read', { filePath }, () => existsSync(filePath), { checkOnly: true });
+}
+/**
+ * Delete a file with error context attachment.
+ *
+ * @param filePath - The file path to delete
+ * @throws ChadGIError with context if delete fails (and file exists)
+ *
+ * @example
+ * ```typescript
+ * deleteFileWithContext('/path/to/temp-file.txt');
+ * ```
+ */
+export function deleteFileWithContext(filePath) {
+    withContext('file-delete', { filePath }, () => {
+        if (existsSync(filePath)) {
+            unlinkSync(filePath);
+        }
+    });
 }
 //# sourceMappingURL=fileOps.js.map

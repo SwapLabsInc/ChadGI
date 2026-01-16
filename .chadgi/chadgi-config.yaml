@@ -57,7 +57,7 @@ iteration:
   ready_promise: "READY_FOR_PR"     # String Claude outputs when implementation is done (before PR)
   # Commands to verify work (run after implementation, BEFORE PR creation)
   # Tests must pass before Claude is asked to create a PR
-  test_command: "npm test"
+  test_command: "npm run test:ci"
   build_command: "npm run build"
   # What to do when max iterations reached without success
   # Options: skip (move to next task), rollback (reset branch), retry-later (move back to ready)

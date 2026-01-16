@@ -38,11 +38,16 @@ export declare function getLockFilePath(chadgiDir: string, issueNumber: number):
  */
 export declare function ensureLocksDir(chadgiDir: string): void;
 /**
- * Read a task lock file
+ * Read a task lock file with schema validation.
+ *
+ * The lock data is validated against TASK_LOCK_DATA_SCHEMA to ensure:
+ * - All required fields (issue_number, session_id, pid, etc.) are present
+ * - Numeric fields are positive integers
+ * - Timestamps are in valid ISO format
  *
  * @param chadgiDir - Path to the .chadgi directory
  * @param issueNumber - The issue number
- * @returns Lock data or null if no lock exists
+ * @returns Validated lock data or null if no lock exists or validation fails
  */
 export declare function readTaskLock(chadgiDir: string, issueNumber: number): TaskLockData | null;
 /**
@@ -97,11 +102,14 @@ export declare function forceReleaseTaskLock(chadgiDir: string, issueNumber: num
  */
 export declare function updateLockHeartbeat(chadgiDir: string, issueNumber: number, sessionId: string): boolean;
 /**
- * List all current task locks
+ * List all current task locks with schema validation.
+ *
+ * Each lock file is validated against TASK_LOCK_DATA_SCHEMA.
+ * Invalid locks are filtered out.
  *
  * @param chadgiDir - Path to the .chadgi directory
  * @param timeoutMinutes - Timeout for determining staleness
- * @returns Array of lock info objects
+ * @returns Array of validated lock info objects
  */
 export declare function listTaskLocks(chadgiDir: string, timeoutMinutes?: number): TaskLockInfo[];
 /**

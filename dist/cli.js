@@ -4,18 +4,21 @@ import { init } from './init.js';
 import { setup } from './setup.js';
 import { start } from './start.js';
 import { setupProject } from './setup-project.js';
-import { validate } from './validate.js';
 import { stats } from './stats.js';
-import { history } from './history.js';
-import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
 import { watch } from './watch.js';
-import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
-import { queue, queueSkip, queuePromote } from './queue.js';
+// Middleware-based commands (refactored for reduced boilerplate)
+import { validateMiddleware } from './validate-middleware.js';
+import { historyMiddleware } from './history-middleware.js';
+import { insightsMiddleware } from './insights-middleware.js';
+import { doctorMiddleware } from './doctor-middleware.js';
+import { queueMiddleware } from './queue-middleware.js';
+// Keep queue skip/promote from old module for now (will be migrated later)
+import { queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
 import { configMigrate, printMigrationHistory } from './config-migrate.js';
 import { completion, getInstallationInstructions } from './completion.js';
@@ -35,8 +38,30 @@ import { createNumericParser, validateNumeric } from './utils/validation.js';
 import { colors } from './utils/colors.js';
 import { wrapCommand, wrapCommandWithArg } from './utils/cli-error-handler.js';
 import { initDebugFromEnv, enableVerbose, enableTrace, isVerbose, isTrace, } from './utils/debug.js';
+import { addStandardOptions, validateOptionConflicts } from './utils/cli-options.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+/**
+ * Get the full command name including parent commands for subcommands.
+ * For example, "logs view" for the view subcommand of logs.
+ *
+ * @param command - The Commander command object
+ * @returns Full command name (e.g., "cleanup", "logs view")
+ */
+function getFullCommandName(command) {
+    const names = [];
+    let current = command;
+    while (current) {
+        const name = current.name();
+        // Stop at the root program (named 'chadgi')
+        if (name === 'chadgi' || !name) {
+            break;
+        }
+        names.unshift(name);
+        current = current.parent;
+    }
+    return names.join(' ');
+}
 // Read version from package.json
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
@@ -49,7 +74,7 @@ program
     .version(packageJson.version)
     .option('-v, --verbose', 'Enable verbose output for debugging')
     .option('--trace', 'Enable trace output (includes verbose, shows API payloads)')
-    .hook('preAction', () => {
+    .hook('preAction', (thisCommand, actionCommand) => {
     // Apply global verbose/trace flags from CLI
     const opts = program.opts();
     if (opts.trace) {
@@ -64,6 +89,26 @@ program
     }
     else if (isVerbose()) {
         console.error(`${colors.cyan}[DEBUG]${colors.reset} Verbose mode enabled - showing debug output`);
+    }
+    // Validate option conflicts for the command being executed
+    // Build command name including parent for subcommands (e.g., "logs view")
+    const commandName = getFullCommandName(actionCommand);
+    const commandOpts = actionCommand.opts();
+    // Also include positional arguments as options for conflict checking
+    // (e.g., issueNumber from 'replay [issue-number]')
+    const args = actionCommand.processedArgs || [];
+    const optsWithArgs = { ...commandOpts };
+    // Check if the command has a positional argument that looks like an issue number
+    if (args.length > 0 && args[0] !== undefined) {
+        // First positional arg is typically issue number for commands like replay, diff, unlock
+        optsWithArgs.issueNumber = args[0];
+    }
+    const conflictResult = validateOptionConflicts(commandName, optsWithArgs);
+    if (!conflictResult.valid) {
+        for (const error of conflictResult.errors) {
+            console.error(`${colors.red}Error:${colors.reset} ${error}`);
+        }
+        process.exit(1);
     }
 });
 program
@@ -115,8 +160,11 @@ program
     .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
     .option('-v, --verbose', 'Show detailed information including env var sources')
     .option('--env-prefix <prefix>', 'Custom environment variable prefix (default: CHADGI_)')
+    .option('-j, --json', 'Output validation results as JSON')
     .action(wrapCommand(async (options) => {
-    const isValid = await validate(options);
+    const result = await validateMiddleware(options);
+    // Exit code based on validation success
+    const isValid = result && (result.data === true || result.success === true);
     process.exit(isValid ? 0 : 1);
 }));
 program
@@ -126,24 +174,17 @@ program
     .option('-l, --last <n>', 'Show only the last N sessions', createNumericParser('last', 'sessionCount'))
     .option('-j, --json', 'Output statistics as JSON')
     .action(wrapCommand(stats));
-program
+addStandardOptions(program
     .command('history')
-    .description('View task execution history')
-    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-    .option('-l, --limit <n>', 'Number of entries to show (default: 10)', createNumericParser('limit', 'limit'))
-    .option('-s, --since <time>', 'Show tasks since (e.g., 7d, 2w, 1m, 2024-01-01)')
+    .description('View task execution history'), ['config', 'json', 'limit', 'since'])
     .option('--status <outcome>', 'Filter by outcome (success, failed, skipped)')
-    .option('-j, --json', 'Output history as JSON')
-    .action(wrapCommand(history));
-program
+    .action(wrapCommand(historyMiddleware));
+addStandardOptions(program
     .command('insights')
-    .description('Display aggregated performance analytics and profiling')
-    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-    .option('-j, --json', 'Output insights as JSON')
+    .description('Display aggregated performance analytics and profiling'), ['config', 'json', 'days'])
     .option('-e, --export <path>', 'Export metrics data to file')
-    .option('-d, --days <n>', 'Show only data from the last N days', createNumericParser('days', 'days'))
     .option('--category <type>', 'Filter insights by task category (e.g., bug, feature, refactor)')
-    .action(wrapCommand(insights));
+    .action(wrapCommand(insightsMiddleware));
 program
     .command('pause')
     .description('Pause ChadGI after the current task completes')
@@ -157,12 +198,9 @@ program
     .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
     .option('--restart', 'Start ChadGI if not currently running')
     .action(wrapCommand(resume));
-program
+addStandardOptions(program
     .command('status')
-    .description('Show current ChadGI session state')
-    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-    .option('-j, --json', 'Output status as JSON')
-    .action(wrapCommand(status));
+    .description('Show current ChadGI session state'), ['config', 'json']).action(wrapCommand(status));
 program
     .command('watch')
     .description('Monitor a running ChadGI session in real-time')
@@ -171,26 +209,19 @@ program
     .option('-o, --once', 'Show current status once without auto-refresh')
     .option('-i, --interval <ms>', 'Refresh interval in milliseconds (default: 2000, min: 100)', createNumericParser('interval', 'interval'))
     .action(wrapCommand(watch));
-program
+addStandardOptions(program
     .command('doctor')
-    .description('Run comprehensive health checks and diagnostics')
-    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-    .option('-j, --json', 'Output health report as JSON')
+    .description('Run comprehensive health checks and diagnostics'), ['config', 'json'])
     .option('--fix', 'Auto-remediate simple issues (clear stale locks, etc.)')
     .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
-    .action(wrapCommand(doctor));
-program
+    .action(wrapCommand(doctorMiddleware));
+addStandardOptions(program
     .command('cleanup')
-    .description('Clean up stale branches, old diagnostics, and rotated log files')
-    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .description('Clean up stale branches, old diagnostics, and rotated log files'), ['config', 'json', 'dryRun', 'yes', 'days'])
     .option('--branches', 'Delete orphaned feature branches (local and remote)')
     .option('--diagnostics', 'Remove diagnostic artifacts older than N days')
     .option('--logs', 'Remove rotated log files beyond retention limit')
     .option('--all', 'Run all cleanup operations')
-    .option('--dry-run', 'Preview what would be deleted without making changes')
-    .option('--yes', 'Skip confirmation prompts')
-    .option('--days <n>', 'Retention days for diagnostics (default: 30)', createNumericParser('days', 'days'))
-    .option('-j, --json', 'Output results as JSON')
     .action(wrapCommand(cleanup));
 program
     .command('estimate')
@@ -235,13 +266,9 @@ logsCommand
 const queueCommand = program
     .command('queue')
     .description('View and manage the task queue');
-queueCommand
+addStandardOptions(queueCommand
     .command('list', { isDefault: true })
-    .description('List tasks in the Ready column')
-    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-    .option('-j, --json', 'Output queue as JSON')
-    .option('-l, --limit <n>', 'Show only the first N tasks', createNumericParser('limit', 'limit'))
-    .action(wrapCommand(queue));
+    .description('List tasks in the Ready column'), ['config', 'json', 'limit']).action(wrapCommand(queueMiddleware));
 queueCommand
     .command('skip <issue-number>')
     .description('Move a task back to Backlog')

@@ -1,7 +1,8 @@
 /**
  * Unit tests for src/utils/fileOps.ts
  *
- * Tests atomic file write utilities for crash-safe file operations.
+ * Tests atomic file write utilities for crash-safe file operations
+ * and safe JSON parsing utilities.
  */
 import { jest } from '@jest/globals';
 import { vol } from 'memfs';
@@ -10,6 +11,12 @@ let writeFileSyncImpl = null;
 let renameSyncImpl = null;
 let unlinkSyncImpl = null;
 let existsSyncImpl = null;
+// Track isVerbose state
+let isVerboseState = false;
+// Mock the debug module
+jest.unstable_mockModule('../../utils/debug.js', () => ({
+    isVerbose: jest.fn(() => isVerboseState),
+}));
 // Mock the fs module
 jest.unstable_mockModule('fs', () => ({
     writeFileSync: jest.fn((path, content, encoding) => {
@@ -24,6 +31,10 @@ jest.unstable_mockModule('fs', () => ({
             }
             vol.writeFileSync(path, content);
         }
+    }),
+    readFileSync: jest.fn((path, encoding) => {
+        // Default implementation using memfs
+        return vol.readFileSync(path, encoding);
     }),
     renameSync: jest.fn((oldPath, newPath) => {
         if (renameSyncImpl) {
@@ -52,7 +63,7 @@ jest.unstable_mockModule('fs', () => ({
     }),
 }));
 // Import after mocking
-const { atomicWriteFile, atomicWriteJson, safeWriteFile, safeWriteJson } = await import('../../utils/fileOps.js');
+const { atomicWriteFile, atomicWriteJson, safeWriteFile, safeWriteJson, safeParseJson } = await import('../../utils/fileOps.js');
 const fsMock = await import('fs');
 describe('fileOps utilities', () => {
     beforeEach(() => {
@@ -63,6 +74,8 @@ describe('fileOps utilities', () => {
         renameSyncImpl = null;
         unlinkSyncImpl = null;
         existsSyncImpl = null;
+        // Reset verbose state
+        isVerboseState = false;
     });
     describe('atomicWriteFile', () => {
         it('should write file content atomically', () => {
@@ -256,6 +269,149 @@ describe('fileOps utilities', () => {
             };
             await safeWriteJson('/project/.chadgi/config.json', { key: 'value' }, { retryDelayMs: 10 });
             expect(attempts).toBe(2);
+        });
+    });
+    describe('safeParseJson', () => {
+        // Capture stderr output
+        let stderrOutput;
+        let originalWrite;
+        beforeEach(() => {
+            stderrOutput = '';
+            originalWrite = process.stderr.write;
+            process.stderr.write = ((chunk) => {
+                stderrOutput += chunk;
+                return true;
+            });
+        });
+        afterEach(() => {
+            process.stderr.write = originalWrite;
+        });
+        it('should parse valid JSON and return success', () => {
+            const content = '{"key": "value", "count": 42}';
+            const result = safeParseJson(content);
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data.key).toBe('value');
+                expect(result.data.count).toBe(42);
+            }
+        });
+        it('should parse valid JSON arrays', () => {
+            const content = '[1, 2, 3]';
+            const result = safeParseJson(content);
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data).toEqual([1, 2, 3]);
+            }
+        });
+        it('should return failure for malformed JSON', () => {
+            const content = '{"key": "value"'; // Missing closing brace
+            const result = safeParseJson(content);
+            expect(result.success).toBe(false);
+            if (!result.success) {
+                expect(result.error).toBeTruthy();
+            }
+            // Should log warning to stderr
+            expect(stderrOutput).toContain('[WARN] JSON parse error');
+        });
+        it('should return failure for empty content', () => {
+            const content = '';
+            const result = safeParseJson(content);
+            expect(result.success).toBe(false);
+            expect(stderrOutput).toContain('[WARN] JSON parse error');
+        });
+        it('should include file path in error message when provided', () => {
+            const content = 'not valid json';
+            safeParseJson(content, { filePath: '/path/to/config.json' });
+            expect(stderrOutput).toContain('/path/to/config.json');
+        });
+        it('should return fallback value on parse error when provided', () => {
+            const content = 'invalid json';
+            const result = safeParseJson(content, {
+                filePath: '/test.json',
+                fallback: [],
+            });
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data).toEqual([]);
+            }
+            // Should still log the warning
+            expect(stderrOutput).toContain('[WARN] JSON parse error');
+        });
+        it('should return fallback object on parse error', () => {
+            const content = '{invalid}';
+            const fallback = { defaultValue: true };
+            const result = safeParseJson(content, {
+                fallback,
+            });
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data).toEqual(fallback);
+            }
+        });
+        it('should show debug details when verbose mode is enabled', () => {
+            isVerboseState = true;
+            const content = '{"incomplete": ';
+            safeParseJson(content, { filePath: '/test.json' });
+            expect(stderrOutput).toContain('[DEBUG]');
+            expect(stderrOutput).toContain('Content preview');
+            expect(stderrOutput).toContain('Content length');
+        });
+        it('should not show debug details when verbose mode is disabled', () => {
+            isVerboseState = false;
+            const content = '{"incomplete": ';
+            safeParseJson(content, { filePath: '/test.json' });
+            expect(stderrOutput).not.toContain('[DEBUG]');
+        });
+        it('should handle binary content safely', () => {
+            // Create content with many non-printable characters
+            const binaryContent = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]).toString();
+            isVerboseState = true;
+            safeParseJson(binaryContent);
+            expect(stderrOutput).toContain('[WARN] JSON parse error');
+            expect(stderrOutput).toContain('<binary content>');
+        });
+        it('should truncate long content preview', () => {
+            isVerboseState = true;
+            // Create content longer than 100 characters
+            const longContent = 'a'.repeat(200);
+            safeParseJson(longContent);
+            expect(stderrOutput).toContain('[WARN] JSON parse error');
+            expect(stderrOutput).toContain('...');
+        });
+        it('should handle empty content preview', () => {
+            isVerboseState = true;
+            safeParseJson('');
+            expect(stderrOutput).toContain('<empty>');
+        });
+        it('should parse null JSON value', () => {
+            const result = safeParseJson('null');
+            expect(result.success).toBe(true);
+            if (result.success) {
+                expect(result.data).toBeNull();
+            }
+        });
+        it('should parse primitive JSON values', () => {
+            const stringResult = safeParseJson('"hello"');
+            const numberResult = safeParseJson('42');
+            const boolResult = safeParseJson('true');
+            expect(stringResult.success).toBe(true);
+            expect(numberResult.success).toBe(true);
+            expect(boolResult.success).toBe(true);
+            if (stringResult.success)
+                expect(stringResult.data).toBe('hello');
+            if (numberResult.success)
+                expect(numberResult.data).toBe(42);
+            if (boolResult.success)
+                expect(boolResult.data).toBe(true);
+        });
+        it('should preserve error position info if available', () => {
+            isVerboseState = true;
+            // This will cause an error with position info
+            const content = '{"key": value}'; // unquoted value
+            safeParseJson(content);
+            expect(stderrOutput).toContain('[WARN] JSON parse error');
+            // Position info should be shown in verbose mode
+            expect(stderrOutput).toContain('[DEBUG]');
         });
     });
 });

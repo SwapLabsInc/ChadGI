@@ -18,6 +18,7 @@ TESTS_FAILED=0
 
 # Test helper functions
 pass() {
+    if [ "${QUIET:-0}" = "1" ]; then TESTS_PASSED=$((TESTS_PASSED + 1)); return; fi
     echo -e "${GREEN}PASS${NC}: $1"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 }

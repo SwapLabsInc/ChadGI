@@ -8,7 +8,8 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { hostname } from 'os';
-import { atomicWriteJson } from './fileOps.js';
+import { atomicWriteJson, safeParseJson } from './fileOps.js';
+import { TASK_LOCK_DATA_SCHEMA, validateSchema } from './data-schema.js';
 /** Default lock timeout in minutes (2 hours) */
 export const DEFAULT_LOCK_TIMEOUT_MINUTES = 120;
 /** Heartbeat interval in milliseconds (30 seconds) */
@@ -54,24 +55,34 @@ export function ensureLocksDir(chadgiDir) {
     }
 }
 /**
- * Read a task lock file
+ * Read a task lock file with schema validation.
+ *
+ * The lock data is validated against TASK_LOCK_DATA_SCHEMA to ensure:
+ * - All required fields (issue_number, session_id, pid, etc.) are present
+ * - Numeric fields are positive integers
+ * - Timestamps are in valid ISO format
  *
  * @param chadgiDir - Path to the .chadgi directory
  * @param issueNumber - The issue number
- * @returns Lock data or null if no lock exists
+ * @returns Validated lock data or null if no lock exists or validation fails
  */
 export function readTaskLock(chadgiDir, issueNumber) {
     const lockPath = getLockFilePath(chadgiDir, issueNumber);
     if (!existsSync(lockPath)) {
         return null;
     }
-    try {
-        const content = readFileSync(lockPath, 'utf-8');
-        return JSON.parse(content);
-    }
-    catch {
+    const content = readFileSync(lockPath, 'utf-8');
+    const parseResult = safeParseJson(content, {
+        filePath: lockPath,
+    });
+    if (!parseResult.success) {
         return null;
     }
+    const validation = validateSchema(parseResult.data, TASK_LOCK_DATA_SCHEMA, {
+        recover: false, // Lock data is critical - don't recover with defaults
+        filePath: lockPath,
+    });
+    return validation.valid ? validation.data ?? null : null;
 }
 /**
  * Check if a lock is stale based on the last heartbeat time
@@ -254,11 +265,14 @@ export function updateLockHeartbeat(chadgiDir, issueNumber, sessionId) {
     }
 }
 /**
- * List all current task locks
+ * List all current task locks with schema validation.
+ *
+ * Each lock file is validated against TASK_LOCK_DATA_SCHEMA.
+ * Invalid locks are filtered out.
  *
  * @param chadgiDir - Path to the .chadgi directory
  * @param timeoutMinutes - Timeout for determining staleness
- * @returns Array of lock info objects
+ * @returns Array of validated lock info objects
  */
 export function listTaskLocks(chadgiDir, timeoutMinutes = DEFAULT_LOCK_TIMEOUT_MINUTES) {
     const locksDir = getLocksDir(chadgiDir);
@@ -270,9 +284,20 @@ export function listTaskLocks(chadgiDir, timeoutMinutes = DEFAULT_LOCK_TIMEOUT_M
         const files = readdirSync(locksDir).filter((f) => f.startsWith('issue-') && f.endsWith('.lock'));
         const now = Date.now();
         for (const file of files) {
-            try {
-                const content = readFileSync(join(locksDir, file), 'utf-8');
-                const lock = JSON.parse(content);
+            const filePath = join(locksDir, file);
+            const content = readFileSync(filePath, 'utf-8');
+            const parseResult = safeParseJson(content, {
+                filePath,
+            });
+            if (!parseResult.success) {
+                continue;
+            }
+            const validation = validateSchema(parseResult.data, TASK_LOCK_DATA_SCHEMA, {
+                recover: false, // Lock data is critical - don't recover with defaults
+                filePath,
+            });
+            if (validation.valid && validation.data) {
+                const lock = validation.data;
                 const lockedAt = new Date(lock.locked_at).getTime();
                 const heartbeatAt = new Date(lock.last_heartbeat).getTime();
                 locks.push({
@@ -287,9 +312,6 @@ export function listTaskLocks(chadgiDir, timeoutMinutes = DEFAULT_LOCK_TIMEOUT_M
                     workerId: lock.worker_id,
                     repoName: lock.repo_name,
                 });
-            }
-            catch {
-                // Skip invalid lock files
             }
         }
     }

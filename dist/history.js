@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from 'fs';
 // Import shared utilities
 import { colors } from './utils/colors.js';
 import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
-import { formatDuration, formatDate, formatCost, parseSince, horizontalLine, truncate } from './utils/formatting.js';
+import { formatDuration, formatDate, formatCost, parseSince, truncate } from './utils/formatting.js';
 import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
+import { Section, BracketedBadge, divider, keyValue } from './utils/textui.js';
 // Build unified history entries from both data sources
 function buildHistoryEntries(sessions, metrics, _repo) {
     const entries = [];
@@ -103,13 +104,15 @@ function applyFilters(entries, options) {
     }
     return { filtered, sinceDate, statusFilter };
 }
-// Print formatted history output
+// Print formatted history output using text UI components
 function printHistory(entries, total, sinceDate, statusFilter, _repo) {
-    console.log(`${colors.purple}${colors.bold}`);
-    console.log('==========================================================');
-    console.log('                  CHADGI TASK HISTORY                      ');
-    console.log('==========================================================');
-    console.log(`${colors.reset}`);
+    // Print section header using Section component
+    const header = new Section({
+        title: 'CHADGI TASK HISTORY',
+        width: 58,
+    });
+    header.printHeader();
+    console.log('');
     // Show filters if applied
     if (sinceDate || statusFilter) {
         console.log(`${colors.dim}Filters applied:`);
@@ -150,36 +153,36 @@ function printHistory(entries, total, sinceDate, statusFilter, _repo) {
     console.log('');
     // Task list header
     console.log(`${colors.cyan}${colors.bold}Task History${colors.reset}`);
-    console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
-    // Task entries
+    console.log(divider(78));
+    // Task entries using Badge for status
     for (const entry of entries) {
-        const outcomeColor = entry.outcome === 'success'
-            ? colors.green
+        const badgeStyle = entry.outcome === 'success'
+            ? 'success'
             : entry.outcome === 'skipped'
-                ? colors.yellow
-                : colors.red;
+                ? 'warning'
+                : 'error';
         const outcomeText = entry.outcome === 'success'
             ? 'SUCCESS'
             : entry.outcome === 'skipped'
                 ? 'SKIPPED'
                 : 'FAILED';
-        // Issue line
-        console.log(`${colors.bold}#${entry.issueNumber}${colors.reset} ${outcomeColor}[${outcomeText}]${colors.reset}`);
+        // Issue line with bracketed badge
+        console.log(`${colors.bold}#${entry.issueNumber}${colors.reset} ${BracketedBadge(outcomeText, badgeStyle)}`);
         // Title if available
         if (entry.issueTitle) {
             console.log(`  ${colors.dim}${truncate(entry.issueTitle, 60)}${colors.reset}`);
         }
-        // Details
-        console.log(`  Date:    ${formatDate(entry.startedAt)}`);
-        console.log(`  Elapsed: ${formatDuration(entry.elapsedTime)}`);
+        // Details using keyValue helper
+        console.log(keyValue('Date:', formatDate(entry.startedAt), 10));
+        console.log(keyValue('Elapsed:', formatDuration(entry.elapsedTime), 10));
         if (entry.cost !== undefined && entry.cost > 0) {
-            console.log(`  Cost:    ${formatCost(entry.cost)}`);
+            console.log(keyValue('Cost:', formatCost(entry.cost), 10));
         }
         if (entry.category) {
-            console.log(`  Category: ${entry.category}`);
+            console.log(keyValue('Category:', entry.category, 10));
         }
         if (entry.iterations && entry.iterations > 1) {
-            console.log(`  Iterations: ${entry.iterations}`);
+            console.log(keyValue('Iterations:', String(entry.iterations), 10));
         }
         // Failure reason if applicable
         if (entry.outcome === 'failed' && entry.failureReason) {
@@ -189,12 +192,17 @@ function printHistory(entries, total, sinceDate, statusFilter, _repo) {
         if (entry.prUrl) {
             console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
         }
-        console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
+        console.log(divider(78));
     }
     console.log('');
-    console.log(`${colors.purple}${colors.bold}==========================================================`);
-    console.log('               Chad does what Chad wants.');
-    console.log(`==========================================================${colors.reset}`);
+    // Footer section
+    const footer = new Section({
+        title: 'Chad does what Chad wants.',
+        width: 58,
+        showTopDivider: true,
+        showBottomDivider: false,
+    });
+    footer.printHeader();
 }
 export async function history(options = {}) {
     const cwd = process.cwd();
