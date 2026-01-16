@@ -51,6 +51,21 @@ export default {
       lines: 50,
       statements: 50,
     },
+    // Coverage thresholds for command handlers using middleware pattern
+    // These thresholds ensure comprehensive testing while allowing for some
+    // hard-to-reach branches in error handling and edge cases
+    'src/status-middleware.ts': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    'src/queue-middleware.ts': {
+      branches: 70,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
   },
   verbose: true,
 };
