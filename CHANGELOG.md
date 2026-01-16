@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.2.0...v1.3.0) (2026-01-16)
+
+
+### Features
+
+* add OpenTelemetry integration for distributed tracing and metrics ([#147](https://github.com/SwapLabsInc/ChadGI/issues/147)) ([61771e3](https://github.com/SwapLabsInc/ChadGI/commit/61771e33dbfec0086cac8916b759eb44b5756849)), closes [#137](https://github.com/SwapLabsInc/ChadGI/issues/137)
+
 # [1.2.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.4...v1.2.0) (2026-01-16)
 
 
