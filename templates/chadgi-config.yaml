@@ -163,6 +163,60 @@ local_file:
 manual:
   prompt_on_completion: true  # Ask for next task when done
 
+# Lifecycle hooks - Run custom scripts at key points in the ChadGI workflow
+# Scripts receive context via environment variables:
+#   CHADGI_ISSUE_NUMBER - Current issue number
+#   CHADGI_BRANCH - Current branch name
+#   CHADGI_PR_URL - PR URL (when applicable)
+#   CHADGI_COST - Current task/session cost
+#   CHADGI_PHASE - Current phase (pre_task, phase1, phase2, etc.)
+#   CHADGI_REPO - Repository in owner/repo format
+#   CHADGI_HOOK_NAME - Name of the hook being executed
+hooks:
+  # Pre-task hook: Runs before a task starts
+  # Use for: Validation, setup, notifications, team alerts
+  # pre_task:
+  #   script: .chadgi/hooks/pre-task.sh    # Path to script (relative to .chadgi or absolute)
+  #   timeout: 30                           # Max execution time in seconds (default: 30)
+  #   can_abort: true                       # If true, non-zero exit aborts the task
+
+  # Post-implementation hook: Runs after Claude finishes implementation (READY_FOR_PR)
+  # Use for: Code quality checks, security scans, custom validation
+  # post_implementation:
+  #   script: .chadgi/hooks/post-impl.sh
+  #   timeout: 60
+
+  # Pre-PR hook: Runs before PR creation
+  # Use for: Final validation, changelog updates, commit message checks
+  # pre_pr:
+  #   script: .chadgi/hooks/pre-pr.sh
+  #   timeout: 30
+  #   can_abort: true                       # Block PR creation on failure
+
+  # Post-PR hook: Runs after PR is created
+  # Use for: Notifications, labeling, CI triggers
+  # post_pr:
+  #   script: .chadgi/hooks/notify-slack.sh
+  #   timeout: 30
+
+  # Post-merge hook: Runs after GigaChad mode auto-merge
+  # Use for: Deployment triggers, release notes, downstream notifications
+  # post_merge:
+  #   script: .chadgi/hooks/post-merge.sh
+  #   timeout: 60
+
+  # On-failure hook: Runs when a task fails
+  # Use for: Error reporting, rollback triggers, alert escalation
+  # on_failure:
+  #   script: .chadgi/hooks/on-failure.sh
+  #   timeout: 30
+
+  # On-budget-warning hook: Runs when approaching budget limit
+  # Use for: Cost alerts, Slack notifications, auto-pause triggers
+  # on_budget_warning:
+  #   script: .chadgi/hooks/budget-alert.sh
+  #   timeout: 10
+
 # Webhook notifications - Chad keeps you informed
 # Supports Slack, Discord, and generic webhook endpoints
 notifications:

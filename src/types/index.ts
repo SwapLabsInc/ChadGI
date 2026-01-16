@@ -545,3 +545,75 @@ export interface LogFileInfo {
   modified: string;
   entries?: number;
 }
+
+// ============================================================================
+// Lifecycle Hooks Types
+// ============================================================================
+
+/**
+ * Lifecycle hook types supported by ChadGI
+ */
+export type LifecycleHookType =
+  | 'pre_task'
+  | 'post_implementation'
+  | 'pre_pr'
+  | 'post_pr'
+  | 'post_merge'
+  | 'on_failure'
+  | 'on_budget_warning';
+
+/**
+ * Configuration for a single lifecycle hook
+ */
+export interface HookConfig {
+  /** Path to the script to execute (relative to .chadgi directory or absolute) */
+  script: string;
+  /** Timeout in seconds for hook execution (default: 30) */
+  timeout?: number;
+  /** Whether a non-zero exit code from this hook can abort the current phase (default: false) */
+  can_abort?: boolean;
+  /** Whether this hook is enabled (default: true) */
+  enabled?: boolean;
+}
+
+/**
+ * Lifecycle hooks configuration section
+ */
+export interface HooksConfig {
+  /** Pre-task hook: runs before a task is started. Can abort if can_abort is true. */
+  pre_task?: HookConfig;
+  /** Post-implementation hook: runs after Claude finishes implementation (after READY_FOR_PR) */
+  post_implementation?: HookConfig;
+  /** Pre-PR hook: runs before PR creation. Can abort if can_abort is true. */
+  pre_pr?: HookConfig;
+  /** Post-PR hook: runs after PR is created */
+  post_pr?: HookConfig;
+  /** Post-merge hook: runs after GigaChad mode auto-merge */
+  post_merge?: HookConfig;
+  /** On-failure hook: runs when a task fails */
+  on_failure?: HookConfig;
+  /** On-budget-warning hook: runs when approaching budget limit */
+  on_budget_warning?: HookConfig;
+}
+
+/**
+ * Hook execution result
+ */
+export interface HookExecutionResult {
+  /** Name of the hook that was executed */
+  hook: LifecycleHookType;
+  /** Whether the hook executed successfully (exit code 0) */
+  success: boolean;
+  /** Exit code from the hook script */
+  exitCode: number;
+  /** Duration of hook execution in milliseconds */
+  durationMs: number;
+  /** Whether the hook aborted the current phase */
+  aborted: boolean;
+  /** Error message if execution failed */
+  error?: string;
+  /** Standard output from the hook (truncated if too long) */
+  stdout?: string;
+  /** Standard error from the hook (truncated if too long) */
+  stderr?: string;
+}

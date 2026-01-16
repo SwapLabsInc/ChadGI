@@ -93,6 +93,9 @@
     "notifications": {
       "$ref": "#/$defs/NotificationsConfig"
     },
+    "hooks": {
+      "$ref": "#/$defs/HooksConfig"
+    },
     "custom_template_variables": {
       "type": "array",
       "items": {
@@ -615,6 +618,68 @@
           "description": "Notify when the ChadGI session ends."
         }
       }
+    },
+    "HooksConfig": {
+      "type": "object",
+      "description": "Lifecycle hooks configuration. Hooks allow running custom scripts at key points in the ChadGI workflow.",
+      "properties": {
+        "pre_task": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs before a task is started. Can abort the task if can_abort is true and script exits non-zero."
+        },
+        "post_implementation": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs after Claude finishes the implementation phase (after READY_FOR_PR promise)."
+        },
+        "pre_pr": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs before PR creation. Can abort PR creation if can_abort is true and script exits non-zero."
+        },
+        "post_pr": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs after the PR is created."
+        },
+        "post_merge": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs after GigaChad mode auto-merges the PR."
+        },
+        "on_failure": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs when a task fails after all retries."
+        },
+        "on_budget_warning": {
+          "$ref": "#/$defs/HookDefinition",
+          "description": "Runs when task or session cost approaches the budget limit."
+        }
+      }
+    },
+    "HookDefinition": {
+      "type": "object",
+      "description": "Configuration for a single lifecycle hook.",
+      "properties": {
+        "script": {
+          "type": "string",
+          "description": "Path to the script to execute. Relative paths are resolved from the .chadgi directory. The script receives context via environment variables: CHADGI_ISSUE_NUMBER, CHADGI_BRANCH, CHADGI_PR_URL, CHADGI_COST, CHADGI_PHASE, CHADGI_REPO, CHADGI_HOOK_NAME."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "default": 30,
+          "description": "Maximum execution time in seconds before the hook is terminated."
+        },
+        "can_abort": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, a non-zero exit code from this hook will abort the current phase (only applicable for pre_task and pre_pr hooks)."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable this hook without removing the configuration."
+        }
+      },
+      "required": ["script"]
     }
   }
 }

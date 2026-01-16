@@ -934,6 +934,9 @@ load_config() {
         INTERACTIVE_ENABLED="true"
     fi
 
+    # Load lifecycle hooks configuration
+    load_hooks_config "${MERGED_CONFIG_FILES[@]}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -945,6 +948,9 @@ load_config() {
     fi
 
     log_success "Configuration loaded"
+    if has_hooks_configured; then
+        log_info "Lifecycle hooks configured"
+    fi
 }
 
 # Set default configuration
@@ -2045,6 +2051,389 @@ test_webhook_connectivity() {
 }
 
 #------------------------------------------------------------------------------
+# Lifecycle Hooks System
+#------------------------------------------------------------------------------
+
+# Hook configuration state variables
+HOOK_PRE_TASK_SCRIPT=""
+HOOK_PRE_TASK_TIMEOUT=30
+HOOK_PRE_TASK_CAN_ABORT=false
+HOOK_PRE_TASK_ENABLED=true
+
+HOOK_POST_IMPL_SCRIPT=""
+HOOK_POST_IMPL_TIMEOUT=30
+HOOK_POST_IMPL_CAN_ABORT=false
+HOOK_POST_IMPL_ENABLED=true
+
+HOOK_PRE_PR_SCRIPT=""
+HOOK_PRE_PR_TIMEOUT=30
+HOOK_PRE_PR_CAN_ABORT=false
+HOOK_PRE_PR_ENABLED=true
+
+HOOK_POST_PR_SCRIPT=""
+HOOK_POST_PR_TIMEOUT=30
+HOOK_POST_PR_CAN_ABORT=false
+HOOK_POST_PR_ENABLED=true
+
+HOOK_POST_MERGE_SCRIPT=""
+HOOK_POST_MERGE_TIMEOUT=30
+HOOK_POST_MERGE_CAN_ABORT=false
+HOOK_POST_MERGE_ENABLED=true
+
+HOOK_ON_FAILURE_SCRIPT=""
+HOOK_ON_FAILURE_TIMEOUT=30
+HOOK_ON_FAILURE_CAN_ABORT=false
+HOOK_ON_FAILURE_ENABLED=true
+
+HOOK_ON_BUDGET_WARNING_SCRIPT=""
+HOOK_ON_BUDGET_WARNING_TIMEOUT=10
+HOOK_ON_BUDGET_WARNING_CAN_ABORT=false
+HOOK_ON_BUDGET_WARNING_ENABLED=true
+
+# Parse hook configuration from config files
+# Usage: parse_hook_config <hook_name> <config_files...>
+# Sets: HOOK_<UPPER_NAME>_SCRIPT, HOOK_<UPPER_NAME>_TIMEOUT, etc.
+parse_hook_config() {
+    local HOOK_NAME=$1
+    shift
+    local CONFIG_FILES=("$@")
+
+    # Convert hook name for YAML parsing (e.g., "pre_task" stays as is)
+    local YAML_NAME="$HOOK_NAME"
+    # Convert for variable names (e.g., "pre_task" -> "PRE_TASK")
+    local VAR_PREFIX="HOOK_$(echo "$HOOK_NAME" | tr '[:lower:]' '[:upper:]')"
+
+    # Parse values from config files (last value wins, for inheritance)
+    local SCRIPT=""
+    local TIMEOUT=""
+    local CAN_ABORT=""
+    local ENABLED=""
+
+    for CONFIG_FILE in "${CONFIG_FILES[@]}"; do
+        if [ -f "$CONFIG_FILE" ]; then
+            local VAL
+            # Script path
+            VAL=$(awk -v hook="$YAML_NAME" '
+                /^hooks:/ { in_hooks=1; next }
+                in_hooks && /^[a-z]/ { in_hooks=0; in_hook=0 }
+                in_hooks && $0 ~ "^  "hook":" { in_hook=1; next }
+                in_hooks && in_hook && /^  [a-z]/ { in_hook=0 }
+                in_hooks && in_hook && /^    script:/ {
+                    gsub(/^    script: */, "");
+                    gsub(/ *#.*/, "");
+                    gsub(/"/, "");
+                    gsub(/'\''/, "");
+                    print;
+                    exit
+                }
+            ' "$CONFIG_FILE" 2>/dev/null)
+            [ -n "$VAL" ] && SCRIPT="$VAL"
+
+            # Timeout
+            VAL=$(awk -v hook="$YAML_NAME" '
+                /^hooks:/ { in_hooks=1; next }
+                in_hooks && /^[a-z]/ { in_hooks=0; in_hook=0 }
+                in_hooks && $0 ~ "^  "hook":" { in_hook=1; next }
+                in_hooks && in_hook && /^  [a-z]/ { in_hook=0 }
+                in_hooks && in_hook && /^    timeout:/ {
+                    gsub(/^    timeout: */, "");
+                    gsub(/ *#.*/, "");
+                    print;
+                    exit
+                }
+            ' "$CONFIG_FILE" 2>/dev/null)
+            [ -n "$VAL" ] && TIMEOUT="$VAL"
+
+            # Can abort
+            VAL=$(awk -v hook="$YAML_NAME" '
+                /^hooks:/ { in_hooks=1; next }
+                in_hooks && /^[a-z]/ { in_hooks=0; in_hook=0 }
+                in_hooks && $0 ~ "^  "hook":" { in_hook=1; next }
+                in_hooks && in_hook && /^  [a-z]/ { in_hook=0 }
+                in_hooks && in_hook && /^    can_abort:/ {
+                    gsub(/^    can_abort: */, "");
+                    gsub(/ *#.*/, "");
+                    print;
+                    exit
+                }
+            ' "$CONFIG_FILE" 2>/dev/null)
+            [ -n "$VAL" ] && CAN_ABORT="$VAL"
+
+            # Enabled
+            VAL=$(awk -v hook="$YAML_NAME" '
+                /^hooks:/ { in_hooks=1; next }
+                in_hooks && /^[a-z]/ { in_hooks=0; in_hook=0 }
+                in_hooks && $0 ~ "^  "hook":" { in_hook=1; next }
+                in_hooks && in_hook && /^  [a-z]/ { in_hook=0 }
+                in_hooks && in_hook && /^    enabled:/ {
+                    gsub(/^    enabled: */, "");
+                    gsub(/ *#.*/, "");
+                    print;
+                    exit
+                }
+            ' "$CONFIG_FILE" 2>/dev/null)
+            [ -n "$VAL" ] && ENABLED="$VAL"
+        fi
+    done
+
+    # Set global variables based on hook name
+    case "$HOOK_NAME" in
+        "pre_task")
+            HOOK_PRE_TASK_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_PRE_TASK_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_PRE_TASK_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_PRE_TASK_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_PRE_TASK_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_PRE_TASK_ENABLED=true
+            ;;
+        "post_implementation")
+            HOOK_POST_IMPL_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_POST_IMPL_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_POST_IMPL_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_IMPL_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_POST_IMPL_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_IMPL_ENABLED=true
+            ;;
+        "pre_pr")
+            HOOK_PRE_PR_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_PRE_PR_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_PRE_PR_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_PRE_PR_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_PRE_PR_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_PRE_PR_ENABLED=true
+            ;;
+        "post_pr")
+            HOOK_POST_PR_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_POST_PR_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_POST_PR_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_PR_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_POST_PR_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_PR_ENABLED=true
+            ;;
+        "post_merge")
+            HOOK_POST_MERGE_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_POST_MERGE_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_POST_MERGE_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_MERGE_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_POST_MERGE_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_MERGE_ENABLED=true
+            ;;
+        "on_failure")
+            HOOK_ON_FAILURE_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_ON_FAILURE_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_ON_FAILURE_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_ON_FAILURE_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_ON_FAILURE_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_ON_FAILURE_ENABLED=true
+            ;;
+        "on_budget_warning")
+            HOOK_ON_BUDGET_WARNING_SCRIPT="$SCRIPT"
+            [ -n "$TIMEOUT" ] && HOOK_ON_BUDGET_WARNING_TIMEOUT="$TIMEOUT"
+            [ "$CAN_ABORT" = "true" ] && HOOK_ON_BUDGET_WARNING_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_ON_BUDGET_WARNING_CAN_ABORT=false
+            [ "$ENABLED" = "false" ] && HOOK_ON_BUDGET_WARNING_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_ON_BUDGET_WARNING_ENABLED=true
+            ;;
+    esac
+}
+
+# Load all hook configurations from config files
+load_hooks_config() {
+    local CONFIG_FILES=("$@")
+
+    parse_hook_config "pre_task" "${CONFIG_FILES[@]}"
+    parse_hook_config "post_implementation" "${CONFIG_FILES[@]}"
+    parse_hook_config "pre_pr" "${CONFIG_FILES[@]}"
+    parse_hook_config "post_pr" "${CONFIG_FILES[@]}"
+    parse_hook_config "post_merge" "${CONFIG_FILES[@]}"
+    parse_hook_config "on_failure" "${CONFIG_FILES[@]}"
+    parse_hook_config "on_budget_warning" "${CONFIG_FILES[@]}"
+
+    log_debug "Hooks config loaded:"
+    log_debug "  pre_task: script=$HOOK_PRE_TASK_SCRIPT, timeout=$HOOK_PRE_TASK_TIMEOUT, can_abort=$HOOK_PRE_TASK_CAN_ABORT, enabled=$HOOK_PRE_TASK_ENABLED"
+    log_debug "  post_implementation: script=$HOOK_POST_IMPL_SCRIPT, timeout=$HOOK_POST_IMPL_TIMEOUT, enabled=$HOOK_POST_IMPL_ENABLED"
+    log_debug "  pre_pr: script=$HOOK_PRE_PR_SCRIPT, timeout=$HOOK_PRE_PR_TIMEOUT, can_abort=$HOOK_PRE_PR_CAN_ABORT, enabled=$HOOK_PRE_PR_ENABLED"
+    log_debug "  post_pr: script=$HOOK_POST_PR_SCRIPT, timeout=$HOOK_POST_PR_TIMEOUT, enabled=$HOOK_POST_PR_ENABLED"
+    log_debug "  post_merge: script=$HOOK_POST_MERGE_SCRIPT, timeout=$HOOK_POST_MERGE_TIMEOUT, enabled=$HOOK_POST_MERGE_ENABLED"
+    log_debug "  on_failure: script=$HOOK_ON_FAILURE_SCRIPT, timeout=$HOOK_ON_FAILURE_TIMEOUT, enabled=$HOOK_ON_FAILURE_ENABLED"
+    log_debug "  on_budget_warning: script=$HOOK_ON_BUDGET_WARNING_SCRIPT, timeout=$HOOK_ON_BUDGET_WARNING_TIMEOUT, enabled=$HOOK_ON_BUDGET_WARNING_ENABLED"
+}
+
+# Resolve hook script path (relative to CHADGI_DIR or absolute)
+# Usage: resolve_hook_script <script_path>
+# Returns: absolute path to script
+resolve_hook_script() {
+    local SCRIPT_PATH=$1
+
+    if [ -z "$SCRIPT_PATH" ]; then
+        echo ""
+        return
+    fi
+
+    # If already absolute, return as is
+    if [[ "$SCRIPT_PATH" == /* ]]; then
+        echo "$SCRIPT_PATH"
+        return
+    fi
+
+    # Resolve relative to CHADGI_DIR
+    echo "$CHADGI_DIR/$SCRIPT_PATH"
+}
+
+# Execute a lifecycle hook
+# Usage: run_hook <hook_name>
+# Environment variables are set before execution:
+#   CHADGI_ISSUE_NUMBER, CHADGI_BRANCH, CHADGI_PR_URL, CHADGI_COST,
+#   CHADGI_PHASE, CHADGI_REPO, CHADGI_HOOK_NAME
+# Returns: 0 if hook succeeded or not configured, non-zero if hook failed and can_abort is true
+run_hook() {
+    local HOOK_NAME=$1
+    local SCRIPT=""
+    local TIMEOUT=30
+    local CAN_ABORT=false
+    local ENABLED=true
+
+    # Get hook configuration based on name
+    case "$HOOK_NAME" in
+        "pre_task")
+            SCRIPT="$HOOK_PRE_TASK_SCRIPT"
+            TIMEOUT="$HOOK_PRE_TASK_TIMEOUT"
+            CAN_ABORT="$HOOK_PRE_TASK_CAN_ABORT"
+            ENABLED="$HOOK_PRE_TASK_ENABLED"
+            ;;
+        "post_implementation")
+            SCRIPT="$HOOK_POST_IMPL_SCRIPT"
+            TIMEOUT="$HOOK_POST_IMPL_TIMEOUT"
+            CAN_ABORT="$HOOK_POST_IMPL_CAN_ABORT"
+            ENABLED="$HOOK_POST_IMPL_ENABLED"
+            ;;
+        "pre_pr")
+            SCRIPT="$HOOK_PRE_PR_SCRIPT"
+            TIMEOUT="$HOOK_PRE_PR_TIMEOUT"
+            CAN_ABORT="$HOOK_PRE_PR_CAN_ABORT"
+            ENABLED="$HOOK_PRE_PR_ENABLED"
+            ;;
+        "post_pr")
+            SCRIPT="$HOOK_POST_PR_SCRIPT"
+            TIMEOUT="$HOOK_POST_PR_TIMEOUT"
+            CAN_ABORT="$HOOK_POST_PR_CAN_ABORT"
+            ENABLED="$HOOK_POST_PR_ENABLED"
+            ;;
+        "post_merge")
+            SCRIPT="$HOOK_POST_MERGE_SCRIPT"
+            TIMEOUT="$HOOK_POST_MERGE_TIMEOUT"
+            CAN_ABORT="$HOOK_POST_MERGE_CAN_ABORT"
+            ENABLED="$HOOK_POST_MERGE_ENABLED"
+            ;;
+        "on_failure")
+            SCRIPT="$HOOK_ON_FAILURE_SCRIPT"
+            TIMEOUT="$HOOK_ON_FAILURE_TIMEOUT"
+            CAN_ABORT="$HOOK_ON_FAILURE_CAN_ABORT"
+            ENABLED="$HOOK_ON_FAILURE_ENABLED"
+            ;;
+        "on_budget_warning")
+            SCRIPT="$HOOK_ON_BUDGET_WARNING_SCRIPT"
+            TIMEOUT="$HOOK_ON_BUDGET_WARNING_TIMEOUT"
+            CAN_ABORT="$HOOK_ON_BUDGET_WARNING_CAN_ABORT"
+            ENABLED="$HOOK_ON_BUDGET_WARNING_ENABLED"
+            ;;
+        *)
+            log_warn "Unknown hook: $HOOK_NAME"
+            return 0
+            ;;
+    esac
+
+    # Skip if no script configured
+    if [ -z "$SCRIPT" ]; then
+        log_debug "Hook $HOOK_NAME: not configured (no script)"
+        return 0
+    fi
+
+    # Skip if disabled
+    if [ "$ENABLED" != "true" ]; then
+        log_debug "Hook $HOOK_NAME: disabled"
+        return 0
+    fi
+
+    # Resolve script path
+    local RESOLVED_SCRIPT
+    RESOLVED_SCRIPT=$(resolve_hook_script "$SCRIPT")
+
+    # Check if script exists and is executable
+    if [ ! -f "$RESOLVED_SCRIPT" ]; then
+        log_warn "Hook $HOOK_NAME: script not found: $RESOLVED_SCRIPT"
+        return 0
+    fi
+
+    if [ ! -x "$RESOLVED_SCRIPT" ]; then
+        log_warn "Hook $HOOK_NAME: script not executable: $RESOLVED_SCRIPT"
+        log_info "Run: chmod +x $RESOLVED_SCRIPT"
+        return 0
+    fi
+
+    log_step "Running hook: $HOOK_NAME"
+    log_debug "  Script: $RESOLVED_SCRIPT"
+    log_debug "  Timeout: ${TIMEOUT}s"
+    log_debug "  Can abort: $CAN_ABORT"
+
+    # Set up environment variables for the hook
+    local HOOK_START_TIME=$(date +%s)
+    local HOOK_OUTPUT
+    local HOOK_EXIT_CODE
+
+    # Execute hook with timeout and capture output
+    HOOK_OUTPUT=$(
+        export CHADGI_ISSUE_NUMBER="${ISSUE_NUMBER:-}"
+        export CHADGI_BRANCH="${BRANCH_NAME:-}"
+        export CHADGI_PR_URL="${COMPLETED_PR_URL:-}"
+        export CHADGI_COST="${TASK_COST:-0}"
+        export CHADGI_SESSION_COST="${TOTAL_COST:-0}"
+        export CHADGI_PHASE="$HOOK_NAME"
+        export CHADGI_REPO="${REPO:-}"
+        export CHADGI_HOOK_NAME="$HOOK_NAME"
+        export CHADGI_ISSUE_TITLE="${ISSUE_TITLE:-}"
+        export CHADGI_ISSUE_URL="${ISSUE_URL:-}"
+        export CHADGI_BASE_BRANCH="${BASE_BRANCH:-main}"
+        export CHADGI_ITERATION="${ITERATION:-1}"
+        export CHADGI_MAX_ITERATIONS="${MAX_ITERATIONS:-5}"
+
+        timeout "$TIMEOUT" "$RESOLVED_SCRIPT" 2>&1
+    )
+    HOOK_EXIT_CODE=$?
+
+    local HOOK_END_TIME=$(date +%s)
+    local HOOK_DURATION=$((HOOK_END_TIME - HOOK_START_TIME))
+
+    # Log hook execution to structured log
+    if [ $HOOK_EXIT_CODE -eq 0 ]; then
+        log_success "Hook $HOOK_NAME completed successfully (${HOOK_DURATION}s)"
+        if [ -n "$HOOK_OUTPUT" ]; then
+            log_debug "Hook output: $(echo "$HOOK_OUTPUT" | head -10)"
+        fi
+        return 0
+    elif [ $HOOK_EXIT_CODE -eq 124 ]; then
+        # Timeout exit code
+        log_warn "Hook $HOOK_NAME timed out after ${TIMEOUT}s"
+        if [ "$CAN_ABORT" = "true" ]; then
+            log_error "Hook $HOOK_NAME: aborting due to timeout (can_abort=true)"
+            return 1
+        fi
+        return 0
+    else
+        log_warn "Hook $HOOK_NAME failed with exit code $HOOK_EXIT_CODE (${HOOK_DURATION}s)"
+        if [ -n "$HOOK_OUTPUT" ]; then
+            log_info "Hook output:"
+            echo "$HOOK_OUTPUT" | head -20 | sed 's/^/  /'
+        fi
+
+        if [ "$CAN_ABORT" = "true" ]; then
+            log_error "Hook $HOOK_NAME: aborting due to non-zero exit (can_abort=true)"
+            return $HOOK_EXIT_CODE
+        fi
+
+        log_info "Continuing despite hook failure (can_abort=false)"
+        return 0
+    fi
+}
+
+# Check if any hooks are configured
+has_hooks_configured() {
+    [ -n "$HOOK_PRE_TASK_SCRIPT" ] || \
+    [ -n "$HOOK_POST_IMPL_SCRIPT" ] || \
+    [ -n "$HOOK_PRE_PR_SCRIPT" ] || \
+    [ -n "$HOOK_POST_PR_SCRIPT" ] || \
+    [ -n "$HOOK_POST_MERGE_SCRIPT" ] || \
+    [ -n "$HOOK_ON_FAILURE_SCRIPT" ] || \
+    [ -n "$HOOK_ON_BUDGET_WARNING_SCRIPT" ]
+}
+
+#------------------------------------------------------------------------------
 # Budget Management
 #------------------------------------------------------------------------------
 
@@ -2238,6 +2627,8 @@ check_budgets_and_act() {
         local PERCENTAGE=$(calculate_budget_percentage "$SESSION_COST" "$BUDGET_PER_SESSION_LIMIT")
         log_warn "Session budget warning: \$${SESSION_COST} (${PERCENTAGE}% of \$${BUDGET_PER_SESSION_LIMIT})"
         notify_budget_warning "session" "$SESSION_COST" "$BUDGET_PER_SESSION_LIMIT" "$PERCENTAGE" ""
+        # LIFECYCLE HOOK: on_budget_warning (session budget)
+        run_hook "on_budget_warning"
         SESSION_BUDGET_WARNING_SENT=true
     fi
 
@@ -2250,6 +2641,8 @@ check_budgets_and_act() {
         local PERCENTAGE=$(calculate_budget_percentage "$TASK_COST" "$BUDGET_PER_TASK_LIMIT")
         log_warn "Task budget warning: \$${TASK_COST} (${PERCENTAGE}% of \$${BUDGET_PER_TASK_LIMIT})"
         notify_budget_warning "task" "$TASK_COST" "$BUDGET_PER_TASK_LIMIT" "$PERCENTAGE" "$ISSUE_NUMBER"
+        # LIFECYCLE HOOK: on_budget_warning (task budget)
+        run_hook "on_budget_warning"
         TASK_BUDGET_WARNING_SENT=true
     fi
 
@@ -3948,6 +4341,12 @@ If you're still implementing features, continue working. Don't signal until ALL 
     TASK_PHASE1_END=$(date +%s)
 
     #---------------------------------------------------------------------------
+    # LIFECYCLE HOOK: post_implementation
+    # Runs after Claude finishes implementation (READY_FOR_PR found, tests pass)
+    #---------------------------------------------------------------------------
+    run_hook "post_implementation"
+
+    #---------------------------------------------------------------------------
     # INTERACTIVE: Phase 1 Approval Checkpoint
     # Requires human approval before proceeding to PR creation
     #---------------------------------------------------------------------------
@@ -4029,6 +4428,17 @@ Do NOT create a PR yet - that comes after the review is approved."
     TASK_PHASE2_START=$(date +%s)
 
     > "$OUTPUT_FILE"
+
+    #---------------------------------------------------------------------------
+    # LIFECYCLE HOOK: pre_pr
+    # Runs before PR creation. Can abort if can_abort is true.
+    #---------------------------------------------------------------------------
+    if ! run_hook "pre_pr"; then
+        log_error "Pre-PR hook aborted PR creation"
+        stop_task_timeout
+        rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
+        return 128  # Custom exit code for hook abort
+    fi
 
     #---------------------------------------------------------------------------
     # INTERACTIVE: Phase 2 Approval Checkpoint
@@ -4141,6 +4551,14 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
     # Extract PR info from output for notifications
     COMPLETED_PR_URL=$(cat "$OUTPUT_FILE" "$OUTPUT_FILE.raw" 2>/dev/null | grep -oE "https://github.com/[^/]+/[^/]+/pull/[0-9]+" | head -1 || echo "")
 
+    #---------------------------------------------------------------------------
+    # LIFECYCLE HOOK: post_pr
+    # Runs after PR is created
+    #---------------------------------------------------------------------------
+    if [ "$TASK_COMPLETE" = "true" ]; then
+        run_hook "post_pr"
+    fi
+
     # If GigaChad mode is enabled, auto-merge the PR
     if [ "$GIGACHAD_MODE" = "true" ] && [ "$TASK_COMPLETE" = "true" ]; then
         # Extract PR number from the output (look for PR URL pattern)
@@ -4155,6 +4573,12 @@ After creating the PR, output: <promise>${COMPLETION_PROMISE}</promise>"
             GIGACHAD_MERGED_PR="$PR_NUM"
             gigachad_merge_and_sync "$PR_NUM"
             GIGACHAD_MERGED=true
+
+            #-------------------------------------------------------------------
+            # LIFECYCLE HOOK: post_merge
+            # Runs after GigaChad mode auto-merges the PR
+            #-------------------------------------------------------------------
+            run_hook "post_merge"
         else
             log_warn "Could not find PR number for auto-merge"
             GIGACHAD_MERGED=false
@@ -5093,6 +5517,20 @@ while true; do
     save_progress "in_progress" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
 
     #---------------------------------------------------------------------------
+    # LIFECYCLE HOOK: pre_task
+    # Runs before task starts. Can abort if can_abort is true.
+    #---------------------------------------------------------------------------
+    if ! run_hook "pre_task"; then
+        log_error "Pre-task hook aborted the task"
+        # Move issue back to Ready column
+        if [ "$DRY_RUN" != "true" ]; then
+            move_to_column "$ITEM_ID" "$READY_COLUMN" 2>/dev/null
+        fi
+        save_progress "idle" "" "" ""
+        continue  # Skip to next task
+    fi
+
+    #---------------------------------------------------------------------------
     # INTERACTIVE: Pre-Task Approval Checkpoint (optional)
     # Allows human review of task details before Claude starts working
     #---------------------------------------------------------------------------
@@ -5247,6 +5685,12 @@ PROMPT_EOF
 
         # Send task failed notification
         notify_task_failed "$ISSUE_NUMBER" "$ISSUE_TITLE" "$FAILURE_REASON" "$FAILURE_DETAILS"
+
+        #-----------------------------------------------------------------------
+        # LIFECYCLE HOOK: on_failure
+        # Runs when a task fails after all retries
+        #-----------------------------------------------------------------------
+        run_hook "on_failure"
 
         # Check if session budget was exceeded - need to stop the entire session
         if [ "$SESSION_BUDGET_EXCEEDED" = "true" ]; then
