@@ -1,31 +1,12 @@
-interface ApproveOptions {
-    config?: string;
+import type { BaseCommandOptions, ApprovalLockData } from './types/index.js';
+interface ApproveOptions extends BaseCommandOptions {
     issueNumber?: number;
     message?: string;
-    json?: boolean;
 }
-interface RejectOptions {
-    config?: string;
+interface RejectOptions extends BaseCommandOptions {
     issueNumber?: number;
     message?: string;
-    json?: boolean;
     skip?: boolean;
-}
-interface ApprovalLockData {
-    status: 'pending' | 'approved' | 'rejected';
-    created_at: string;
-    issue_number: number;
-    issue_title?: string;
-    branch?: string;
-    phase: 'pre_task' | 'phase1' | 'phase2';
-    files_changed?: number;
-    insertions?: number;
-    deletions?: number;
-    approver?: string;
-    approved_at?: string;
-    rejected_at?: string;
-    comment?: string;
-    feedback?: string;
 }
 /**
  * Approve a pending task in interactive mode

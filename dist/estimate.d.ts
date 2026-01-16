@@ -1,6 +1,5 @@
-interface EstimateOptions {
-    config?: string;
-    json?: boolean;
+import type { BaseCommandOptions } from './types/index.js';
+interface EstimateOptions extends BaseCommandOptions {
     budget?: number;
     days?: number;
     category?: string;

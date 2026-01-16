@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { setMaskingDisabled } from './utils/secrets.js';
+import { parseYamlValue, parseYamlNested } from './utils/config.js';
+import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function checkCommand(command) {
@@ -22,33 +25,6 @@ function getCommandVersion(command) {
     catch {
         return null;
     }
-}
-function parseYamlValue(content, key) {
-    const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-    if (match) {
-        return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-    }
-    return null;
-}
-function parseYamlNested(content, parent, key) {
-    const lines = content.split('\n');
-    let inParent = false;
-    for (const line of lines) {
-        if (line.match(new RegExp(`^${parent}:`))) {
-            inParent = true;
-            continue;
-        }
-        if (inParent && line.match(/^[a-z]/)) {
-            inParent = false;
-        }
-        if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-            const value = line.split(':')[1];
-            if (value) {
-                return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-            }
-        }
-    }
-    return null;
 }
 function getExtendsPath(configContent) {
     // Check for 'extends' field first, then 'base_config'
@@ -262,6 +238,12 @@ export function validateTemplateVariables(templatePath, customVariables = []) {
     };
 }
 export async function validate(options = {}) {
+    // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
+    const noMask = options.mask === false;
+    if (noMask) {
+        setMaskingDisabled(true);
+        console.log('\x1b[33mWARNING: Secret masking is DISABLED. Sensitive data may be exposed in output.\x1b[0m\n');
+    }
     const results = [];
     const cwd = process.cwd();
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
@@ -356,6 +338,30 @@ export async function validate(options = {}) {
         });
         if (!quiet) {
             console.log(`\x1b[32m+\x1b[0m Config file found: ${configPath}`);
+        }
+        // Check config version and pending migrations
+        const migrationCheck = checkMigrations(configPath);
+        const currentVersion = migrationCheck.currentVersion || `${DEFAULT_CONFIG_VERSION} (implicit)`;
+        if (migrationCheck.needsMigration) {
+            results.push({
+                name: 'config_version',
+                status: 'warning',
+                message: `${currentVersion} -> ${CURRENT_CONFIG_VERSION} (migration available)`
+            });
+            if (!quiet) {
+                console.log(`\x1b[33m!\x1b[0m Config version: ${currentVersion} (migration available to ${CURRENT_CONFIG_VERSION})`);
+                console.log(`    Run 'chadgi config migrate' to update`);
+            }
+        }
+        else {
+            results.push({
+                name: 'config_version',
+                status: 'ok',
+                message: CURRENT_CONFIG_VERSION
+            });
+            if (!quiet) {
+                console.log(`\x1b[32m+\x1b[0m Config version: ${CURRENT_CONFIG_VERSION}`);
+            }
         }
         // Load and validate config inheritance chain
         const chainResult = loadConfigChain(configPath);

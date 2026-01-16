@@ -11,6 +11,7 @@ import {
   cleanupStaleLocks,
   DEFAULT_LOCK_TIMEOUT_MINUTES,
 } from './utils/locks.js';
+import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 
 // Import shared types
 import type {
@@ -854,6 +855,9 @@ function generateRecommendations(checks: HealthCheck[]): string[] {
       if (check.name === 'Task Locks Check' && check.message.includes('stale')) {
         recommendations.push('Run `chadgi unlock --stale` to clean up stale task locks');
       }
+      if (check.name === 'Config Version Migration') {
+        recommendations.push('Run `chadgi config migrate` to update your configuration schema');
+      }
     }
   }
 
@@ -1016,6 +1020,27 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
       status: 'ok',
       message: `Loaded from ${configPath}`,
     });
+
+    // Check for pending migrations
+    const migrationCheck = checkMigrations(configPath);
+    if (migrationCheck.needsMigration) {
+      const currentVer = migrationCheck.currentVersion || DEFAULT_CONFIG_VERSION;
+      checks.push({
+        name: 'Config Version Migration',
+        category: 'files',
+        status: 'warning',
+        message: `Migration available: ${currentVer} -> ${CURRENT_CONFIG_VERSION}. Run 'chadgi config migrate'`,
+        fixable: true,
+        fixed: false,
+      });
+    } else {
+      checks.push({
+        name: 'Config Version',
+        category: 'files',
+        status: 'ok',
+        message: `Version ${CURRENT_CONFIG_VERSION} (current)`,
+      });
+    }
   } else {
     checks.push({
       name: 'Configuration File',

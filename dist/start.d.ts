@@ -9,6 +9,7 @@ interface StartOptions {
     parallel?: number;
     interactive?: boolean;
     mask?: boolean;
+    forceClaim?: boolean;
 }
 export declare function start(options?: StartOptions): Promise<void>;
 export {};

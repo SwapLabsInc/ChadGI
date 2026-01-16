@@ -2,6 +2,10 @@
 # ChadGI Configuration
 # Autonomous task worker configuration
 
+# Configuration schema version - used for automatic migrations
+# Do not change this manually; use 'chadgi config migrate' when upgrading
+config_version: "1.1"
+
 # Config inheritance - extend from a base config file
 # Specify a relative or absolute path to a base config file
 # Local values override base config values (child takes precedence)

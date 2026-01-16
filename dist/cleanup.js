@@ -2,47 +2,9 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, rmSync } f
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    purple: '\x1b[35m',
-    blue: '\x1b[34m',
-};
-// Parse YAML value (simple key: value extraction)
-function parseYamlValue(content, key) {
-    const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-    if (match) {
-        return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-    }
-    return null;
-}
-// Parse nested YAML value
-function parseYamlNested(content, parent, key) {
-    const lines = content.split('\n');
-    let inParent = false;
-    for (const line of lines) {
-        if (line.match(new RegExp(`^${parent}:`))) {
-            inParent = true;
-            continue;
-        }
-        if (inParent && line.match(/^[a-z]/)) {
-            inParent = false;
-        }
-        if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-            const value = line.split(':')[1];
-            if (value) {
-                return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-            }
-        }
-    }
-    return null;
-}
+import { colors } from './utils/colors.js';
+import { parseYamlNested } from './utils/config.js';
+import { createProgressBar } from './utils/progress.js';
 /**
  * Prompt user for confirmation
  */
@@ -432,15 +394,21 @@ export async function cleanup(options = {}) {
         }
         console.log('');
     }
-    // Perform cleanup
+    // Perform cleanup with progress bar
+    const progress = createProgressBar(totalItems, { label: 'Cleaning' }, options.json);
+    let progressCount = 0;
     // Clean branches
     if (cleanBranches) {
         for (const branch of orphanedBranches.local) {
+            progressCount++;
+            progress?.update(progressCount, `local: ${branch}`);
             if (deleteLocalBranch(branch, dryRun)) {
                 result.branches.local.push(branch);
             }
         }
         for (const branch of orphanedBranches.remote) {
+            progressCount++;
+            progress?.update(progressCount, `remote: ${branch}`);
             if (deleteRemoteBranch(branch, dryRun)) {
                 result.branches.remote.push(branch);
             }
@@ -449,6 +417,8 @@ export async function cleanup(options = {}) {
     // Clean diagnostics
     if (cleanDiagnostics) {
         for (const diag of oldDiagnostics) {
+            progressCount++;
+            progress?.update(progressCount, `diagnostic: ${diag}`);
             if (deleteDiagnostic(chadgiDir, diag, dryRun)) {
                 result.diagnostics.push(diag);
             }
@@ -457,11 +427,15 @@ export async function cleanup(options = {}) {
     // Clean logs
     if (cleanLogs) {
         for (const log of oldLogs) {
+            progressCount++;
+            progress?.update(progressCount, `log: ${log}`);
             if (deleteLogFile(chadgiDir, configContent, log, dryRun)) {
                 result.logs.push(log);
             }
         }
     }
+    // Complete the progress bar
+    progress?.complete();
     // Calculate summary
     result.summary.branchesDeleted = result.branches.local.length + result.branches.remote.length;
     result.summary.diagnosticsDeleted = result.diagnostics.length;

@@ -1,6 +1,5 @@
-interface HistoryOptions {
-    config?: string;
-    json?: boolean;
+import type { BaseCommandOptions } from './types/index.js';
+interface HistoryOptions extends BaseCommandOptions {
     limit?: number;
     since?: string;
     status?: string;

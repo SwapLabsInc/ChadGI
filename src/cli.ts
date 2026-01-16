@@ -18,6 +18,7 @@ import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
 import { queue, queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
+import { configMigrate, printMigrationHistory } from './config-migrate.js';
 import { completion, getInstallationInstructions } from './completion.js';
 import { replay, replayLast, replayAllFailed } from './replay.js';
 import { diff } from './diff.js';
@@ -324,6 +325,21 @@ configCommand
       await configImport({ ...options, file });
     })
   );
+
+configCommand
+  .command('migrate')
+  .description('Migrate configuration to the latest schema version')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-d, --dry-run', 'Preview migrations without applying changes')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--rollback', 'Restore configuration from the most recent backup')
+  .action(wrapCommand(configMigrate));
+
+configCommand
+  .command('history')
+  .description('View migration history for the configuration')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .action(wrapCommand(printMigrationHistory));
 
 // Completion command with subcommands for each shell
 const completionCommand = program

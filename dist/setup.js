@@ -3,18 +3,10 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
+import { parseYamlNested } from './utils/config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    magenta: '\x1b[35m',
-};
 function execCommandSilent(command) {
     try {
         return execSync(command, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -110,33 +102,6 @@ async function promptSelect(rl, question, options) {
     }
     // Default to first option if invalid
     return options[0].value;
-}
-function parseYamlValue(content, key) {
-    const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-    if (match) {
-        return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-    }
-    return null;
-}
-function parseYamlNested(content, parent, key) {
-    const lines = content.split('\n');
-    let inParent = false;
-    for (const line of lines) {
-        if (line.match(new RegExp(`^${parent}:`))) {
-            inParent = true;
-            continue;
-        }
-        if (inParent && line.match(/^[a-z]/)) {
-            inParent = false;
-        }
-        if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-            const value = line.split(':')[1];
-            if (value) {
-                return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-            }
-        }
-    }
-    return null;
 }
 function loadExistingConfig(configPath) {
     if (!existsSync(configPath)) {

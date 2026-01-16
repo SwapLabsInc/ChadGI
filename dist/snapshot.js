@@ -1,26 +1,16 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
+import { atomicWriteJson, atomicWriteFile } from './utils/fileOps.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Read version from package.json
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 const CHADGI_VERSION = packageJson.version;
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    purple: '\x1b[35m',
-    cyan: '\x1b[36m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    yellow: '\x1b[33m',
-    blue: '\x1b[34m',
-};
 // Get git commit hash
 function getGitCommit() {
     try {
@@ -349,8 +339,8 @@ export async function snapshotSave(name, options = {}) {
         config: configObj,
         templates,
     };
-    // Save snapshot
-    writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+    // Save snapshot (using atomic write for crash safety)
+    atomicWriteJson(snapshotPath, snapshot);
     console.log(`${colors.green}Snapshot saved:${colors.reset} ${name}`);
     console.log(`  ${colors.dim}Path: ${snapshotPath}${colors.reset}`);
     if (options.alias) {
@@ -404,14 +394,14 @@ export async function snapshotRestore(name, options = {}) {
     if (!existsSync(chadgiDir)) {
         mkdirSync(chadgiDir, { recursive: true });
     }
-    // Write config file
+    // Write config file (using atomic write for crash safety)
     const yamlOutput = objectToYaml(snapshot.config);
-    writeFileSync(configPath, yamlOutput);
+    atomicWriteFile(configPath, yamlOutput);
     console.log(`${colors.green}Restored:${colors.reset} ${configPath}`);
-    // Write templates
+    // Write templates (using atomic write for crash safety)
     for (const [templateName, content] of Object.entries(snapshot.templates)) {
         const templatePath = join(chadgiDir, templateName);
-        writeFileSync(templatePath, content);
+        atomicWriteFile(templatePath, content);
         console.log(`${colors.green}Restored:${colors.reset} ${templatePath}`);
     }
     console.log('');

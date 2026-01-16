@@ -2,47 +2,9 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    purple: '\x1b[35m',
-    cyan: '\x1b[36m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    yellow: '\x1b[33m',
-    blue: '\x1b[34m',
-};
-// Parse YAML value (simple key: value extraction)
-function parseYamlValue(content, key) {
-    const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-    if (match) {
-        return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-    }
-    return null;
-}
-// Parse nested YAML value
-function parseYamlNested(content, parent, key) {
-    const lines = content.split('\n');
-    let inParent = false;
-    for (const line of lines) {
-        if (line.match(new RegExp(`^${parent}:`))) {
-            inParent = true;
-            continue;
-        }
-        if (inParent && line.match(/^[a-z]/)) {
-            inParent = false;
-        }
-        if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-            const value = line.split(':')[1];
-            if (value) {
-                return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-            }
-        }
-    }
-    return null;
-}
+import { colors } from './utils/colors.js';
+import { parseYamlNested } from './utils/config.js';
+import { createProgressBar } from './utils/progress.js';
 function formatDuration(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -796,9 +758,14 @@ export async function replayAllFailed(options = {}) {
     }
     const replayedTasks = [];
     const failedToReplay = [];
+    // Create progress bar for processing tasks
+    const progress = createProgressBar(failedTasks.length, { label: 'Replaying' }, options.json);
+    let progressCount = 0;
     // Process each failed task
     for (const task of failedTasks) {
-        if (!options.json) {
+        progressCount++;
+        progress?.update(progressCount, `#${task.issueNumber}`);
+        if (!options.json && !progress) {
             console.log(`${colors.cyan}Processing issue #${task.issueNumber}...${colors.reset}`);
         }
         // Handle fresh start - delete existing branch
@@ -825,17 +792,13 @@ export async function replayAllFailed(options = {}) {
         if (moved) {
             incrementRetryCount(chadgiDir, task.issueNumber);
             replayedTasks.push(task.issueNumber);
-            if (!options.json) {
-                console.log(`  ${colors.green}Queued #${task.issueNumber} for replay${colors.reset}`);
-            }
         }
         else {
             failedToReplay.push(task.issueNumber);
-            if (!options.json) {
-                console.log(`  ${colors.red}Failed to queue #${task.issueNumber}${colors.reset}`);
-            }
         }
     }
+    // Complete the progress bar
+    progress?.complete();
     if (options.json) {
         const result = {
             success: failedToReplay.length === 0,

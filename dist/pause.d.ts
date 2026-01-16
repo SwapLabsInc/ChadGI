@@ -1,5 +1,5 @@
-interface PauseOptions {
-    config?: string;
+import type { BaseCommandOptions } from './types/index.js';
+interface PauseOptions extends BaseCommandOptions {
     for?: string;
     reason?: string;
 }

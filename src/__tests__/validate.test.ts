@@ -11,6 +11,10 @@ import { vol } from 'memfs';
 jest.unstable_mockModule('fs', () => ({
   existsSync: jest.fn((path: string) => vol.existsSync(path)),
   readFileSync: jest.fn((path: string, encoding?: string) => vol.readFileSync(path, encoding as BufferEncoding)),
+  writeFileSync: jest.fn((path: string, data: string) => vol.writeFileSync(path, data)),
+  mkdirSync: jest.fn((path: string, options?: { recursive?: boolean }) => vol.mkdirSync(path, options)),
+  copyFileSync: jest.fn((src: string, dest: string) => vol.copyFileSync(src, dest)),
+  readdirSync: jest.fn((path: string) => vol.readdirSync(path)),
 }));
 
 // Mock child_process to prevent actual command execution

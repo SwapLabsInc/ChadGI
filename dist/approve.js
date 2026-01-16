@@ -1,18 +1,8 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    purple: '\x1b[35m',
-    blue: '\x1b[34m',
-};
+import { colors } from './utils/colors.js';
+import { atomicWriteJson } from './utils/fileOps.js';
 /**
  * Format a Date as ISO string without milliseconds
  */
@@ -76,7 +66,7 @@ function logApprovalToHistory(chadgiDir, issueNumber, phase, action, comment) {
             progress.approval_history = progress.approval_history.slice(-100);
         }
         progress.last_updated = toISOString(new Date());
-        writeFileSync(progressFile, JSON.stringify(progress, null, 2));
+        atomicWriteJson(progressFile, progress);
     }
     catch {
         // Non-critical, ignore errors
@@ -145,7 +135,7 @@ export async function approve(options = {}) {
     if (options.message) {
         lockData.comment = options.message;
     }
-    writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
+    atomicWriteJson(lockFile, lockData);
     // Log to history
     logApprovalToHistory(chadgiDir, lockData.issue_number, lockData.phase, 'approved', options.message);
     // Output result
@@ -242,7 +232,7 @@ export async function reject(options = {}) {
     if (options.message) {
         lockData.feedback = options.message;
     }
-    writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
+    atomicWriteJson(lockFile, lockData);
     // Log to history
     logApprovalToHistory(chadgiDir, lockData.issue_number, lockData.phase, 'rejected', options.message);
     // Output result
@@ -339,7 +329,7 @@ export function createApprovalLock(chadgiDir, phase, issueNumber, issueTitle, br
         deletions: diffStats?.deletions,
     };
     const lockFile = join(chadgiDir, `approval-${phase}-${issueNumber}.lock`);
-    writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
+    atomicWriteJson(lockFile, lockData);
     return lockFile;
 }
 /**

@@ -1,15 +1,7 @@
-import { existsSync, writeFileSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    purple: '\x1b[35m',
-};
+import { colors } from './utils/colors.js';
+import { atomicWriteJson } from './utils/fileOps.js';
 /**
  * Parse duration string (e.g., "30m", "2h", "1h30m") to milliseconds
  */
@@ -82,7 +74,7 @@ export async function pause(options = {}) {
             console.log(`${colors.yellow}Warning: Invalid duration format '${options.for}'. Use format like '30m' or '2h'.${colors.reset}`);
         }
     }
-    writeFileSync(pauseLockFile, JSON.stringify(pauseData, null, 2));
+    atomicWriteJson(pauseLockFile, pauseData);
     console.log(`${colors.yellow}${colors.bold}`);
     console.log('==========================================================');
     console.log('                    CHADGI PAUSED                          ');

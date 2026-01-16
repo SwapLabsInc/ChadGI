@@ -3,22 +3,15 @@ import { join, dirname, resolve, basename } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { maskSecrets } from './utils/secrets.js';
+import { colors } from './utils/colors.js';
+import { CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Read version from package.json
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 const CHADGI_VERSION = packageJson.version;
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    magenta: '\x1b[35m',
-};
 // Patterns for detecting secrets/sensitive data in config
 const SECRET_PATTERNS = [
     /webhook_url/i,
@@ -289,9 +282,15 @@ export async function configExport(options = {}) {
         configObj = stripSecrets(configObj);
     }
     // Build export bundle
+    // Ensure config_version is set in the exported config
+    const configVersion = configObj.config_version || DEFAULT_CONFIG_VERSION;
+    if (!configObj.config_version) {
+        configObj.config_version = configVersion;
+    }
     const bundle = {
         _meta: {
             chadgi_version: CHADGI_VERSION,
+            config_version: configVersion,
             exported_at: new Date().toISOString(),
             source_repo: detectRepository(),
         },
@@ -307,12 +306,14 @@ export async function configExport(options = {}) {
         lines.push('# ChadGI Configuration Export');
         lines.push(`# Exported at: ${bundle._meta.exported_at}`);
         lines.push(`# ChadGI version: ${bundle._meta.chadgi_version}`);
+        lines.push(`# Config schema version: ${bundle._meta.config_version}`);
         if (bundle._meta.source_repo) {
             lines.push(`# Source repository: ${bundle._meta.source_repo}`);
         }
         lines.push('');
         lines.push('_meta:');
         lines.push(`  chadgi_version: "${bundle._meta.chadgi_version}"`);
+        lines.push(`  config_version: "${bundle._meta.config_version}"`);
         lines.push(`  exported_at: "${bundle._meta.exported_at}"`);
         lines.push(`  source_repo: ${bundle._meta.source_repo ? `"${bundle._meta.source_repo}"` : 'null'}`);
         lines.push('');
@@ -376,6 +377,7 @@ export async function configImport(options) {
             bundle = {
                 _meta: {
                     chadgi_version: yamlObj._meta?.chadgi_version || '0.0.0',
+                    config_version: yamlObj._meta?.config_version || DEFAULT_CONFIG_VERSION,
                     exported_at: yamlObj._meta?.exported_at || new Date().toISOString(),
                     source_repo: yamlObj._meta?.source_repo || null,
                 },
@@ -419,10 +421,20 @@ export async function configImport(options) {
         console.log(`  Current version: ${CHADGI_VERSION}`);
         console.log('');
     }
+    // Config schema version check
+    const importedConfigVersion = bundle._meta.config_version || DEFAULT_CONFIG_VERSION;
+    if (importedConfigVersion !== CURRENT_CONFIG_VERSION) {
+        console.log(`${colors.yellow}Note:${colors.reset} Config schema version difference`);
+        console.log(`  Imported config version: ${importedConfigVersion}`);
+        console.log(`  Current config version: ${CURRENT_CONFIG_VERSION}`);
+        console.log(`  Run 'chadgi config migrate' after import to update the schema.`);
+        console.log('');
+    }
     // Show metadata
     console.log(`${colors.cyan}Import Details:${colors.reset}`);
     console.log(`  Source: ${basename(importPath)}`);
     console.log(`  Exported: ${bundle._meta.exported_at}`);
+    console.log(`  Config version: ${importedConfigVersion}`);
     if (bundle._meta.source_repo) {
         console.log(`  From repo: ${bundle._meta.source_repo}`);
     }
@@ -464,10 +476,10 @@ export async function configImport(options) {
         console.log(`${colors.cyan}Mode:${colors.reset} Replacing existing configuration`);
     }
     console.log('');
-    // Preview changes
+    // Preview changes (mask secrets in displayed config)
     console.log(`${colors.bold}Configuration to write:${colors.reset}`);
     console.log('');
-    console.log(objectToYaml(finalConfig));
+    console.log(maskSecrets(objectToYaml(finalConfig)));
     console.log('');
     // Templates
     if (Object.keys(bundle.templates).length > 0) {
