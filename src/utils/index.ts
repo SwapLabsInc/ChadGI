@@ -161,13 +161,18 @@ export {
   type ValidationResult,
 } from './validation.js';
 
-// File Operations (atomic writes)
+// File Operations (atomic writes and safe parsing)
 export {
   atomicWriteFile,
   atomicWriteJson,
   safeWriteFile,
   safeWriteJson,
+  safeParseJson,
   type SafeWriteOptions,
+  type SafeParseSuccess,
+  type SafeParseFailure,
+  type SafeParseResult,
+  type SafeParseJsonOptions,
 } from './fileOps.js';
 
 // Progress (progress bars and spinners)
