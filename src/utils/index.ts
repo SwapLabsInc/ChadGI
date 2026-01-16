@@ -104,3 +104,18 @@ export {
   fileExists,
   readTextFile,
 } from './data.js';
+
+// Secrets
+export {
+  SECRET_PATTERNS,
+  REDACTED_PLACEHOLDER,
+  SENSITIVE_KEYS,
+  setMaskingDisabled,
+  isMaskingDisabled,
+  maskSecrets,
+  maskObject,
+  maskJsonString,
+  isSensitiveKey,
+  maskSensitiveKeys,
+  createMaskedLogger,
+} from './secrets.js';

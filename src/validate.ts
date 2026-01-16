@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { maskSecrets, setMaskingDisabled } from './utils/secrets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,6 +13,7 @@ interface ValidateOptions {
   notifyTest?: boolean;
   strict?: boolean;
   showMerged?: boolean;
+  mask?: boolean;  // --no-mask flag sets this to false
 }
 
 interface ValidationResult {
@@ -333,6 +335,13 @@ export function validateTemplateVariables(
 }
 
 export async function validate(options: ValidateOptions = {}): Promise<boolean> {
+  // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
+  const noMask = options.mask === false;
+  if (noMask) {
+    setMaskingDisabled(true);
+    console.log('\x1b[33mWARNING: Secret masking is DISABLED. Sensitive data may be exposed in output.\x1b[0m\n');
+  }
+
   const results: ValidationResult[] = [];
   const cwd = process.cwd();
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');

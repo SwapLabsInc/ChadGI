@@ -94,6 +94,7 @@ program
   .option('-w, --workspace', 'Process tasks across all workspace repositories')
   .option('-r, --repo <name>', 'Process only a specific repository in workspace mode')
   .option('-i, --interactive', 'Enable human-in-the-loop approval mode for reviewing changes')
+  .option('--no-mask', 'Disable secret masking in logs (warning: exposes sensitive data)')
   .action(async (options) => {
     try {
       await start(options);
@@ -124,6 +125,7 @@ program
   .option('--notify-test', 'Test webhook connectivity for configured notifications')
   .option('--strict', 'Treat unknown template variables as errors (exit with non-zero status)')
   .option('--show-merged', 'Display final merged config when using config inheritance')
+  .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
   .action(async (options) => {
     try {
       const isValid = await validate(options);
@@ -248,6 +250,7 @@ program
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-j, --json', 'Output health report as JSON')
   .option('--fix', 'Auto-remediate simple issues (clear stale locks, etc.)')
+  .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
   .action(async (options) => {
     try {
       await doctor(options);
