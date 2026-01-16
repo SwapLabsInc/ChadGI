@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.4.0...v1.5.0) (2026-01-16)
+
+
+### Features
+
+* checks for user + claude auth in validate + start ([ea72630](https://github.com/SwapLabsInc/ChadGI/commit/ea72630d14317bda13985c186f413b4c2bcfdba6))
+
 # [1.4.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.3.1...v1.4.0) (2026-01-16)
 
 
