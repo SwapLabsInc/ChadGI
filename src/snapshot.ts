@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
+import { atomicWriteJson, atomicWriteFile } from './utils/fileOps.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -424,8 +425,8 @@ export async function snapshotSave(name: string, options: SnapshotSaveOptions = 
     templates,
   };
 
-  // Save snapshot
-  writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+  // Save snapshot (using atomic write for crash safety)
+  atomicWriteJson(snapshotPath, snapshot);
 
   console.log(`${colors.green}Snapshot saved:${colors.reset} ${name}`);
   console.log(`  ${colors.dim}Path: ${snapshotPath}${colors.reset}`);
@@ -487,15 +488,15 @@ export async function snapshotRestore(name: string, options: SnapshotRestoreOpti
     mkdirSync(chadgiDir, { recursive: true });
   }
 
-  // Write config file
+  // Write config file (using atomic write for crash safety)
   const yamlOutput = objectToYaml(snapshot.config);
-  writeFileSync(configPath, yamlOutput);
+  atomicWriteFile(configPath, yamlOutput);
   console.log(`${colors.green}Restored:${colors.reset} ${configPath}`);
 
-  // Write templates
+  // Write templates (using atomic write for crash safety)
   for (const [templateName, content] of Object.entries(snapshot.templates)) {
     const templatePath = join(chadgiDir, templateName);
-    writeFileSync(templatePath, content);
+    atomicWriteFile(templatePath, content);
     console.log(`${colors.green}Restored:${colors.reset} ${templatePath}`);
   }
 

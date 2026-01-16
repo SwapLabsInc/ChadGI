@@ -1,6 +1,7 @@
-import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { colors } from './utils/colors.js';
+import { atomicWriteJson } from './utils/fileOps.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -91,7 +92,7 @@ export async function pause(options: PauseOptions = {}): Promise<void> {
     }
   }
 
-  writeFileSync(pauseLockFile, JSON.stringify(pauseData, null, 2));
+  atomicWriteJson(pauseLockFile, pauseData);
 
   console.log(`${colors.yellow}${colors.bold}`);
   console.log('==========================================================');

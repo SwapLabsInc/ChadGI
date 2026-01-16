@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
+import { atomicWriteJson } from './utils/fileOps.js';
 
 // Import shared types
 import type {
@@ -101,7 +102,7 @@ function logApprovalToHistory(
     }
 
     progress.last_updated = toISOString(new Date());
-    writeFileSync(progressFile, JSON.stringify(progress, null, 2));
+    atomicWriteJson(progressFile, progress);
   } catch {
     // Non-critical, ignore errors
   }
@@ -174,7 +175,7 @@ export async function approve(options: ApproveOptions = {}): Promise<void> {
     lockData.comment = options.message;
   }
 
-  writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
+  atomicWriteJson(lockFile, lockData);
 
   // Log to history
   logApprovalToHistory(chadgiDir, lockData.issue_number, lockData.phase, 'approved', options.message);
@@ -277,7 +278,7 @@ export async function reject(options: RejectOptions = {}): Promise<void> {
     lockData.feedback = options.message;
   }
 
-  writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
+  atomicWriteJson(lockFile, lockData);
 
   // Log to history
   logApprovalToHistory(chadgiDir, lockData.issue_number, lockData.phase, 'rejected', options.message);
@@ -390,7 +391,7 @@ export function createApprovalLock(
   };
 
   const lockFile = join(chadgiDir, `approval-${phase}-${issueNumber}.lock`);
-  writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
+  atomicWriteJson(lockFile, lockData);
 
   return lockFile;
 }
