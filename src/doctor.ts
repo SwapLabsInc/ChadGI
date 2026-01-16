@@ -4,33 +4,18 @@ import { execSync } from 'child_process';
 import { validateTemplateVariables, TemplateValidationResult } from './validate.js';
 import { maskSecrets, maskObject, setMaskingDisabled } from './utils/secrets.js';
 
-interface DoctorOptions {
-  config?: string;
+// Import shared types
+import type {
+  BaseCommandOptions,
+  ProgressData,
+  HealthCheck,
+  HealthReport,
+  RateLimitData,
+} from './types/index.js';
+
+interface DoctorOptions extends BaseCommandOptions {
   fix?: boolean;
-  json?: boolean;
   mask?: boolean;  // --no-mask flag sets this to false
-}
-
-interface HealthCheck {
-  name: string;
-  category: string;
-  status: 'ok' | 'warning' | 'error';
-  message: string;
-  fixable?: boolean;
-  fixed?: boolean;
-}
-
-interface HealthReport {
-  timestamp: string;
-  healthScore: number;
-  checks: HealthCheck[];
-  recommendations: string[];
-  summary: {
-    total: number;
-    passed: number;
-    warnings: number;
-    errors: number;
-  };
 }
 
 // Color codes for terminal output
@@ -78,40 +63,6 @@ function parseYamlNested(content: string, parent: string, key: string): string |
   return null;
 }
 
-// Progress file data structure
-interface ProgressData {
-  status: string;
-  current_task?: {
-    id: string;
-    title: string;
-    branch: string;
-    started_at: string;
-  };
-  session?: {
-    started_at: string;
-    tasks_completed: number;
-    total_cost_usd: number;
-  };
-  last_updated: string;
-}
-
-// Rate limit API response structure
-interface RateLimitData {
-  resources: {
-    core: {
-      limit: number;
-      remaining: number;
-      reset: number;
-      used: number;
-    };
-    graphql: {
-      limit: number;
-      remaining: number;
-      reset: number;
-      used: number;
-    };
-  };
-}
 
 /**
  * Check GitHub API rate limit status

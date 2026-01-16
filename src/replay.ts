@@ -3,84 +3,24 @@ import { join, dirname, resolve } from 'path';
 import { execSync, spawn } from 'child_process';
 import { createInterface } from 'readline';
 
-// Task metrics from chadgi-metrics.json
-interface TaskMetrics {
-  issue_number: number;
-  started_at: string;
-  completed_at?: string;
-  duration_secs: number;
-  status: 'completed' | 'failed';
-  iterations: number;
-  cost_usd: number;
-  failure_reason?: string;
-  failure_phase?: string;
-  category?: string;
-  retry_count?: number;
-}
-
-interface MetricsData {
-  version: string;
-  last_updated: string;
-  retention_days: number;
-  tasks: TaskMetrics[];
-}
-
-// Session stats from chadgi-stats.json
-interface TaskResult {
-  issue: number;
-  duration_secs?: number;
-  reason?: string;
-}
-
-interface SessionStats {
-  session_id: string;
-  started_at: string;
-  ended_at: string;
-  duration_secs: number;
-  tasks_attempted: number;
-  tasks_completed: number;
-  successful_tasks: TaskResult[];
-  failed_tasks: TaskResult[];
-  total_cost_usd: number;
-  gigachad_mode: boolean;
-  gigachad_merges: number;
-  repo: string;
-}
-
-// Failed task for display and replay
-interface FailedTask {
-  issueNumber: number;
-  issueTitle?: string;
-  failedAt: string;
-  failureReason?: string;
-  failurePhase?: string;
-  iterations: number;
-  cost: number;
-  retryCount: number;
-  branch?: string;
-  hasBranch: boolean;
-  hasLocalChanges: boolean;
-}
+// Import shared types
+import type {
+  BaseCommandOptions,
+  SessionStats,
+  TaskResult,
+  TaskMetrics,
+  MetricsData,
+  FailedTask,
+  ReplayResult,
+} from './types/index.js';
 
 // Replay options
-export interface ReplayOptions {
-  config?: string;
-  json?: boolean;
+export interface ReplayOptions extends BaseCommandOptions {
   fresh?: boolean;
   continue?: boolean;
   yes?: boolean;
   dryRun?: boolean;
   timeout?: number;
-  debug?: boolean;
-}
-
-// Replay result for JSON output
-interface ReplayResult {
-  success: boolean;
-  action: 'replay' | 'list';
-  tasks: FailedTask[];
-  message: string;
-  replayedTasks?: number[];
 }
 
 // Color codes for terminal output

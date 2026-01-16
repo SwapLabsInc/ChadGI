@@ -2,50 +2,16 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 
-// Session stats from chadgi-stats.json
-interface TaskResult {
-  issue: number;
-  duration_secs?: number;
-  reason?: string;
-}
+// Import shared types
+import type {
+  BaseCommandOptions,
+  SessionStats,
+  TaskResult,
+  TaskMetrics,
+  MetricsData,
+} from './types/index.js';
 
-interface SessionStats {
-  session_id: string;
-  started_at: string;
-  ended_at: string;
-  duration_secs: number;
-  tasks_attempted: number;
-  tasks_completed: number;
-  successful_tasks: TaskResult[];
-  failed_tasks: TaskResult[];
-  total_cost_usd: number;
-  gigachad_mode: boolean;
-  gigachad_merges: number;
-  repo: string;
-}
-
-// Extended metrics from chadgi-metrics.json
-interface TaskMetrics {
-  issue_number: number;
-  started_at: string;
-  completed_at?: string;
-  duration_secs: number;
-  status: 'completed' | 'failed';
-  iterations: number;
-  cost_usd: number;
-  category?: string;
-}
-
-interface MetricsData {
-  version: string;
-  last_updated: string;
-  retention_days: number;
-  tasks: TaskMetrics[];
-}
-
-interface EstimateOptions {
-  config?: string;
-  json?: boolean;
+interface EstimateOptions extends BaseCommandOptions {
   budget?: number;
   days?: number;
   category?: string;

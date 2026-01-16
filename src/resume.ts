@@ -3,34 +3,14 @@ import { join, dirname, resolve } from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
+// Import shared types
+import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-interface ResumeOptions {
-  config?: string;
+interface ResumeOptions extends BaseCommandOptions {
   restart?: boolean;
-}
-
-interface ProgressData {
-  status: string;
-  current_task?: {
-    id: string;
-    title: string;
-    branch: string;
-    started_at: string;
-  };
-  session?: {
-    started_at: string;
-    tasks_completed: number;
-    total_cost_usd: number;
-  };
-  last_updated: string;
-}
-
-interface PauseLockData {
-  paused_at: string;
-  reason?: string;
-  resume_at?: string;
 }
 
 // Color codes for terminal output

@@ -2,6 +2,14 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 
+// Import shared types
+import type {
+  BaseCommandOptions,
+  ProgressData,
+  ApprovalLockData,
+  ApprovalHistoryEntry,
+} from './types/index.js';
+
 // Color codes for terminal output
 const colors = {
   reset: '\x1b[0m',
@@ -15,61 +23,15 @@ const colors = {
   blue: '\x1b[34m',
 };
 
-interface ApproveOptions {
-  config?: string;
+interface ApproveOptions extends BaseCommandOptions {
   issueNumber?: number;
   message?: string;
-  json?: boolean;
 }
 
-interface RejectOptions {
-  config?: string;
+interface RejectOptions extends BaseCommandOptions {
   issueNumber?: number;
   message?: string;
-  json?: boolean;
   skip?: boolean;
-}
-
-interface ApprovalLockData {
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
-  issue_number: number;
-  issue_title?: string;
-  branch?: string;
-  phase: 'pre_task' | 'phase1' | 'phase2';
-  files_changed?: number;
-  insertions?: number;
-  deletions?: number;
-  approver?: string;
-  approved_at?: string;
-  rejected_at?: string;
-  comment?: string;
-  feedback?: string;
-}
-
-interface ProgressData {
-  status: string;
-  current_task?: {
-    id: string;
-    title: string;
-    branch: string;
-    started_at: string;
-  };
-  session?: {
-    started_at: string;
-    tasks_completed: number;
-    total_cost_usd: number;
-  };
-  last_updated: string;
-  approval_history?: ApprovalHistoryEntry[];
-}
-
-interface ApprovalHistoryEntry {
-  issue_number: number;
-  phase: string;
-  action: 'approved' | 'rejected';
-  timestamp: string;
-  comment?: string;
 }
 
 /**

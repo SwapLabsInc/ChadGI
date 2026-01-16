@@ -1,26 +1,12 @@
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 
-interface PauseOptions {
-  config?: string;
+// Import shared types
+import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
+
+interface PauseOptions extends BaseCommandOptions {
   for?: string;
   reason?: string;
-}
-
-interface ProgressData {
-  status: string;
-  current_task?: {
-    id: string;
-    title: string;
-    branch: string;
-    started_at: string;
-  };
-  session?: {
-    started_at: string;
-    tasks_completed: number;
-    total_cost_usd: number;
-  };
-  last_updated: string;
 }
 
 // Color codes for terminal output
@@ -95,11 +81,7 @@ export async function pause(options: PauseOptions = {}): Promise<void> {
   }
 
   // Create pause lock file
-  const pauseData: {
-    paused_at: string;
-    reason?: string;
-    resume_at?: string;
-  } = {
+  const pauseData: PauseLockData = {
     paused_at: toISOString(new Date()),
   };
 

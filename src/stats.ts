@@ -1,31 +1,11 @@
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 
-interface TaskResult {
-  issue: number;
-  duration_secs?: number;
-  reason?: string;
-}
+// Import shared types
+import type { BaseCommandOptions, SessionStats, TaskResult } from './types/index.js';
 
-interface SessionStats {
-  session_id: string;
-  started_at: string;
-  ended_at: string;
-  duration_secs: number;
-  tasks_attempted: number;
-  tasks_completed: number;
-  successful_tasks: TaskResult[];
-  failed_tasks: TaskResult[];
-  total_cost_usd: number;
-  gigachad_mode: boolean;
-  gigachad_merges: number;
-  repo: string;
-}
-
-interface StatsOptions {
-  config?: string;
+interface StatsOptions extends BaseCommandOptions {
   last?: number;
-  json?: boolean;
 }
 
 // Color codes for terminal output
