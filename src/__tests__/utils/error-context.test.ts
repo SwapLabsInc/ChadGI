@@ -79,7 +79,7 @@ describe('Error Context Utilities', () => {
       });
 
       // Wait a bit to ensure duration is measurable
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 15));
 
       const error = new ChadGIError('File not found', 'FILE_NOT_FOUND');
       const enriched = attachContext(error, context);
@@ -88,6 +88,7 @@ describe('Error Context Utilities', () => {
       expect(enriched.context).toBeDefined();
       expect(enriched.context!.operation).toBe('file-read');
       expect(enriched.context!.identifiers).toEqual({ filePath: '/test/file.json' });
+      // Use >= 10 with 15ms wait to account for timing variance in CI
       expect(enriched.context!.durationMs).toBeGreaterThanOrEqual(10);
     });
 
