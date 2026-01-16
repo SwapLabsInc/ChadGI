@@ -44,6 +44,10 @@ FORCE_CLAIM="${FORCE_CLAIM:-false}"
 # When enabled, requires human approval at checkpoints before proceeding
 INTERACTIVE_MODE="${INTERACTIVE_MODE:-false}"
 
+# Resume mode - passed from CLI via environment variable
+# When enabled, resumes work on existing branch from interrupted session
+RESUME_MODE="${RESUME_MODE:-false}"
+
 # Task timeout override - passed from CLI via environment variable (in minutes)
 # Empty means use config value, otherwise override
 CLI_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
@@ -1022,6 +1026,8 @@ set_defaults() {
     # Task lock defaults
     TASK_LOCK_TIMEOUT_MINUTES="${TASK_LOCK_TIMEOUT_MINUTES:-120}"
     FORCE_CLAIM="${FORCE_CLAIM:-false}"
+    # Resume mode - continue work on existing branch
+    RESUME_MODE="${RESUME_MODE:-false}"
 
     # Notification settings
     NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
@@ -2675,10 +2681,20 @@ init_progress() {
         local STATUS=$(jq -r '.status // "unknown"' "$PROGRESS_FILE" 2>/dev/null)
         if [ "$STATUS" = "in_progress" ]; then
             log_warn "Found interrupted session in progress file"
-            RESUME_TASK=$(jq -r '.current_task.id // empty' "$PROGRESS_FILE" 2>/dev/null)
-            if [ -n "$RESUME_TASK" ]; then
-                log_info "Previous task: $RESUME_TASK"
-                log_info "You may want to check its status before continuing"
+            RESUME_TASK_ID=$(jq -r '.current_task.id // empty' "$PROGRESS_FILE" 2>/dev/null)
+            RESUME_BRANCH=$(jq -r '.current_task.branch // empty' "$PROGRESS_FILE" 2>/dev/null)
+            RESUME_TASK_TITLE=$(jq -r '.current_task.title // empty' "$PROGRESS_FILE" 2>/dev/null)
+            if [ -n "$RESUME_TASK_ID" ]; then
+                log_info "Previous task: #$RESUME_TASK_ID"
+                log_info "Previous branch: $RESUME_BRANCH"
+                if [ "$RESUME_MODE" = "true" ]; then
+                    log_info "Resume mode enabled - will continue on existing branch"
+                    # Don't reset to idle - we'll resume this task
+                    return 0
+                else
+                    log_info "You may want to check its status before continuing"
+                    log_info "Hint: Use --resume flag to continue on existing branch"
+                fi
             fi
         fi
     fi
@@ -5596,10 +5612,38 @@ while true; do
 
     log_header "SEARCHING FOR TASKS (Loop #$((ISSUES_COMPLETED + 1)))"
 
-    # Find tasks in Ready column
-    log_step "Checking '$READY_COLUMN' column..."
+    # Check for resume mode - use task from progress file instead of finding new one
+    RESUMING_TASK="false"
+    if [ "$RESUME_MODE" = "true" ] && [ -n "$RESUME_TASK_ID" ]; then
+        log_info "Resume mode: Continuing task #$RESUME_TASK_ID"
+        ISSUE_NUMBER="$RESUME_TASK_ID"
+        ISSUE_TITLE="$RESUME_TASK_TITLE"
 
-    if ! get_project_task; then
+        # Fetch issue details from GitHub
+        ISSUE_DATA=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json title,body,url 2>/dev/null)
+        if [ -n "$ISSUE_DATA" ]; then
+            ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title // empty')
+            ISSUE_URL=$(echo "$ISSUE_DATA" | jq -r '.url // empty')
+            ISSUE_BODY=$(echo "$ISSUE_DATA" | jq -r '.body // empty')
+            log_success "Resuming issue #$ISSUE_NUMBER: $ISSUE_TITLE"
+            RESUMING_TASK="true"  # Flag to skip move-to-column later
+            # Clear resume mode - only resume once
+            RESUME_MODE="false"
+            RESUME_TASK_ID=""
+        else
+            log_error "Failed to fetch issue #$RESUME_TASK_ID - falling back to normal task selection"
+            RESUME_MODE="false"
+            RESUME_TASK_ID=""
+            RESUME_BRANCH=""
+        fi
+    fi
+
+    # Find tasks in Ready column (skip if we have a resume task)
+    if [ -z "$ISSUE_NUMBER" ]; then
+        log_step "Checking '$READY_COLUMN' column..."
+    fi
+
+    if [ -z "$ISSUE_NUMBER" ] && ! get_project_task; then
         CONSECUTIVE_EMPTY=$((CONSECUTIVE_EMPTY + 1))
         log_warn "No tasks found in '$READY_COLUMN' column"
 
@@ -5691,12 +5735,15 @@ while true; do
     # Start heartbeat to keep lock alive
     start_task_lock_heartbeat "$ISSUE_NUMBER"
 
-    log_header "MOVING ISSUE #$ISSUE_NUMBER TO $IN_PROGRESS_COLUMN"
-
-    # Move to In Progress column
-    move_to_column "$ITEM_ID" "$IN_PROGRESS_COLUMN" && \
-        log_success "Moved to '$IN_PROGRESS_COLUMN'" || \
-        log_warn "Could not move issue (continuing anyway)"
+    # Move to In Progress column (skip if resuming - already there)
+    if [ "$RESUMING_TASK" = "true" ]; then
+        log_info "Skipping column move - resuming task already in progress"
+    else
+        log_header "MOVING ISSUE #$ISSUE_NUMBER TO $IN_PROGRESS_COLUMN"
+        move_to_column "$ITEM_ID" "$IN_PROGRESS_COLUMN" && \
+            log_success "Moved to '$IN_PROGRESS_COLUMN'" || \
+            log_warn "Could not move issue (continuing anyway)"
+    fi
 
     # Send task started notification (include priority if enabled)
     notify_task_started "$ISSUE_NUMBER" "$ISSUE_TITLE" "$ISSUE_URL" "$CURRENT_PRIORITY_NAME"
@@ -5713,26 +5760,59 @@ while true; do
         fi
     fi
 
-    log_header "CREATING BRANCH FOR ISSUE #$ISSUE_NUMBER"
-
-    # Create a clean branch name from issue title with unique suffix
-    # The timestamp suffix ensures we get a fresh branch if re-attempting an issue
-    BRANCH_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-30)
-    ATTEMPT_SUFFIX=$(date +%m%d%H%M)
-    BRANCH_NAME="${BRANCH_PREFIX}${ISSUE_NUMBER}-${BRANCH_SLUG}-${ATTEMPT_SUFFIX}"
-
-    if [ "$DRY_RUN" = "true" ]; then
-        log_dry_run "Would create branch: $BRANCH_NAME from origin/$BASE_BRANCH"
-    else
+    # Check if we should resume on an existing branch
+    SKIP_BRANCH_CREATION="false"
+    if [ -n "$RESUME_BRANCH" ]; then
+        log_header "RESUMING ON EXISTING BRANCH"
         log_step "Fetching latest from origin..."
-        git fetch origin "$BASE_BRANCH" 2>/dev/null || log_warn "Could not fetch origin"
+        git fetch origin 2>/dev/null || log_warn "Could not fetch origin"
 
-        log_step "Creating branch: $BRANCH_NAME"
-        git checkout -B "$BRANCH_NAME" "origin/$BASE_BRANCH" 2>/dev/null && \
-            log_success "Branch created and checked out" || {
-            log_error "Could not create branch"
-            log_info "Continuing on current branch..."
-        }
+        # Try local branch first
+        if git rev-parse --verify "$RESUME_BRANCH" &>/dev/null; then
+            log_info "Found local branch: $RESUME_BRANCH"
+            git checkout "$RESUME_BRANCH" 2>/dev/null && {
+                log_success "Checked out existing local branch: $RESUME_BRANCH"
+                BRANCH_NAME="$RESUME_BRANCH"
+                SKIP_BRANCH_CREATION="true"
+            } || log_warn "Could not checkout local branch"
+        # Try remote branch
+        elif git rev-parse --verify "origin/$RESUME_BRANCH" &>/dev/null; then
+            log_info "Found remote branch: origin/$RESUME_BRANCH"
+            git checkout -b "$RESUME_BRANCH" "origin/$RESUME_BRANCH" 2>/dev/null && {
+                log_success "Checked out existing remote branch: $RESUME_BRANCH"
+                BRANCH_NAME="$RESUME_BRANCH"
+                SKIP_BRANCH_CREATION="true"
+            } || log_warn "Could not checkout remote branch"
+        else
+            log_warn "Resume branch not found: $RESUME_BRANCH"
+            log_info "Will create new branch instead"
+        fi
+        # Clear resume branch after using it
+        RESUME_BRANCH=""
+    fi
+
+    if [ "$SKIP_BRANCH_CREATION" = "false" ]; then
+        log_header "CREATING BRANCH FOR ISSUE #$ISSUE_NUMBER"
+
+        # Create a clean branch name from issue title with unique suffix
+        # The timestamp suffix ensures we get a fresh branch if re-attempting an issue
+        BRANCH_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-30)
+        ATTEMPT_SUFFIX=$(date +%m%d%H%M)
+        BRANCH_NAME="${BRANCH_PREFIX}${ISSUE_NUMBER}-${BRANCH_SLUG}-${ATTEMPT_SUFFIX}"
+
+        if [ "$DRY_RUN" = "true" ]; then
+            log_dry_run "Would create branch: $BRANCH_NAME from origin/$BASE_BRANCH"
+        else
+            log_step "Fetching latest from origin..."
+            git fetch origin "$BASE_BRANCH" 2>/dev/null || log_warn "Could not fetch origin"
+
+            log_step "Creating branch: $BRANCH_NAME"
+            git checkout -B "$BRANCH_NAME" "origin/$BASE_BRANCH" 2>/dev/null && \
+                log_success "Branch created and checked out" || {
+                log_error "Could not create branch"
+                log_info "Continuing on current branch..."
+            }
+        fi
     fi
 
     # Log header with priority if enabled

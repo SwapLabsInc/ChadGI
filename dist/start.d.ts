@@ -10,6 +10,7 @@ interface StartOptions {
     interactive?: boolean;
     mask?: boolean;
     forceClaim?: boolean;
+    resume?: boolean;
 }
 export declare function start(options?: StartOptions): Promise<void>;
 export {};

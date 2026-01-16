@@ -66,13 +66,14 @@ describe('version module', () => {
         // Create package.json with a test version
         // The path needs to match what version.ts computes: join(__dirname, '..', 'package.json')
         // When running tests, __dirname points to dist/ so the package.json path is at project root
+        const projectRoot = process.cwd();
         vol.fromJSON({
-            '/Users/dan/ChadGI/package.json': JSON.stringify({
+            [`${projectRoot}/package.json`]: JSON.stringify({
                 name: 'chadgi',
                 version: '1.0.5',
             }),
             // Also need .chadgi directory for cache tests
-            '/Users/dan/ChadGI/.chadgi': null,
+            [`${projectRoot}/.chadgi`]: null,
         });
     });
     describe('version command', () => {
@@ -145,12 +146,13 @@ describe('version module', () => {
         // We can test the comparison logic indirectly through the version command
         it('should correctly compare semantic versions', async () => {
             // Create different version scenarios via package.json
+            const projectRoot = process.cwd();
             vol.fromJSON({
-                '/Users/dan/ChadGI/package.json': JSON.stringify({
+                [`${projectRoot}/package.json`]: JSON.stringify({
                     name: 'chadgi',
                     version: '1.0.6', // Same as latest
                 }),
-                '/Users/dan/ChadGI/.chadgi': null,
+                [`${projectRoot}/.chadgi`]: null,
             });
             const logs = [];
             const originalLog = console.log;
@@ -173,12 +175,13 @@ describe('version module', () => {
                 latest_version: '1.0.7',
                 current_version: '1.0.5',
             };
+            const projectRoot = process.cwd();
             vol.fromJSON({
-                '/Users/dan/ChadGI/package.json': JSON.stringify({
+                [`${projectRoot}/package.json`]: JSON.stringify({
                     name: 'chadgi',
                     version: '1.0.5',
                 }),
-                '/Users/dan/ChadGI/.chadgi/update-check.json': JSON.stringify(cacheData),
+                [`${projectRoot}/.chadgi/update-check.json`]: JSON.stringify(cacheData),
             });
             const logs = [];
             const originalLog = console.log;
@@ -204,12 +207,13 @@ describe('version module', () => {
                 latest_version: '1.0.4',
                 current_version: '1.0.5',
             };
+            const projectRoot = process.cwd();
             vol.fromJSON({
-                '/Users/dan/ChadGI/package.json': JSON.stringify({
+                [`${projectRoot}/package.json`]: JSON.stringify({
                     name: 'chadgi',
                     version: '1.0.5',
                 }),
-                '/Users/dan/ChadGI/.chadgi/update-check.json': JSON.stringify(cacheData),
+                [`${projectRoot}/.chadgi/update-check.json`]: JSON.stringify(cacheData),
             });
             const logs = [];
             const originalLog = console.log;
