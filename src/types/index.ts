@@ -617,3 +617,35 @@ export interface HookExecutionResult {
   /** Standard error from the hook (truncated if too long) */
   stderr?: string;
 }
+
+// ============================================================================
+// Version Types
+// ============================================================================
+
+/**
+ * Update check cache data
+ */
+export interface UpdateCheckCache {
+  checked_at: string;
+  latest_version: string;
+  current_version: string;
+}
+
+/**
+ * Version info for JSON output
+ */
+export interface VersionInfo {
+  chadgi: string;
+  dependencies: {
+    node: string;
+    claude_cli: string | null;
+    github_cli: string | null;
+    jq: string | null;
+  };
+  update?: {
+    available: boolean;
+    current: string;
+    latest: string;
+    cached: boolean;
+  };
+}
