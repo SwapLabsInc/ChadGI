@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.4...v1.2.0) (2026-01-16)
+
+
+### Features
+
+* improve task templates for balanced development ([fc19418](https://github.com/SwapLabsInc/ChadGI/commit/fc1941858d72467120d60b4237c1539f981887a8))
+
 ## [1.1.4](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.3...v1.1.4) (2026-01-16)
 
 
