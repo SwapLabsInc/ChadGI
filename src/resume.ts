@@ -4,6 +4,7 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
 import { ensureChadgiDirExists } from './utils/config.js';
+import { safeParseJson } from './utils/fileOps.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -30,10 +31,12 @@ export async function resume(options: ResumeOptions = {}): Promise<void> {
     // Check if ChadGI is running or stopped
     let progress: ProgressData | null = null;
     if (existsSync(progressFile)) {
-      try {
-        progress = JSON.parse(readFileSync(progressFile, 'utf-8'));
-      } catch {
-        // Ignore parse errors
+      const content = readFileSync(progressFile, 'utf-8');
+      const result = safeParseJson<ProgressData>(content, {
+        filePath: progressFile,
+      });
+      if (result.success) {
+        progress = result.data;
       }
     }
 
@@ -69,10 +72,12 @@ export async function resume(options: ResumeOptions = {}): Promise<void> {
 
   // Read pause lock info before removing
   let pauseInfo: PauseLockData | null = null;
-  try {
-    pauseInfo = JSON.parse(readFileSync(pauseLockFile, 'utf-8'));
-  } catch {
-    // Ignore parse errors
+  const pauseContent = readFileSync(pauseLockFile, 'utf-8');
+  const pauseResult = safeParseJson<PauseLockData>(pauseContent, {
+    filePath: pauseLockFile,
+  });
+  if (pauseResult.success) {
+    pauseInfo = pauseResult.data;
   }
 
   // Remove the pause lock file
@@ -102,10 +107,12 @@ export async function resume(options: ResumeOptions = {}): Promise<void> {
   // Check current progress state
   let progress: ProgressData | null = null;
   if (existsSync(progressFile)) {
-    try {
-      progress = JSON.parse(readFileSync(progressFile, 'utf-8'));
-    } catch {
-      // Ignore parse errors
+    const progressContent = readFileSync(progressFile, 'utf-8');
+    const progressResult = safeParseJson<ProgressData>(progressContent, {
+      filePath: progressFile,
+    });
+    if (progressResult.success) {
+      progress = progressResult.data;
     }
   }
 

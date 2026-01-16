@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { colors } from './utils/colors.js';
-import { atomicWriteJson } from './utils/fileOps.js';
+import { atomicWriteJson, safeParseJson } from './utils/fileOps.js';
 import { toISOString, parseDuration } from './utils/formatting.js';
 import { resolveChadgiDir, ensureChadgiDirExists } from './utils/config.js';
 
@@ -23,8 +23,12 @@ export async function pause(options: PauseOptions = {}): Promise<void> {
   // Check if already paused
   if (existsSync(pauseLockFile)) {
     console.log(`${colors.yellow}ChadGI is already paused.${colors.reset}`);
-    try {
-      const lockContent = JSON.parse(readFileSync(pauseLockFile, 'utf-8'));
+    const content = readFileSync(pauseLockFile, 'utf-8');
+    const result = safeParseJson<PauseLockData>(content, {
+      filePath: pauseLockFile,
+    });
+    if (result.success) {
+      const lockContent = result.data;
       console.log(`  Paused at: ${new Date(lockContent.paused_at).toLocaleString()}`);
       if (lockContent.reason) {
         console.log(`  Reason: ${lockContent.reason}`);
@@ -32,8 +36,6 @@ export async function pause(options: PauseOptions = {}): Promise<void> {
       if (lockContent.resume_at) {
         console.log(`  Auto-resume at: ${new Date(lockContent.resume_at).toLocaleString()}`);
       }
-    } catch {
-      // Lock file exists but might be corrupted, ignore
     }
     console.log('\nRun `chadgi resume` to continue processing.');
     return;
@@ -71,10 +73,12 @@ export async function pause(options: PauseOptions = {}): Promise<void> {
   // Check if ChadGI is currently running
   let currentTask: ProgressData | null = null;
   if (existsSync(progressFile)) {
-    try {
-      currentTask = JSON.parse(readFileSync(progressFile, 'utf-8'));
-    } catch {
-      // Ignore parse errors
+    const content = readFileSync(progressFile, 'utf-8');
+    const result = safeParseJson<ProgressData>(content, {
+      filePath: progressFile,
+    });
+    if (result.success) {
+      currentTask = result.data;
     }
   }
 

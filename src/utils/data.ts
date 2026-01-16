@@ -24,6 +24,7 @@ import {
   isLockStale,
   DEFAULT_LOCK_TIMEOUT_MINUTES,
 } from './locks.js';
+import { safeParseJson } from './fileOps.js';
 
 // ============================================================================
 // Session Stats
@@ -41,12 +42,11 @@ export function loadSessionStats(chadgiDir: string): SessionStats[] {
     return [];
   }
 
-  try {
-    const content = readFileSync(statsFile, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return [];
-  }
+  const content = readFileSync(statsFile, 'utf-8');
+  const result = safeParseJson<SessionStats[]>(content, {
+    filePath: statsFile,
+  });
+  return result.success ? result.data : [];
 }
 
 /**
@@ -78,13 +78,11 @@ export function loadTaskMetrics(chadgiDir: string): TaskMetrics[] {
     return [];
   }
 
-  try {
-    const content = readFileSync(metricsFile, 'utf-8');
-    const data: MetricsData = JSON.parse(content);
-    return data.tasks || [];
-  } catch {
-    return [];
-  }
+  const content = readFileSync(metricsFile, 'utf-8');
+  const result = safeParseJson<MetricsData>(content, {
+    filePath: metricsFile,
+  });
+  return result.success ? (result.data.tasks || []) : [];
 }
 
 /**
@@ -99,12 +97,11 @@ export function loadMetricsData(chadgiDir: string): MetricsData | null {
     return null;
   }
 
-  try {
-    const content = readFileSync(metricsFile, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
+  const content = readFileSync(metricsFile, 'utf-8');
+  const result = safeParseJson<MetricsData>(content, {
+    filePath: metricsFile,
+  });
+  return result.success ? result.data : null;
 }
 
 /**
@@ -143,12 +140,11 @@ export function loadProgressData(chadgiDir: string): ProgressData | null {
     return null;
   }
 
-  try {
-    const content = readFileSync(progressFile, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
+  const content = readFileSync(progressFile, 'utf-8');
+  const result = safeParseJson<ProgressData>(content, {
+    filePath: progressFile,
+  });
+  return result.success ? result.data : null;
 }
 
 // ============================================================================
@@ -167,12 +163,11 @@ export function loadPauseLock(chadgiDir: string): PauseLockData | null {
     return null;
   }
 
-  try {
-    const content = readFileSync(pauseLockFile, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
+  const content = readFileSync(pauseLockFile, 'utf-8');
+  const result = safeParseJson<PauseLockData>(content, {
+    filePath: pauseLockFile,
+  });
+  return result.success ? result.data : null;
 }
 
 /**
@@ -198,15 +193,13 @@ export function findPendingApproval(chadgiDir: string): ApprovalLockData | null 
       (f) => f.startsWith('approval-') && f.endsWith('.lock')
     );
     for (const file of files) {
-      try {
-        const data = JSON.parse(
-          readFileSync(join(chadgiDir, file), 'utf-8')
-        ) as ApprovalLockData;
-        if (data.status === 'pending') {
-          return data;
-        }
-      } catch {
-        // Skip invalid files
+      const filePath = join(chadgiDir, file);
+      const content = readFileSync(filePath, 'utf-8');
+      const result = safeParseJson<ApprovalLockData>(content, {
+        filePath,
+      });
+      if (result.success && result.data.status === 'pending') {
+        return result.data;
       }
     }
   } catch {
@@ -228,13 +221,13 @@ export function listApprovalLocks(chadgiDir: string): ApprovalLockData[] {
       (f) => f.startsWith('approval-') && f.endsWith('.lock')
     );
     for (const file of files) {
-      try {
-        const data = JSON.parse(
-          readFileSync(join(chadgiDir, file), 'utf-8')
-        ) as ApprovalLockData;
-        approvals.push(data);
-      } catch {
-        // Skip invalid files
+      const filePath = join(chadgiDir, file);
+      const content = readFileSync(filePath, 'utf-8');
+      const result = safeParseJson<ApprovalLockData>(content, {
+        filePath,
+      });
+      if (result.success) {
+        approvals.push(result.data);
       }
     }
   } catch {
@@ -315,12 +308,11 @@ export function loadJsonFile<T>(filePath: string): T | null {
     return null;
   }
 
-  try {
-    const content = readFileSync(filePath, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
+  const content = readFileSync(filePath, 'utf-8');
+  const result = safeParseJson<T>(content, {
+    filePath,
+  });
+  return result.success ? result.data : null;
 }
 
 /**

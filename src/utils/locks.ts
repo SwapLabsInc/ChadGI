@@ -9,7 +9,7 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { hostname } from 'os';
-import { atomicWriteJson } from './fileOps.js';
+import { atomicWriteJson, safeParseJson } from './fileOps.js';
 import type {
   TaskLockData,
   TaskLockResult,
@@ -81,12 +81,11 @@ export function readTaskLock(chadgiDir: string, issueNumber: number): TaskLockDa
     return null;
   }
 
-  try {
-    const content = readFileSync(lockPath, 'utf-8');
-    return JSON.parse(content) as TaskLockData;
-  } catch {
-    return null;
-  }
+  const content = readFileSync(lockPath, 'utf-8');
+  const result = safeParseJson<TaskLockData>(content, {
+    filePath: lockPath,
+  });
+  return result.success ? result.data : null;
 }
 
 /**
@@ -324,10 +323,14 @@ export function listTaskLocks(
     const now = Date.now();
 
     for (const file of files) {
-      try {
-        const content = readFileSync(join(locksDir, file), 'utf-8');
-        const lock = JSON.parse(content) as TaskLockData;
+      const filePath = join(locksDir, file);
+      const content = readFileSync(filePath, 'utf-8');
+      const result = safeParseJson<TaskLockData>(content, {
+        filePath,
+      });
 
+      if (result.success) {
+        const lock = result.data;
         const lockedAt = new Date(lock.locked_at).getTime();
         const heartbeatAt = new Date(lock.last_heartbeat).getTime();
 
@@ -343,8 +346,6 @@ export function listTaskLocks(
           workerId: lock.worker_id,
           repoName: lock.repo_name,
         });
-      } catch {
-        // Skip invalid lock files
       }
     }
   } catch {
