@@ -47,6 +47,8 @@
  * ```
  */
 
+import { logSilentError, ErrorCategory } from './diagnostics.js';
+
 // Get package version for meta information
 let _packageVersion: string | null = null;
 
@@ -74,13 +76,15 @@ function getPackageVersion(): string {
           _packageVersion = pkg.version as string;
           return _packageVersion;
         }
-      } catch {
-        // Continue searching up
+      } catch (e) {
+        // Package.json not found at this level, continue searching up
+        logSilentError(e, `reading package.json from ${searchDir}`, ErrorCategory.EXPECTED);
       }
       searchDir = dirname(searchDir);
     }
-  } catch {
-    // Ignore errors, use fallback
+  } catch (e) {
+    // Module resolution failed, use fallback version
+    logSilentError(e, 'loading fs/path modules for version detection', ErrorCategory.EXPECTED);
   }
 
   _packageVersion = 'unknown';

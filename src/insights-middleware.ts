@@ -9,6 +9,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { colors } from './utils/colors.js';
 import { formatDuration } from './utils/formatting.js';
+import { logSilentError, ErrorCategory } from './utils/diagnostics.js';
 
 // Import middleware utilities
 import {
@@ -120,8 +121,9 @@ function loadInsightsData(chadgiDir: string, days?: number): {
     try {
       const content = readFileSync(statsFile, 'utf-8');
       sessions = JSON.parse(content);
-    } catch {
-      // Ignore parse errors
+    } catch (e) {
+      // Stats file may be corrupted or in unexpected format - continue with empty data
+      logSilentError(e, 'parsing session stats for insights', ErrorCategory.EXPECTED);
     }
   }
 
@@ -131,8 +133,9 @@ function loadInsightsData(chadgiDir: string, days?: number): {
       const content = readFileSync(metricsFile, 'utf-8');
       const metricsData: MetricsData = JSON.parse(content);
       tasks = metricsData.tasks || [];
-    } catch {
-      // Ignore parse errors
+    } catch (e) {
+      // Metrics file may be corrupted or in unexpected format - continue with empty data
+      logSilentError(e, 'parsing task metrics for insights', ErrorCategory.EXPECTED);
     }
   }
 

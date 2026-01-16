@@ -417,3 +417,20 @@ export {
   isStandardOption,
   hasOption,
 } from './cli-options.js';
+
+// Diagnostics (silent error logging)
+export {
+  // Types
+  ErrorCategory,
+  type SilentErrorEntry,
+  type ErrorSummary,
+  // Core functions
+  logSilentError,
+  // Registry functions
+  getSilentErrorSummary,
+  getAllSilentErrors,
+  clearSilentErrors,
+  getSilentErrorCount,
+  hasUnknownErrors,
+  formatErrorSummary,
+} from './diagnostics.js';

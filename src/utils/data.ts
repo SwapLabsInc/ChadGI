@@ -35,6 +35,7 @@ import {
   validateSchema,
   validateArray,
 } from './data-schema.js';
+import { logSilentError, ErrorCategory } from './diagnostics.js';
 
 // ============================================================================
 // Session Stats
@@ -310,8 +311,9 @@ export function findPendingApproval(chadgiDir: string): ApprovalLockData | null 
         return validation.data;
       }
     }
-  } catch {
-    // Directory read error
+  } catch (e) {
+    // Directory read may fail if .chadgi doesn't exist or has permission issues
+    logSilentError(e, 'reading approval lock directory', ErrorCategory.EXPECTED);
   }
   return null;
 }
@@ -348,8 +350,9 @@ export function listApprovalLocks(chadgiDir: string): ApprovalLockData[] {
         approvals.push(validation.data);
       }
     }
-  } catch {
-    // Directory read error
+  } catch (e) {
+    // Directory read may fail if .chadgi doesn't exist or has permission issues
+    logSilentError(e, 'listing approval lock files', ErrorCategory.EXPECTED);
   }
   return approvals;
 }
@@ -456,7 +459,9 @@ export function readTextFile(filePath: string): string | null {
 
   try {
     return readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (e) {
+    // File read failure is expected when file doesn't exist or is inaccessible
+    logSilentError(e, `reading text file: ${filePath}`, ErrorCategory.EXPECTED);
     return null;
   }
 }
