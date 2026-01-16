@@ -10,6 +10,7 @@ import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
+import { doctor } from './doctor.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -155,6 +156,21 @@ program
   .action(async (options) => {
     try {
       await status(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('doctor')
+  .description('Run comprehensive health checks and diagnostics')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output health report as JSON')
+  .option('--fix', 'Auto-remediate simple issues (clear stale locks, etc.)')
+  .action(async (options) => {
+    try {
+      await doctor(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
