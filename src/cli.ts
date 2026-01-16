@@ -10,6 +10,7 @@ import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
+import { watch } from './watch.js';
 import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
@@ -162,6 +163,22 @@ program
   .action(async (options) => {
     try {
       await status(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('watch')
+  .description('Monitor a running ChadGI session in real-time')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output status as JSON (requires --once)')
+  .option('-o, --once', 'Show current status once without auto-refresh')
+  .option('-i, --interval <ms>', 'Refresh interval in milliseconds (default: 2000)', parseInt)
+  .action(async (options) => {
+    try {
+      await watch(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);

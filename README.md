@@ -108,6 +108,51 @@ chadgi start --config /path/to/config    # Use specific config
 
 Press `Ctrl+C` to stop gracefully.
 
+### `chadgi watch`
+
+Monitor a running ChadGI session in real-time from another terminal.
+
+```bash
+chadgi watch                             # Live dashboard with auto-refresh
+chadgi watch --once                      # Show current status without auto-refresh
+chadgi watch --json --once               # Output machine-readable JSON status
+chadgi watch --interval 5000             # Refresh every 5 seconds (default: 2000ms)
+```
+
+Example live dashboard:
+```
+==========================================================
+                  CHADGI WATCH
+==========================================================
+Status: RUNNING /
+
+Phase:  [CODE] IMPLEMENTATION
+
+CURRENT TASK
+  Issue:   #42
+  Title:   Add user authentication
+  Branch:  feature/issue-42-add-user-auth
+  Elapsed: 5m 23s
+
+ITERATION
+  [######--------------] 2/5
+  Retries remaining: 3
+
+SESSION STATS
+  Duration:  1h 23m 45s
+  Completed: 3 task(s)
+  Cost:      $0.4521
+
+Last updated: 1/15/2026, 10:30:45 AM
+Press Ctrl+C to exit
+```
+
+The watch command is useful for:
+- Monitoring long-running sessions from another terminal
+- Running ChadGI on remote servers or in detached mode
+- Building external dashboards with `--json --once`
+- Quick status checks without interrupting the main process
+
 ### `chadgi queue`
 
 View and manage the task queue before running ChadGI.
