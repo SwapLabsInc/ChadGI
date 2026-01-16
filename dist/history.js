@@ -5,7 +5,7 @@ import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './uti
 import { formatDuration, formatDate, formatCost, parseSince, truncate } from './utils/formatting.js';
 import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
-import { Section, BracketedBadge, divider, keyValue } from './utils/textui.js';
+import { Section, BracketedBadge, divider, keyValue, coloredHyperlink } from './utils/textui.js';
 // Build unified history entries from both data sources
 function buildHistoryEntries(sessions, metrics, _repo) {
     const entries = [];
@@ -188,9 +188,10 @@ function printHistory(entries, total, sinceDate, statusFilter, _repo) {
         if (entry.outcome === 'failed' && entry.failureReason) {
             console.log(`  ${colors.red}Reason: ${entry.failureReason}${colors.reset}`);
         }
-        // PR URL if available
+        // PR URL if available (clickable if terminal supports hyperlinks)
         if (entry.prUrl) {
-            console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
+            const prLink = coloredHyperlink(entry.prUrl, entry.prUrl, 'blue');
+            console.log(`  PR: ${prLink}`);
         }
         console.log(divider(78));
     }

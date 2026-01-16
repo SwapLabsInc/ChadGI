@@ -314,6 +314,8 @@ export interface ChadGIConfig {
         show_tool_details?: boolean;
         show_cost?: boolean;
         truncate_length?: number;
+        /** Terminal hyperlink mode: 'auto' (detect), 'on' (always), 'off' (never) */
+        hyperlinks?: 'auto' | 'on' | 'off';
     };
     /** OpenTelemetry configuration for distributed tracing and metrics */
     telemetry?: TelemetryConfig;

@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested, parseYamlBoolean, ensureChadgiDirExists } from './utils/config.js';
 import { gh, GhClientError } from './utils/gh-client.js';
-import { Section, Table, Badge, type TableColumn } from './utils/textui.js';
+import { Section, Table, Badge, type TableColumn, hyperlink } from './utils/textui.js';
 import { logSilentError, ErrorCategory } from './utils/diagnostics.js';
 import { createErrorContext, attachContext, type ErrorContext } from './utils/errors.js';
 
@@ -549,11 +549,12 @@ function printQueue(tasks: QueueTask[], readyColumn: string, dependenciesEnabled
   // Build table
   const table = new Table({ columns });
 
-  // Add rows with index
+  // Add rows with index (issue numbers are clickable hyperlinks if terminal supports)
   tasks.forEach((task, index) => {
+    const issueDisplay = hyperlink(task.url, `#${task.number}`);
     table.addRow({
       index: index + 1,
-      issue: `#${task.number}`,
+      issue: issueDisplay,
       priorityName: task.priorityName,
       category: task.category,
       title: task.title,

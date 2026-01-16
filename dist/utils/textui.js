@@ -6,6 +6,209 @@
  */
 import { colors } from './colors.js';
 /**
+ * Cache for terminal hyperlink support detection.
+ * Set to null initially to indicate detection hasn't been performed.
+ */
+let hyperlinkSupportCache = null;
+/**
+ * Detect if the terminal supports OSC 8 hyperlinks.
+ *
+ * Checks environment variables for known terminal emulators that support
+ * clickable hyperlinks:
+ * - iTerm2, Apple Terminal, Hyper, VS Code (via TERM_PROGRAM)
+ * - Windows Terminal (via WT_SESSION)
+ * - GNOME Terminal 3.26+ (via VTE_VERSION >= 5000)
+ * - Kitty, Alacritty, WezTerm (via TERM_PROGRAM or TERM)
+ *
+ * @returns true if hyperlinks are supported, false otherwise
+ */
+export function isHyperlinkSupported() {
+    // Return cached result if available
+    if (hyperlinkSupportCache !== null) {
+        return hyperlinkSupportCache;
+    }
+    const env = process.env;
+    // Check TERM_PROGRAM for known supporting terminals
+    const termProgram = env.TERM_PROGRAM?.toLowerCase() || '';
+    const supportedTermPrograms = [
+        'iterm.app',
+        'apple_terminal',
+        'hyper',
+        'vscode',
+        'kitty',
+        'alacritty',
+        'wezterm',
+    ];
+    if (supportedTermPrograms.some((t) => termProgram.includes(t))) {
+        hyperlinkSupportCache = true;
+        return true;
+    }
+    // Check Windows Terminal
+    if (env.WT_SESSION) {
+        hyperlinkSupportCache = true;
+        return true;
+    }
+    // Check GNOME Terminal via VTE_VERSION (>= 5000 means version 0.50+)
+    const vteVersion = parseInt(env.VTE_VERSION || '0', 10);
+    if (vteVersion >= 5000) {
+        hyperlinkSupportCache = true;
+        return true;
+    }
+    // Check TERM for additional indicators
+    const term = env.TERM?.toLowerCase() || '';
+    if (term.includes('kitty') || term.includes('wezterm')) {
+        hyperlinkSupportCache = true;
+        return true;
+    }
+    // Check COLORTERM for modern terminal indicators
+    const colorterm = env.COLORTERM?.toLowerCase() || '';
+    if (colorterm === 'truecolor' && (termProgram || env.KONSOLE_VERSION)) {
+        // Many modern terminals with truecolor support also support hyperlinks
+        hyperlinkSupportCache = true;
+        return true;
+    }
+    // Default: hyperlinks not supported
+    hyperlinkSupportCache = false;
+    return false;
+}
+/**
+ * Clear the hyperlink support cache.
+ * Useful for testing or when terminal environment changes.
+ */
+export function clearHyperlinkCache() {
+    hyperlinkSupportCache = null;
+}
+/**
+ * Current hyperlink mode setting.
+ * Can be set via config or programmatically.
+ */
+let currentHyperlinkMode = 'auto';
+/**
+ * Set the hyperlink mode.
+ *
+ * @param mode - 'auto', 'on', or 'off'
+ */
+export function setHyperlinkMode(mode) {
+    currentHyperlinkMode = mode;
+}
+/**
+ * Get the current hyperlink mode.
+ *
+ * @returns The current hyperlink mode setting
+ */
+export function getHyperlinkMode() {
+    return currentHyperlinkMode;
+}
+/**
+ * Check if hyperlinks should be used based on current mode and terminal support.
+ *
+ * @returns true if hyperlinks should be rendered, false for plain text
+ */
+export function shouldUseHyperlinks() {
+    switch (currentHyperlinkMode) {
+        case 'on':
+            return true;
+        case 'off':
+            return false;
+        case 'auto':
+        default:
+            return isHyperlinkSupported();
+    }
+}
+/**
+ * Create a terminal hyperlink using OSC 8 escape sequences.
+ *
+ * The OSC 8 format is: \e]8;;URL\e\\TEXT\e]8;;\e\\
+ * Where:
+ * - \e]8;; starts the hyperlink with the URL
+ * - \e\\ (or \x07) terminates the URL/parameter section
+ * - TEXT is the visible text
+ * - \e]8;;\e\\ ends the hyperlink
+ *
+ * @param url - The URL to link to
+ * @param text - The visible text (defaults to the URL)
+ * @returns The formatted hyperlink string, or plain text if hyperlinks disabled
+ */
+export function hyperlink(url, text) {
+    const displayText = text || url;
+    if (!shouldUseHyperlinks()) {
+        return displayText;
+    }
+    // OSC 8 hyperlink format
+    // Using \x1b]8;; for start, \x1b\\ (ST) for terminator
+    return `\x1b]8;;${url}\x1b\\${displayText}\x1b]8;;\x1b\\`;
+}
+/**
+ * Create a colored terminal hyperlink.
+ *
+ * Combines hyperlink functionality with color formatting.
+ * The color is applied to the visible text portion.
+ *
+ * @param url - The URL to link to
+ * @param text - The visible text (defaults to the URL)
+ * @param color - The color to apply to the text
+ * @returns The formatted colored hyperlink string
+ */
+export function coloredHyperlink(url, text, color) {
+    const displayText = text || url;
+    if (!shouldUseHyperlinks()) {
+        // Return colored text without hyperlink
+        if (color && colors[color]) {
+            return `${colors[color]}${displayText}${colors.reset}`;
+        }
+        return displayText;
+    }
+    // Apply color inside the hyperlink text portion
+    const coloredText = color && colors[color] ? `${colors[color]}${displayText}${colors.reset}` : displayText;
+    return `\x1b]8;;${url}\x1b\\${coloredText}\x1b]8;;\x1b\\`;
+}
+/**
+ * Create a GitHub issue/PR URL hyperlink.
+ *
+ * Convenience function for creating hyperlinks to GitHub issues or PRs.
+ *
+ * @param url - The GitHub URL
+ * @param issueNumber - The issue/PR number to display
+ * @returns Formatted hyperlink showing #number that links to the URL
+ */
+export function githubIssueLink(url, issueNumber) {
+    return hyperlink(url, `#${issueNumber}`);
+}
+/**
+ * Create a GitHub PR URL hyperlink with PR styling.
+ *
+ * @param url - The GitHub PR URL
+ * @param prNumber - The PR number (optional, extracted from URL if not provided)
+ * @returns Formatted hyperlink showing PR-xxx that links to the URL
+ */
+export function githubPrLink(url, prNumber) {
+    let number = prNumber;
+    if (!number) {
+        // Extract PR number from URL like https://github.com/owner/repo/pull/123
+        const match = url.match(/\/pull\/(\d+)/);
+        if (match) {
+            number = parseInt(match[1], 10);
+        }
+    }
+    const text = number ? `PR-${number}` : url;
+    return coloredHyperlink(url, text, 'cyan');
+}
+/**
+ * Initialize hyperlink mode from ChadGI config.
+ *
+ * Call this function after loading the config to set the hyperlink mode
+ * based on the output.hyperlinks configuration option.
+ *
+ * @param config - Object with optional output.hyperlinks setting
+ */
+export function initHyperlinkModeFromConfig(config) {
+    const mode = config?.output?.hyperlinks;
+    if (mode && ['auto', 'on', 'off'].includes(mode)) {
+        setHyperlinkMode(mode);
+    }
+    // If not set, defaults to 'auto' which is the initial value
+}
+/**
  * Get terminal width, falling back to 80 if not available.
  */
 export function getTerminalWidth() {

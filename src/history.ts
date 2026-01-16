@@ -7,7 +7,7 @@ import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './uti
 import { formatDuration, formatDate, formatCost, parseSince, truncate } from './utils/formatting.js';
 import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
-import { Section, BracketedBadge, divider, keyValue } from './utils/textui.js';
+import { Section, BracketedBadge, divider, keyValue, hyperlink, coloredHyperlink } from './utils/textui.js';
 
 // Import shared types
 import type { BaseCommandOptions, SessionStats, TaskMetrics, HistoryEntry, HistoryResult } from './types/index.js';
@@ -242,9 +242,10 @@ function printHistory(
       console.log(`  ${colors.red}Reason: ${entry.failureReason}${colors.reset}`);
     }
 
-    // PR URL if available
+    // PR URL if available (clickable if terminal supports hyperlinks)
     if (entry.prUrl) {
-      console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
+      const prLink = coloredHyperlink(entry.prUrl, entry.prUrl, 'blue');
+      console.log(`  PR: ${prLink}`);
     }
 
     console.log(divider(78));
