@@ -25,12 +25,14 @@ interface TaskMetrics {
     files_modified?: number;
     lines_changed?: number;
     retry_count?: number;
+    category?: string;
 }
 interface InsightsOptions {
     config?: string;
     json?: boolean;
     export?: string;
     days?: number;
+    category?: string;
 }
 export declare function insights(options?: InsightsOptions): Promise<void>;
 export declare function initMetricsFile(chadgiDir: string): void;

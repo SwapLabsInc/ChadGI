@@ -205,6 +205,41 @@ function analyzeData(sessions, tasks) {
         : 0;
     // Total cost from sessions (more accurate)
     const totalCost = sessions.reduce((a, s) => a + (s.total_cost_usd || 0), 0);
+    // Category breakdown
+    const categoryBreakdown = {};
+    for (const task of taskList) {
+        const cat = task.category || 'uncategorized';
+        if (!categoryBreakdown[cat]) {
+            categoryBreakdown[cat] = {
+                tasks: 0,
+                completed: 0,
+                failed: 0,
+                successRate: 0,
+                avgDuration: 0,
+                totalCost: 0,
+            };
+        }
+        categoryBreakdown[cat].tasks++;
+        if (task.status === 'completed') {
+            categoryBreakdown[cat].completed++;
+        }
+        else {
+            categoryBreakdown[cat].failed++;
+        }
+        categoryBreakdown[cat].totalCost += task.cost_usd || 0;
+    }
+    // Calculate derived category stats
+    for (const cat of Object.keys(categoryBreakdown)) {
+        const stats = categoryBreakdown[cat];
+        stats.successRate = stats.tasks > 0 ? (stats.completed / stats.tasks) * 100 : 0;
+        // Calculate average duration for completed tasks in this category
+        const catDurations = taskList
+            .filter((t) => (t.category || 'uncategorized') === cat && t.status === 'completed' && t.duration_secs > 0)
+            .map((t) => t.duration_secs);
+        stats.avgDuration = catDurations.length > 0
+            ? catDurations.reduce((a, b) => a + b, 0) / catDurations.length
+            : 0;
+    }
     return {
         totalTasks: taskList.length,
         completedTasks: completedTasks.length,
@@ -240,6 +275,7 @@ function analyzeData(sessions, tasks) {
         gigachadMerges,
         recentSuccessRate,
         recentAvgDuration,
+        categoryBreakdown,
     };
 }
 function generateSuggestions(analysis) {
@@ -381,6 +417,21 @@ function printInsights(analysis, chadgiDir) {
         console.log(`  Avg Lines Changed:  ${analysis.avgLinesChanged.toFixed(0)}`);
         console.log('');
     }
+    // Category Breakdown
+    const categoryKeys = Object.keys(analysis.categoryBreakdown);
+    if (categoryKeys.length > 0 && !(categoryKeys.length === 1 && categoryKeys[0] === 'uncategorized')) {
+        console.log(`${colors.cyan}${colors.bold}Category Breakdown${colors.reset}`);
+        // Sort categories by task count descending
+        const sortedCategories = categoryKeys
+            .map((cat) => ({ cat, stats: analysis.categoryBreakdown[cat] }))
+            .sort((a, b) => b.stats.tasks - a.stats.tasks);
+        for (const { cat, stats } of sortedCategories) {
+            const successColor = stats.successRate >= 80 ? colors.green : stats.successRate >= 50 ? colors.yellow : colors.red;
+            const durationStr = stats.avgDuration > 0 ? formatDuration(stats.avgDuration) : 'N/A';
+            console.log(`  ${colors.bold}${cat}${colors.reset}: ${stats.tasks} tasks, ${successColor}${stats.successRate.toFixed(0)}% success${colors.reset}, avg ${durationStr}`);
+        }
+        console.log('');
+    }
     // Recent Trends
     console.log(`${colors.cyan}${colors.bold}Recent Trends (Last 10 Tasks)${colors.reset}`);
     const trendColor = analysis.recentSuccessRate >= analysis.successRate
@@ -408,12 +459,23 @@ export async function insights(options = {}) {
         ? dirname(resolve(options.config))
         : join(cwd, '.chadgi');
     // Load data
-    const { sessions, tasks } = loadInsightsData(chadgiDir, options.days);
+    let { sessions, tasks } = loadInsightsData(chadgiDir, options.days);
     if (sessions.length === 0 && tasks.length === 0) {
         console.log('No performance data found.');
         console.log(`Looking in: ${chadgiDir}`);
         console.log('\nRun `chadgi start` to begin collecting performance metrics.');
         return;
+    }
+    // Filter by category if specified
+    if (options.category) {
+        const categoryFilter = options.category.toLowerCase();
+        tasks = tasks.filter((t) => t.category?.toLowerCase() === categoryFilter);
+        if (tasks.length === 0) {
+            console.log(`No tasks found with category: ${options.category}`);
+            console.log('Available categories can be viewed by running `chadgi insights` without the --category flag.');
+            return;
+        }
+        console.log(`${colors.dim}Filtering by category: ${options.category}${colors.reset}\n`);
     }
     // Analyze data
     const analysis = analyzeData(sessions, tasks);
