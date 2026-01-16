@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync, spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { colors } from './utils/colors.js';
+import { parseYamlNested } from './utils/config.js';
 
 // Import shared types
 import type {
@@ -22,38 +23,6 @@ export interface ReplayOptions extends BaseCommandOptions {
   yes?: boolean;
   dryRun?: boolean;
   timeout?: number;
-}
-
-// Parse YAML value (simple key: value extraction)
-function parseYamlValue(content: string, key: string): string | null {
-  const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-  if (match) {
-    return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-  }
-  return null;
-}
-
-// Parse nested YAML value
-function parseYamlNested(content: string, parent: string, key: string): string | null {
-  const lines = content.split('\n');
-  let inParent = false;
-
-  for (const line of lines) {
-    if (line.match(new RegExp(`^${parent}:`))) {
-      inParent = true;
-      continue;
-    }
-    if (inParent && line.match(/^[a-z]/)) {
-      inParent = false;
-    }
-    if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-      const value = line.split(':')[1];
-      if (value) {
-        return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-      }
-    }
-  }
-  return null;
 }
 
 function formatDuration(seconds: number): string {

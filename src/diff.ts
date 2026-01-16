@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync, spawnSync } from 'child_process';
 import { colors } from './utils/colors.js';
+import { parseYamlNested } from './utils/config.js';
 
 export interface DiffOptions {
   config?: string;
@@ -42,30 +43,6 @@ interface CommitInfo {
   message: string;
   author: string;
   date: string;
-}
-
-
-// Parse nested YAML value
-function parseYamlNested(content: string, parent: string, key: string): string | null {
-  const lines = content.split('\n');
-  let inParent = false;
-
-  for (const line of lines) {
-    if (line.match(new RegExp(`^${parent}:`))) {
-      inParent = true;
-      continue;
-    }
-    if (inParent && line.match(/^[a-z]/)) {
-      inParent = false;
-    }
-    if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-      const value = line.split(':')[1];
-      if (value) {
-        return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-      }
-    }
-  }
-  return null;
 }
 
 // Get current git branch
