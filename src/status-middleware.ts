@@ -14,6 +14,9 @@ import {
   withDirectoryValidation,
   type DirectoryContext,
   type CommandResult,
+  // JSON output utilities
+  createJsonResponse,
+  type JsonResponse,
 } from './utils/index.js';
 
 // Import shared utilities
@@ -30,6 +33,7 @@ import type { BaseCommandOptions, ProgressData, PauseLockData, ApprovalLockData,
 interface StatusOptions extends BaseCommandOptions {
   config?: string;
   json?: boolean;
+  jsonUnified?: boolean;  // Opt-in to unified JSON response wrapper
 }
 
 function formatDate(isoDate: string): string {
@@ -327,8 +331,19 @@ async function statusHandler(
   // Build status info
   const statusInfo = buildStatusInfo(progress, pauseInfo, pendingApproval, taskLocks);
 
-  // For JSON output, return data (middleware handles serialization)
+  // For JSON output
   if (options.json) {
+    // Check if unified format is requested (opt-in)
+    const useUnified = options.jsonUnified || process.env.CHADGI_JSON_UNIFIED === '1';
+    if (useUnified) {
+      const response = createJsonResponse({
+        data: statusInfo,
+        command: 'status',
+        startTime: (ctx as any).startTime,
+      });
+      return { data: response };
+    }
+    // Legacy format (backwards compatible)
     return { data: statusInfo };
   }
 

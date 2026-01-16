@@ -16,6 +16,9 @@ import {
   withConfig,
   type ConfigContext,
   type CommandResult,
+  // JSON output utilities
+  createJsonResponse,
+  type JsonResponse,
 } from './utils/index.js';
 
 import { colors } from './utils/colors.js';
@@ -30,6 +33,7 @@ import type { BaseCommandOptions } from './types/index.js';
 interface QueueOptions extends BaseCommandOptions {
   config?: string;
   json?: boolean;
+  jsonUnified?: boolean;  // Opt-in to unified JSON response wrapper
   limit?: number;
 }
 
@@ -472,13 +476,29 @@ async function queueHandler(
     tasks = tasks.slice(0, options.limit);
   }
 
-  // For JSON output, return data (middleware handles serialization)
+  // For JSON output
   if (options.json) {
     const result: QueueResult = {
       readyColumn: github.ready_column,
       taskCount: tasks.length,
       tasks,
     };
+
+    // Check if unified format is requested (opt-in)
+    const useUnified = options.jsonUnified || process.env.CHADGI_JSON_UNIFIED === '1';
+    if (useUnified) {
+      const response = createJsonResponse({
+        data: result,
+        command: 'queue',
+        startTime: (ctx as any).startTime,
+        pagination: {
+          total: tasks.length,
+          limit: options.limit,
+        },
+      });
+      return { data: response };
+    }
+    // Legacy format (backwards compatible)
     return { data: result };
   }
 
