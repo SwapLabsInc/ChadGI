@@ -1,13 +1,11 @@
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join } from 'path';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
 import { toISOString, parseDuration } from './utils/formatting.js';
+import { resolveChadgiDir } from './utils/config.js';
 export async function pause(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     // Ensure .chadgi directory exists
     if (!existsSync(chadgiDir)) {
         console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);

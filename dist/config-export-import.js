@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { maskSecrets } from './utils/secrets.js';
 import { colors } from './utils/colors.js';
 import { CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
+import { resolveChadgiDir } from './utils/config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Read version from package.json
@@ -252,10 +253,7 @@ function getMinorVersion(version) {
     return parseInt(version.split('.')[1], 10) || 0;
 }
 export async function configExport(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     const configPath = options.config
         ? resolve(options.config)
         : join(chadgiDir, 'chadgi-config.yaml');
@@ -349,10 +347,7 @@ export async function configExport(options = {}) {
     }
 }
 export async function configImport(options) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     const configPath = options.config
         ? resolve(options.config)
         : join(chadgiDir, 'chadgi-config.yaml');

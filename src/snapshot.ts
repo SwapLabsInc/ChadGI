@@ -5,6 +5,7 @@ import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson, atomicWriteFile } from './utils/fileOps.js';
+import { resolveChadgiDir } from './utils/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -356,10 +357,7 @@ function formatRelativeTime(date: Date): string {
  * Save current configuration as a snapshot
  */
 export async function snapshotSave(name: string, options: SnapshotSaveOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
   const configPath = options.config
     ? resolve(options.config)
     : join(chadgiDir, 'chadgi-config.yaml');
@@ -445,10 +443,7 @@ export async function snapshotSave(name: string, options: SnapshotSaveOptions = 
  * Restore configuration from a snapshot
  */
 export async function snapshotRestore(name: string, options: SnapshotRestoreOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
   const configPath = options.config
     ? resolve(options.config)
     : join(chadgiDir, 'chadgi-config.yaml');
@@ -509,10 +504,7 @@ export async function snapshotRestore(name: string, options: SnapshotRestoreOpti
  * List all saved snapshots
  */
 export async function snapshotList(options: SnapshotListOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
 
   const snapshotsDir = getSnapshotsDir(chadgiDir);
   const snapshots = loadAllSnapshots(snapshotsDir);
@@ -574,10 +566,7 @@ export async function snapshotList(options: SnapshotListOptions = {}): Promise<v
  * Show diff between current config and a snapshot
  */
 export async function snapshotDiff(name: string, options: SnapshotDiffOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
   const configPath = options.config
     ? resolve(options.config)
     : join(chadgiDir, 'chadgi-config.yaml');
@@ -716,10 +705,7 @@ export async function snapshotDiff(name: string, options: SnapshotDiffOptions = 
  * Delete a snapshot
  */
 export async function snapshotDelete(name: string, options: SnapshotDeleteOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
 
   const snapshotsDir = getSnapshotsDir(chadgiDir);
 

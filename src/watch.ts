@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, watchFile, unwatchFile, statSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join } from 'path';
 import { colors } from './utils/colors.js';
+import { resolveChadgiDir } from './utils/config.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, RecentTool, ParallelWorkerTask, ParallelSessionProgress } from './types/index.js';
@@ -438,10 +439,7 @@ function renderProgressBar(percent: number, width: number): string {
 }
 
 export async function watch(options: WatchOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
 
   if (!existsSync(chadgiDir)) {
     if (options.json) {

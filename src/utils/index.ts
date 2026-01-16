@@ -14,6 +14,7 @@ export {
   parseYamlBoolean,
   parseYamlNumber,
   resolveConfigPath,
+  resolveChadgiDir,
   loadConfig,
   chadgiDirExists,
   getRepoOwner,

@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, unlinkSync, readdirSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
 import { toISOString } from './utils/formatting.js';
+import { resolveChadgiDir } from './utils/config.js';
 /**
  * Get the current username for audit purposes
  */
@@ -71,10 +72,7 @@ function logApprovalToHistory(chadgiDir, issueNumber, phase, action, comment) {
  * Approve a pending task in interactive mode
  */
 export async function approve(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     // Ensure .chadgi directory exists
     if (!existsSync(chadgiDir)) {
         if (options.json) {
@@ -168,10 +166,7 @@ export async function approve(options = {}) {
  * Reject a pending task in interactive mode
  */
 export async function reject(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     // Ensure .chadgi directory exists
     if (!existsSync(chadgiDir)) {
         if (options.json) {
