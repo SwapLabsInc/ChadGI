@@ -40,6 +40,8 @@ import {
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createNumericParser, validateNumeric } from './utils/validation.js';
+import { colors } from './utils/colors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -88,7 +90,7 @@ program
   .description('Start the ChadGI automation loop')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-d, --dry-run', 'Run in dry-run mode - show what would happen without making changes')
-  .option('-t, --timeout <minutes>', 'Override task timeout in minutes (0 = disabled)', parseInt)
+  .option('-t, --timeout <minutes>', 'Override task timeout in minutes (0 = disabled)', createNumericParser('timeout', 'timeout'))
   .option('--debug', 'Enable debug log level (overrides config log_level)')
   .option('--ignore-deps', 'Process tasks regardless of dependency status')
   .option('-w, --workspace', 'Process tasks across all workspace repositories')
@@ -140,7 +142,7 @@ program
   .command('stats')
   .description('View historical session statistics')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-l, --last <n>', 'Show only the last N sessions', parseInt)
+  .option('-l, --last <n>', 'Show only the last N sessions', createNumericParser('last', 'sessionCount'))
   .option('-j, --json', 'Output statistics as JSON')
   .action(async (options) => {
     try {
@@ -155,7 +157,7 @@ program
   .command('history')
   .description('View task execution history')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-l, --limit <n>', 'Number of entries to show (default: 10)', parseInt)
+  .option('-l, --limit <n>', 'Number of entries to show (default: 10)', createNumericParser('limit', 'limit'))
   .option('-s, --since <time>', 'Show tasks since (e.g., 7d, 2w, 1m, 2024-01-01)')
   .option('--status <outcome>', 'Filter by outcome (success, failed, skipped)')
   .option('-j, --json', 'Output history as JSON')
@@ -174,7 +176,7 @@ program
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-j, --json', 'Output insights as JSON')
   .option('-e, --export <path>', 'Export metrics data to file')
-  .option('-d, --days <n>', 'Show only data from the last N days', parseInt)
+  .option('-d, --days <n>', 'Show only data from the last N days', createNumericParser('days', 'days'))
   .option('--category <type>', 'Filter insights by task category (e.g., bug, feature, refactor)')
   .action(async (options) => {
     try {
@@ -234,7 +236,7 @@ program
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-j, --json', 'Output status as JSON (requires --once)')
   .option('-o, --once', 'Show current status once without auto-refresh')
-  .option('-i, --interval <ms>', 'Refresh interval in milliseconds (default: 2000)', parseInt)
+  .option('-i, --interval <ms>', 'Refresh interval in milliseconds (default: 2000, min: 100)', createNumericParser('interval', 'interval'))
   .action(async (options) => {
     try {
       await watch(options);
@@ -270,7 +272,7 @@ program
   .option('--all', 'Run all cleanup operations')
   .option('--dry-run', 'Preview what would be deleted without making changes')
   .option('--yes', 'Skip confirmation prompts')
-  .option('--days <n>', 'Retention days for diagnostics (default: 30)', parseInt)
+  .option('--days <n>', 'Retention days for diagnostics (default: 30)', createNumericParser('days', 'days'))
   .option('-j, --json', 'Output results as JSON')
   .action(async (options) => {
     try {
@@ -286,8 +288,8 @@ program
   .description('Estimate API costs for tasks in the Ready queue')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-j, --json', 'Output estimate as JSON')
-  .option('-b, --budget <amount>', 'Show how many tasks fit within budget', parseFloat)
-  .option('-d, --days <n>', 'Use only historical data from the last N days', parseInt)
+  .option('-b, --budget <amount>', 'Show how many tasks fit within budget', createNumericParser('budget', 'budget'))
+  .option('-d, --days <n>', 'Use only historical data from the last N days', createNumericParser('days', 'days'))
   .option('--category <type>', 'Filter estimates by task category (e.g., bug, feature, refactor)')
   .action(async (options) => {
     try {
@@ -308,7 +310,7 @@ queueCommand
   .description('List tasks in the Ready column')
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-j, --json', 'Output queue as JSON')
-  .option('-l, --limit <n>', 'Show only the first N tasks', parseInt)
+  .option('-l, --limit <n>', 'Show only the first N tasks', createNumericParser('limit', 'limit'))
   .action(async (options) => {
     try {
       await queue(options);
@@ -325,12 +327,12 @@ queueCommand
   .option('-j, --json', 'Output result as JSON')
   .action(async (issueNumber: string, options) => {
     try {
-      const num = parseInt(issueNumber, 10);
-      if (isNaN(num)) {
-        console.error('Error: Issue number must be a valid number');
+      const result = validateNumeric(issueNumber, 'issue-number', 'issueNumber');
+      if (!result.valid) {
+        console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
         process.exit(1);
       }
-      await queueSkip({ ...options, issueNumber: num });
+      await queueSkip({ ...options, issueNumber: result.value! });
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
@@ -344,12 +346,12 @@ queueCommand
   .option('-j, --json', 'Output result as JSON')
   .action(async (issueNumber: string, options) => {
     try {
-      const num = parseInt(issueNumber, 10);
-      if (isNaN(num)) {
-        console.error('Error: Issue number must be a valid number');
+      const result = validateNumeric(issueNumber, 'issue-number', 'issueNumber');
+      if (!result.valid) {
+        console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
         process.exit(1);
       }
-      await queuePromote({ ...options, issueNumber: num });
+      await queuePromote({ ...options, issueNumber: result.value! });
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
@@ -463,12 +465,12 @@ program
       } else if (options.allFailed) {
         await replayAllFailed(options);
       } else if (issueNumberArg) {
-        const num = parseInt(issueNumberArg, 10);
-        if (isNaN(num)) {
-          console.error('Error: Issue number must be a valid number');
+        const result = validateNumeric(issueNumberArg, 'issue-number', 'issueNumber');
+        if (!result.valid) {
+          console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
           process.exit(1);
         }
-        await replay(num, options);
+        await replay(result.value!, options);
       } else {
         // No arguments - show list of failed tasks
         await replay(undefined, options);
@@ -487,7 +489,7 @@ program
   .option('-j, --json', 'Output diff data as JSON')
   .option('-s, --stat', 'Show condensed file statistics view')
   .option('-f, --files', 'List only the modified files')
-  .option('-p, --pr <number>', 'Show diff from an existing PR', parseInt)
+  .option('-p, --pr <number>', 'Show diff from an existing PR', createNumericParser('pr', 'issueNumber'))
   .option('-o, --output <file>', 'Save diff to a file')
   .action(async (issueNumberArg: string | undefined, options) => {
     try {
@@ -495,12 +497,12 @@ program
         // --pr flag takes precedence
         await diff(undefined, options);
       } else if (issueNumberArg) {
-        const num = parseInt(issueNumberArg, 10);
-        if (isNaN(num)) {
-          console.error('Error: Issue number must be a valid number');
+        const result = validateNumeric(issueNumberArg, 'issue-number', 'issueNumber');
+        if (!result.valid) {
+          console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
           process.exit(1);
         }
-        await diff(num, options);
+        await diff(result.value!, options);
       } else {
         // No arguments - show diff for current branch
         await diff(undefined, options);
@@ -520,10 +522,14 @@ program
   .option('-j, --json', 'Output result as JSON')
   .action(async (issueNumberArg: string | undefined, options) => {
     try {
-      const issueNumber = issueNumberArg ? parseInt(issueNumberArg, 10) : undefined;
-      if (issueNumberArg && isNaN(issueNumber!)) {
-        console.error('Error: Issue number must be a valid number');
-        process.exit(1);
+      let issueNumber: number | undefined;
+      if (issueNumberArg) {
+        const result = validateNumeric(issueNumberArg, 'issue-number', 'issueNumber');
+        if (!result.valid) {
+          console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
+          process.exit(1);
+        }
+        issueNumber = result.value;
       }
       await approve({ ...options, issueNumber });
     } catch (error) {
@@ -542,10 +548,14 @@ program
   .option('--skip', 'Move task back to Ready column instead of keeping in progress')
   .action(async (issueNumberArg: string | undefined, options) => {
     try {
-      const issueNumber = issueNumberArg ? parseInt(issueNumberArg, 10) : undefined;
-      if (issueNumberArg && isNaN(issueNumber!)) {
-        console.error('Error: Issue number must be a valid number');
-        process.exit(1);
+      let issueNumber: number | undefined;
+      if (issueNumberArg) {
+        const result = validateNumeric(issueNumberArg, 'issue-number', 'issueNumber');
+        if (!result.valid) {
+          console.error(`${colors.red}Error: ${result.error}${colors.reset}`);
+          process.exit(1);
+        }
+        issueNumber = result.value;
       }
       await reject({ ...options, issueNumber });
     } catch (error) {
@@ -580,7 +590,7 @@ workspaceCommand
   .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
   .option('-p, --path <path>', 'Local path for the repository')
   .option('--remote <url>', 'Git remote URL for cloning')
-  .option('--priority <n>', 'Processing priority (lower = higher priority)', parseInt)
+  .option('--priority <n>', 'Processing priority (lower = higher priority)', createNumericParser('priority', 'priority'))
   .option('--disabled', 'Add repository in disabled state')
   .action(async (repo: string, options) => {
     try {
@@ -627,7 +637,7 @@ workspaceCommand
   .description('Show combined queue view across all workspace repositories')
   .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
   .option('-j, --json', 'Output as JSON')
-  .option('-l, --limit <n>', 'Limit number of tasks shown', parseInt)
+  .option('-l, --limit <n>', 'Limit number of tasks shown', createNumericParser('limit', 'limit'))
   .action(async (options) => {
     try {
       await workspaceStatus(options);
@@ -650,8 +660,8 @@ program
   .option('-o, --output <file>', 'Save markdown report to file')
   .option('--compare <run-id>', 'Compare results with a specific previous run')
   .option('-l, --list', 'List available benchmark tasks')
-  .option('-i, --iterations <n>', 'Number of iterations to run each task', parseInt)
-  .option('--timeout <seconds>', 'Override task timeout in seconds', parseInt)
+  .option('-i, --iterations <n>', 'Number of iterations to run each task', createNumericParser('iterations', 'iterations'))
+  .option('--timeout <seconds>', 'Override task timeout in seconds', createNumericParser('timeout', 'timeout'))
   .option('-d, --dry-run', 'Simulate benchmark run without calling Claude')
   .action(async (options) => {
     try {
