@@ -6,7 +6,14 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
-import type { ChadGIConfig, GitHubConfig, BranchConfig } from '../types/index.js';
+import type {
+  ChadGIConfig,
+  GitHubConfig,
+  BranchConfig,
+  EnvVarOverride,
+  ConfigWithSources,
+  LoadConfigEnvOptions,
+} from '../types/index.js';
 import { colors } from './colors.js';
 
 /**
@@ -247,4 +254,383 @@ export function resolveChadgiDir(
     return dirname(resolve(options.config));
   }
   return join(cwd, '.chadgi');
+}
+
+// ============================================================================
+// Environment Variable Configuration Overrides
+// ============================================================================
+
+/**
+ * Default prefix for ChadGI environment variables
+ */
+export const DEFAULT_ENV_PREFIX = 'CHADGI_';
+
+/**
+ * Separator for nested config paths in environment variable names.
+ * Uses double underscore as per Docker convention.
+ */
+export const ENV_PATH_SEPARATOR = '__';
+
+/**
+ * Parse a string value into its appropriate type (boolean, number, or string).
+ *
+ * @param value - The string value to parse
+ * @returns The parsed value as boolean, number, or string
+ */
+export function parseEnvValue(value: string): string | number | boolean {
+  // Handle boolean values (case-insensitive)
+  const lowerValue = value.toLowerCase();
+  if (lowerValue === 'true') return true;
+  if (lowerValue === 'false') return false;
+
+  // Handle numeric values
+  // Only parse as number if it looks like a valid number
+  if (/^-?\d+(\.\d+)?$/.test(value)) {
+    const num = parseFloat(value);
+    if (!isNaN(num)) return num;
+  }
+
+  // Return as string
+  return value;
+}
+
+/**
+ * Convert an environment variable name to a config path.
+ *
+ * @param envVar - The full environment variable name (e.g., CHADGI_GITHUB__REPO)
+ * @param prefix - The prefix to strip (e.g., CHADGI_)
+ * @returns The config path (e.g., github.repo)
+ */
+export function envVarToConfigPath(envVar: string, prefix: string): string {
+  // Remove prefix
+  const withoutPrefix = envVar.slice(prefix.length);
+
+  // Convert to lowercase and replace double underscores with dots
+  return withoutPrefix.toLowerCase().replace(/__/g, '.');
+}
+
+/**
+ * Convert a config path to an environment variable name.
+ *
+ * @param configPath - The config path (e.g., github.repo)
+ * @param prefix - The prefix to use (e.g., CHADGI_)
+ * @returns The environment variable name (e.g., CHADGI_GITHUB__REPO)
+ */
+export function configPathToEnvVar(configPath: string, prefix: string): string {
+  // Replace dots with double underscores and convert to uppercase
+  return prefix + configPath.replace(/\./g, '__').toUpperCase();
+}
+
+/**
+ * Set a value at a nested path in an object.
+ *
+ * @param obj - The object to modify
+ * @param path - Dot-separated path (e.g., "github.repo")
+ * @param value - The value to set
+ */
+export function setNestedValue(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown
+): void {
+  const parts = path.split('.');
+  let current: Record<string, unknown> = obj;
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (!(part in current) || typeof current[part] !== 'object' || current[part] === null) {
+      current[part] = {};
+    }
+    current = current[part] as Record<string, unknown>;
+  }
+
+  const lastPart = parts[parts.length - 1];
+  current[lastPart] = value;
+}
+
+/**
+ * Get a value at a nested path in an object.
+ *
+ * @param obj - The object to read from
+ * @param path - Dot-separated path (e.g., "github.repo")
+ * @returns The value at the path, or undefined if not found
+ */
+export function getNestedValue(
+  obj: Record<string, unknown>,
+  path: string
+): unknown {
+  const parts = path.split('.');
+  let current: unknown = obj;
+
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
+}
+
+/**
+ * Find all environment variables that match the given prefix.
+ *
+ * @param prefix - The prefix to match (e.g., CHADGI_)
+ * @param env - Environment object to scan (defaults to process.env)
+ * @returns Array of matching environment variable names
+ */
+export function findEnvVarsWithPrefix(
+  prefix: string,
+  env: Record<string, string | undefined> = process.env
+): string[] {
+  return Object.keys(env).filter(
+    (key) => key.startsWith(prefix) && env[key] !== undefined
+  );
+}
+
+/**
+ * Parse environment variables with the given prefix into override objects.
+ *
+ * @param prefix - The prefix to match (e.g., CHADGI_)
+ * @param env - Environment object to scan (defaults to process.env)
+ * @returns Array of parsed environment variable overrides
+ */
+export function parseEnvOverrides(
+  prefix: string,
+  env: Record<string, string | undefined> = process.env
+): EnvVarOverride[] {
+  const envVars = findEnvVarsWithPrefix(prefix, env);
+  const overrides: EnvVarOverride[] = [];
+
+  for (const envVar of envVars) {
+    const rawValue = env[envVar];
+    if (rawValue === undefined) continue;
+
+    const configPath = envVarToConfigPath(envVar, prefix);
+    const value = parseEnvValue(rawValue);
+
+    overrides.push({
+      envVar,
+      configPath,
+      value,
+      rawValue,
+    });
+  }
+
+  return overrides;
+}
+
+/**
+ * Apply environment variable overrides to a configuration object.
+ *
+ * @param config - The base configuration object (will be mutated)
+ * @param overrides - Array of environment variable overrides to apply
+ */
+export function applyEnvOverrides(
+  config: Record<string, unknown>,
+  overrides: EnvVarOverride[]
+): void {
+  for (const override of overrides) {
+    setNestedValue(config, override.configPath, override.value);
+  }
+}
+
+/**
+ * Load configuration with environment variable overrides.
+ *
+ * This function loads the YAML config file and applies any environment
+ * variable overrides. Environment variables take precedence over file values.
+ *
+ * Environment variables should be named with the prefix (default: CHADGI_)
+ * followed by the config path in uppercase with dots replaced by double
+ * underscores. For example:
+ * - CHADGI_GITHUB__REPO -> github.repo
+ * - CHADGI_ITERATION__MAX_ITERATIONS -> iteration.max_iterations
+ * - CHADGI_BUDGET__PER_TASK_LIMIT -> budget.per_task_limit
+ *
+ * @param configPath - Path to the YAML config file
+ * @param options - Options including custom env prefix and env object
+ * @returns Configuration with source tracking information
+ */
+export function loadConfigWithEnv(
+  configPath: string,
+  options: LoadConfigEnvOptions = {}
+): ConfigWithSources {
+  const { envPrefix = DEFAULT_ENV_PREFIX, env = process.env } = options;
+
+  // Load base config from file
+  const baseConfig = loadConfig(configPath);
+
+  // Build a full config object from the loaded values
+  // Start with defaults and file values
+  const config: Record<string, unknown> = {
+    github: { ...baseConfig.github },
+    branch: { ...baseConfig.branch },
+  };
+
+  // Parse the full YAML content for additional fields
+  if (baseConfig.exists && baseConfig.content) {
+    const content = baseConfig.content;
+
+    // Parse top-level fields
+    const taskSource = parseYamlValue(content, 'task_source');
+    if (taskSource) config.task_source = taskSource;
+
+    const promptTemplate = parseYamlValue(content, 'prompt_template');
+    if (promptTemplate) config.prompt_template = promptTemplate;
+
+    const generateTemplate = parseYamlValue(content, 'generate_template');
+    if (generateTemplate) config.generate_template = generateTemplate;
+
+    const progressFile = parseYamlValue(content, 'progress_file');
+    if (progressFile) config.progress_file = progressFile;
+
+    const pollInterval = parseYamlValue(content, 'poll_interval');
+    if (pollInterval) config.poll_interval = parseFloat(pollInterval) || 10;
+
+    const emptyThreshold = parseYamlValue(content, 'consecutive_empty_threshold');
+    if (emptyThreshold) config.consecutive_empty_threshold = parseFloat(emptyThreshold) || 2;
+
+    const onEmptyQueue = parseYamlValue(content, 'on_empty_queue');
+    if (onEmptyQueue) config.on_empty_queue = onEmptyQueue;
+
+    // Parse iteration section
+    const iteration: Record<string, unknown> = {};
+    const maxIter = parseYamlNested(content, 'iteration', 'max_iterations');
+    if (maxIter) iteration.max_iterations = parseInt(maxIter, 10) || 5;
+    const completionPromise = parseYamlNested(content, 'iteration', 'completion_promise');
+    if (completionPromise) iteration.completion_promise = completionPromise;
+    const readyPromise = parseYamlNested(content, 'iteration', 'ready_promise');
+    if (readyPromise) iteration.ready_promise = readyPromise;
+    const testCommand = parseYamlNested(content, 'iteration', 'test_command');
+    if (testCommand) iteration.test_command = testCommand;
+    const buildCommand = parseYamlNested(content, 'iteration', 'build_command');
+    if (buildCommand) iteration.build_command = buildCommand;
+    const onMaxIterations = parseYamlNested(content, 'iteration', 'on_max_iterations');
+    if (onMaxIterations) iteration.on_max_iterations = onMaxIterations;
+    const gigachadMode = parseYamlNested(content, 'iteration', 'gigachad_mode');
+    if (gigachadMode) iteration.gigachad_mode = gigachadMode === 'true';
+    const gigachadPrefix = parseYamlNested(content, 'iteration', 'gigachad_commit_prefix');
+    if (gigachadPrefix) iteration.gigachad_commit_prefix = gigachadPrefix;
+    if (Object.keys(iteration).length > 0) config.iteration = iteration;
+
+    // Parse budget section
+    const budget: Record<string, unknown> = {};
+    const perTaskLimit = parseYamlNested(content, 'budget', 'per_task_limit');
+    if (perTaskLimit) budget.per_task_limit = parseFloat(perTaskLimit);
+    const perSessionLimit = parseYamlNested(content, 'budget', 'per_session_limit');
+    if (perSessionLimit) budget.per_session_limit = parseFloat(perSessionLimit);
+    const onTaskBudget = parseYamlNested(content, 'budget', 'on_task_budget_exceeded');
+    if (onTaskBudget) budget.on_task_budget_exceeded = onTaskBudget;
+    const onSessionBudget = parseYamlNested(content, 'budget', 'on_session_budget_exceeded');
+    if (onSessionBudget) budget.on_session_budget_exceeded = onSessionBudget;
+    const warningThreshold = parseYamlNested(content, 'budget', 'warning_threshold');
+    if (warningThreshold) budget.warning_threshold = parseInt(warningThreshold, 10);
+    if (Object.keys(budget).length > 0) config.budget = budget;
+
+    // Parse output section
+    const output: Record<string, unknown> = {};
+    const showToolDetails = parseYamlNested(content, 'output', 'show_tool_details');
+    if (showToolDetails) output.show_tool_details = showToolDetails === 'true';
+    const showCost = parseYamlNested(content, 'output', 'show_cost');
+    if (showCost) output.show_cost = showCost === 'true';
+    const truncateLength = parseYamlNested(content, 'output', 'truncate_length');
+    if (truncateLength) output.truncate_length = parseInt(truncateLength, 10);
+    if (Object.keys(output).length > 0) config.output = output;
+  }
+
+  // Parse and apply environment variable overrides
+  const envOverrides = parseEnvOverrides(envPrefix, env);
+  applyEnvOverrides(config, envOverrides);
+
+  return {
+    config: config as unknown as ChadGIConfig,
+    envOverrides,
+    envPrefix,
+  };
+}
+
+/**
+ * List of all supported environment variable config paths.
+ * Used for documentation and validation.
+ */
+export const SUPPORTED_ENV_CONFIG_PATHS = [
+  // GitHub configuration
+  'github.repo',
+  'github.project_number',
+  'github.ready_column',
+  'github.in_progress_column',
+  'github.review_column',
+  'github.done_column',
+  // Branch configuration
+  'branch.base',
+  'branch.prefix',
+  // Top-level configuration
+  'task_source',
+  'prompt_template',
+  'generate_template',
+  'progress_file',
+  'poll_interval',
+  'consecutive_empty_threshold',
+  'on_empty_queue',
+  // Iteration configuration
+  'iteration.max_iterations',
+  'iteration.completion_promise',
+  'iteration.ready_promise',
+  'iteration.test_command',
+  'iteration.build_command',
+  'iteration.on_max_iterations',
+  'iteration.gigachad_mode',
+  'iteration.gigachad_commit_prefix',
+  // Budget configuration
+  'budget.per_task_limit',
+  'budget.per_session_limit',
+  'budget.on_task_budget_exceeded',
+  'budget.on_session_budget_exceeded',
+  'budget.warning_threshold',
+  // Output configuration
+  'output.show_tool_details',
+  'output.show_cost',
+  'output.truncate_length',
+] as const;
+
+/**
+ * Get all supported environment variable names for a given prefix.
+ *
+ * @param prefix - The prefix to use (default: CHADGI_)
+ * @returns Array of environment variable names
+ */
+export function getSupportedEnvVars(prefix: string = DEFAULT_ENV_PREFIX): string[] {
+  return SUPPORTED_ENV_CONFIG_PATHS.map((path) => configPathToEnvVar(path, prefix));
+}
+
+/**
+ * Format environment variable documentation for help output.
+ *
+ * @param prefix - The prefix to use (default: CHADGI_)
+ * @returns Formatted string with environment variable documentation
+ */
+export function formatEnvVarHelp(prefix: string = DEFAULT_ENV_PREFIX): string {
+  const lines = [
+    'Supported Environment Variables:',
+    '',
+    `All configuration values can be overridden via environment variables using the ${prefix} prefix.`,
+    `Nested paths use double underscore (__) as separator.`,
+    '',
+    'Examples:',
+    `  ${prefix}GITHUB__REPO=owner/repo          Override github.repo`,
+    `  ${prefix}GITHUB__PROJECT_NUMBER=7        Override github.project_number`,
+    `  ${prefix}ITERATION__MAX_ITERATIONS=10    Override iteration.max_iterations`,
+    `  ${prefix}BUDGET__PER_TASK_LIMIT=5.00     Override budget.per_task_limit`,
+    `  ${prefix}ITERATION__GIGACHAD_MODE=true   Override iteration.gigachad_mode`,
+    '',
+    'All Supported Variables:',
+  ];
+
+  for (const path of SUPPORTED_ENV_CONFIG_PATHS) {
+    const envVar = configPathToEnvVar(path, prefix);
+    lines.push(`  ${envVar}`);
+  }
+
+  return lines.join('\n');
 }

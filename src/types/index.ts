@@ -747,6 +747,63 @@ export interface UpdateCheckCache {
 }
 
 // ============================================================================
+// Config Source Tracking Types
+// ============================================================================
+
+/**
+ * Source of a configuration value
+ */
+export type ConfigValueSource = 'file' | 'env' | 'default';
+
+/**
+ * Tracked configuration value with source information
+ */
+export interface TrackedConfigValue<T> {
+  /** The actual configuration value */
+  value: T;
+  /** Where the value came from */
+  source: ConfigValueSource;
+  /** Environment variable name if source is 'env' */
+  envVar?: string;
+}
+
+/**
+ * Environment variable override information
+ */
+export interface EnvVarOverride {
+  /** The environment variable name (e.g., CHADGI_GITHUB_TOKEN) */
+  envVar: string;
+  /** The config path this overrides (e.g., github.token or github__token) */
+  configPath: string;
+  /** The parsed value from the environment variable */
+  value: string | number | boolean;
+  /** The original string value from process.env */
+  rawValue: string;
+}
+
+/**
+ * Result of loading config with environment variable overrides
+ */
+export interface ConfigWithSources {
+  /** The merged configuration object */
+  config: ChadGIConfig;
+  /** List of environment variable overrides that were applied */
+  envOverrides: EnvVarOverride[];
+  /** The prefix used for environment variables */
+  envPrefix: string;
+}
+
+/**
+ * Options for loading config with environment overrides
+ */
+export interface LoadConfigEnvOptions {
+  /** Custom environment variable prefix (default: CHADGI_) */
+  envPrefix?: string;
+  /** Custom environment object for testing (default: process.env) */
+  env?: Record<string, string | undefined>;
+}
+
+// ============================================================================
 // Task Lock Types
 // ============================================================================
 
