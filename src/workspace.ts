@@ -40,6 +40,7 @@ export interface WorkspaceConfig {
     auto_clone?: boolean;           // Auto-clone missing repos
     parallel_validation?: boolean;  // Validate repos in parallel
     aggregate_stats?: boolean;      // Aggregate stats across repos
+    max_parallel_tasks?: number;    // Maximum concurrent tasks (default: 1)
   };
   created_at: string;
   updated_at: string;

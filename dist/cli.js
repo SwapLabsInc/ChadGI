@@ -23,6 +23,7 @@ import { diff } from './diff.js';
 import { approve, reject } from './approve.js';
 import { benchmark } from './benchmark.js';
 import { logs, logsList, logsClear } from './logs.js';
+import { version } from './version.js';
 import { workspaceInit, workspaceAdd, workspaceRemove, workspaceList, workspaceStatus, } from './workspace.js';
 import { snapshotSave, snapshotRestore, snapshotList, snapshotDiff, snapshotDelete, } from './snapshot.js';
 import { readFileSync } from 'fs';
@@ -41,6 +42,12 @@ program
     .name('chadgi')
     .description('ChadGI - Autonomous Task Worker powered by Claude Code')
     .version(packageJson.version);
+program
+    .command('version')
+    .description('Display version information and check for updates')
+    .option('-j, --json', 'Output version info as JSON')
+    .option('-c, --check', 'Check npm registry for newer version')
+    .action(wrapCommand(version));
 program
     .command('init')
     .description('Initialize ChadGI in the current directory')
@@ -63,6 +70,7 @@ program
     .option('--ignore-deps', 'Process tasks regardless of dependency status')
     .option('-w, --workspace', 'Process tasks across all workspace repositories')
     .option('-r, --repo <name>', 'Process only a specific repository in workspace mode')
+    .option('--parallel <n>', 'Process up to N tasks concurrently in workspace mode', createNumericParser('parallel', 'parallel'))
     .option('-i, --interactive', 'Enable human-in-the-loop approval mode for reviewing changes')
     .option('--no-mask', 'Disable secret masking in logs (warning: exposes sensitive data)')
     .action(wrapCommand(start));

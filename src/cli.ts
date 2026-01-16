@@ -91,6 +91,7 @@ program
   .option('--ignore-deps', 'Process tasks regardless of dependency status')
   .option('-w, --workspace', 'Process tasks across all workspace repositories')
   .option('-r, --repo <name>', 'Process only a specific repository in workspace mode')
+  .option('--parallel <n>', 'Process up to N tasks concurrently in workspace mode', createNumericParser('parallel', 'parallel'))
   .option('-i, --interactive', 'Enable human-in-the-loop approval mode for reviewing changes')
   .option('--no-mask', 'Disable secret masking in logs (warning: exposes sensitive data)')
   .action(wrapCommand(start));

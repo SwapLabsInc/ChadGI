@@ -1,6 +1,5 @@
-interface WatchOptions {
-    config?: string;
-    json?: boolean;
+import type { BaseCommandOptions } from './types/index.js';
+interface WatchOptions extends BaseCommandOptions {
     once?: boolean;
     interval?: number;
 }

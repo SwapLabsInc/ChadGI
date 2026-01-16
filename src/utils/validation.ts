@@ -79,6 +79,13 @@ export const NUMERIC_CONSTRAINTS = {
     integer: true,
     errorMessage: 'Session count must be a positive integer',
   },
+  /** Parallel worker count: 1-16 */
+  parallel: {
+    min: 1,
+    max: 16,
+    integer: true,
+    errorMessage: 'Parallel worker count must be a positive integer (1-16)',
+  },
 } as const;
 
 export type ConstraintName = keyof typeof NUMERIC_CONSTRAINTS;
