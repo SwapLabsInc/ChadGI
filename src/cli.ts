@@ -13,6 +13,7 @@ import { status } from './status.js';
 import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
+import { queue, queueSkip, queuePromote } from './queue.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -214,6 +215,64 @@ program
   .action(async (options) => {
     try {
       await estimate(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+// Queue command with subcommands
+const queueCommand = program
+  .command('queue')
+  .description('View and manage the task queue');
+
+queueCommand
+  .command('list', { isDefault: true })
+  .description('List tasks in the Ready column')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output queue as JSON')
+  .option('-l, --limit <n>', 'Show only the first N tasks', parseInt)
+  .action(async (options) => {
+    try {
+      await queue(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+queueCommand
+  .command('skip <issue-number>')
+  .description('Move a task back to Backlog')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output result as JSON')
+  .action(async (issueNumber: string, options) => {
+    try {
+      const num = parseInt(issueNumber, 10);
+      if (isNaN(num)) {
+        console.error('Error: Issue number must be a valid number');
+        process.exit(1);
+      }
+      await queueSkip({ ...options, issueNumber: num });
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+queueCommand
+  .command('promote <issue-number>')
+  .description('Move a task to the front of the queue')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output result as JSON')
+  .action(async (issueNumber: string, options) => {
+    try {
+      const num = parseInt(issueNumber, 10);
+      if (isNaN(num)) {
+        console.error('Error: Issue number must be a valid number');
+        process.exit(1);
+      }
+      await queuePromote({ ...options, issueNumber: num });
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);

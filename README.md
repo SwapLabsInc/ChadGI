@@ -108,6 +108,41 @@ chadgi start --config /path/to/config    # Use specific config
 
 Press `Ctrl+C` to stop gracefully.
 
+### `chadgi queue`
+
+View and manage the task queue before running ChadGI.
+
+```bash
+chadgi queue                             # List tasks in Ready column
+chadgi queue list                        # Same as above (list is default)
+chadgi queue --json                      # Output as JSON
+chadgi queue --limit 5                   # Show only first 5 tasks
+chadgi queue skip 123                    # Move issue #123 back to Backlog
+chadgi queue promote 456                 # Move issue #456 to front of queue
+```
+
+Example output:
+```
+ChadGI Task Queue
+=================
+Ready column: 5 tasks
+
+ #   Issue   Priority   Category   Title                          Status
+--------------------------------------------------------------------------------
+ 1   #101    critical   feature    Add user authentication
+ 2   #102    high       bug        Fix login timeout issue
+ 3   #103    normal     refactor   Consolidate API handlers       blocked by #99
+ 4   #104    normal     bug        Handle null pointer in parser  deps resolved
+ 5   #105    low        feature    Add dark mode support
+
+Commands:
+  chadgi queue skip <issue-number>      Move task to Backlog
+  chadgi queue promote <issue-number>   Move task to front
+  chadgi start                          Process queue
+```
+
+**Note:** The `skip` command requires a "Backlog" column in your project board. The `promote` command requires priority ordering to be enabled in your config.
+
 ## Configuration
 
 ### Configuration File (`chadgi-config.yaml`)
