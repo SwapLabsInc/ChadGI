@@ -35,9 +35,14 @@ const {
   loadConfigWithEnv,
   getSupportedEnvVars,
   formatEnvVarHelp,
+  validateConfigLogic,
+  formatConfigValidationErrors,
   DEFAULT_ENV_PREFIX,
   SUPPORTED_ENV_CONFIG_PATHS,
 } = await import('../../utils/config.js');
+
+// Import types
+import type { ChadGIConfig } from '../../types/index.js';
 
 import {
   validConfig,
@@ -683,5 +688,507 @@ describe('formatEnvVarHelp', () => {
 describe('DEFAULT_ENV_PREFIX', () => {
   it('should be CHADGI_', () => {
     expect(DEFAULT_ENV_PREFIX).toBe('CHADGI_');
+  });
+});
+
+// ============================================================================
+// Configuration Cross-Field Validation Tests
+// ============================================================================
+
+describe('validateConfigLogic', () => {
+  // Helper to create a minimal valid config
+  const createConfig = (overrides: Partial<ChadGIConfig> = {}): ChadGIConfig => ({
+    github: {
+      repo: 'owner/repo',
+      project_number: '1',
+      ready_column: 'Ready',
+      in_progress_column: 'In Progress',
+      review_column: 'In Review',
+    },
+    branch: {
+      base: 'main',
+      prefix: 'feature/issue-',
+    },
+    iteration: {
+      max_iterations: 5,
+      completion_promise: 'COMPLETE',
+      ready_promise: 'READY_FOR_PR',
+    },
+    ...overrides,
+  });
+
+  describe('budget constraints', () => {
+    it('should pass with valid budget settings', () => {
+      const config = createConfig({
+        budget: {
+          per_task_limit: 2.00,
+          per_session_limit: 20.00,
+          warning_threshold: 80,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should fail when per_task_limit > per_session_limit', () => {
+      const config = createConfig({
+        budget: {
+          per_task_limit: 10.00,
+          per_session_limit: 5.00,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].fields).toContain('budget.per_task_limit');
+      expect(result.errors[0].fields).toContain('budget.per_session_limit');
+      expect(result.errors[0].message).toContain('cannot exceed');
+    });
+
+    it('should fail when per_task_limit is negative', () => {
+      const config = createConfig({
+        budget: {
+          per_task_limit: -1.00,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('budget.per_task_limit'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('negative'))).toBe(true);
+    });
+
+    it('should fail when per_session_limit is negative', () => {
+      const config = createConfig({
+        budget: {
+          per_session_limit: -5.00,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('budget.per_session_limit'))).toBe(true);
+    });
+
+    it('should fail when warning_threshold > 100', () => {
+      const config = createConfig({
+        budget: {
+          warning_threshold: 150,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('budget.warning_threshold'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('100%'))).toBe(true);
+    });
+
+    it('should fail when warning_threshold is negative', () => {
+      const config = createConfig({
+        budget: {
+          warning_threshold: -10,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('budget.warning_threshold'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('negative'))).toBe(true);
+    });
+
+    it('should pass when only per_task_limit is set', () => {
+      const config = createConfig({
+        budget: {
+          per_task_limit: 5.00,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should pass when only per_session_limit is set', () => {
+      const config = createConfig({
+        budget: {
+          per_session_limit: 50.00,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should pass when warning_threshold is exactly 0', () => {
+      const config = createConfig({
+        budget: {
+          warning_threshold: 0,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should pass when warning_threshold is exactly 100', () => {
+      const config = createConfig({
+        budget: {
+          warning_threshold: 100,
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('column name uniqueness', () => {
+    it('should pass with unique column names', () => {
+      const config = createConfig({
+        github: {
+          repo: 'owner/repo',
+          project_number: '1',
+          ready_column: 'Ready',
+          in_progress_column: 'In Progress',
+          review_column: 'In Review',
+          done_column: 'Done',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should fail when ready_column equals in_progress_column', () => {
+      const config = createConfig({
+        github: {
+          repo: 'owner/repo',
+          project_number: '1',
+          ready_column: 'Ready',
+          in_progress_column: 'Ready',
+          review_column: 'In Review',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.message.includes('Duplicate column name'))).toBe(true);
+      expect(result.errors.some(e => e.fields.includes('github.ready_column'))).toBe(true);
+      expect(result.errors.some(e => e.fields.includes('github.in_progress_column'))).toBe(true);
+    });
+
+    it('should fail when multiple columns have the same name', () => {
+      const config = createConfig({
+        github: {
+          repo: 'owner/repo',
+          project_number: '1',
+          ready_column: 'Todo',
+          in_progress_column: 'Todo',
+          review_column: 'Todo',
+          done_column: 'Done',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      // Should have one error for duplicate "todo"
+      expect(result.errors.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should be case-insensitive for column name comparison', () => {
+      const config = createConfig({
+        github: {
+          repo: 'owner/repo',
+          project_number: '1',
+          ready_column: 'Ready',
+          in_progress_column: 'READY',
+          review_column: 'In Review',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.message.includes('Duplicate column name'))).toBe(true);
+    });
+  });
+
+  describe('iteration constraints', () => {
+    it('should pass with valid max_iterations', () => {
+      const config = createConfig({
+        iteration: {
+          max_iterations: 5,
+          completion_promise: 'COMPLETE',
+          ready_promise: 'READY_FOR_PR',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should fail when max_iterations is 0', () => {
+      const config = createConfig({
+        iteration: {
+          max_iterations: 0,
+          completion_promise: 'COMPLETE',
+          ready_promise: 'READY_FOR_PR',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('iteration.max_iterations'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('at least 1'))).toBe(true);
+    });
+
+    it('should fail when max_iterations is negative', () => {
+      const config = createConfig({
+        iteration: {
+          max_iterations: -5,
+          completion_promise: 'COMPLETE',
+          ready_promise: 'READY_FOR_PR',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('iteration.max_iterations'))).toBe(true);
+    });
+
+    it('should pass when max_iterations is exactly 1', () => {
+      const config = createConfig({
+        iteration: {
+          max_iterations: 1,
+          completion_promise: 'COMPLETE',
+          ready_promise: 'READY_FOR_PR',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('poll_interval constraints', () => {
+    it('should pass with valid poll_interval', () => {
+      const config = createConfig({
+        poll_interval: 10, // 10 seconds
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should fail when poll_interval is below 1 second', () => {
+      const config = createConfig({
+        poll_interval: 0.5, // Half a second
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('poll_interval'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('1 second'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('tight loops'))).toBe(true);
+    });
+
+    it('should fail when poll_interval is 0', () => {
+      const config = createConfig({
+        poll_interval: 0,
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('poll_interval'))).toBe(true);
+    });
+
+    it('should pass when poll_interval is exactly 1', () => {
+      const config = createConfig({
+        poll_interval: 1,
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+
+    it('should pass when poll_interval is not set', () => {
+      const config = createConfig();
+      // poll_interval is undefined
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('branch prefix conflict', () => {
+    it('should pass with non-conflicting branch settings', () => {
+      const config = createConfig({
+        branch: {
+          base: 'main',
+          prefix: 'feature/issue-',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('should warn when branch prefix starts with base branch name', () => {
+      const config = createConfig({
+        branch: {
+          base: 'main',
+          prefix: 'main-feature/',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      // This is a warning, not an error
+      expect(result.valid).toBe(true);
+      expect(result.warnings.length).toBeGreaterThan(0);
+      expect(result.warnings.some(w => w.fields.includes('branch.base'))).toBe(true);
+      expect(result.warnings.some(w => w.fields.includes('branch.prefix'))).toBe(true);
+    });
+
+    it('should error when base branch contains the prefix', () => {
+      const config = createConfig({
+        branch: {
+          base: 'feature/issue-main',
+          prefix: 'feature/issue-',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.fields.includes('branch.base'))).toBe(true);
+      expect(result.errors.some(e => e.message.includes('conflict'))).toBe(true);
+    });
+  });
+
+  describe('multiple errors', () => {
+    it('should collect multiple errors from different validations', () => {
+      const config = createConfig({
+        budget: {
+          per_task_limit: 10.00,
+          per_session_limit: 5.00, // Error: per_task > per_session
+          warning_threshold: 150,   // Error: > 100
+        },
+        iteration: {
+          max_iterations: 0,        // Error: < 1
+          completion_promise: 'COMPLETE',
+          ready_promise: 'READY_FOR_PR',
+        },
+        poll_interval: 0.5,         // Error: < 1 second
+        github: {
+          repo: 'owner/repo',
+          project_number: '1',
+          ready_column: 'Ready',
+          in_progress_column: 'Ready', // Error: duplicate
+          review_column: 'In Review',
+        },
+      });
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(false);
+      // Should have at least 5 errors
+      expect(result.errors.length).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle empty config gracefully', () => {
+      const config = {} as ChadGIConfig;
+
+      const result = validateConfigLogic(config);
+      // Should not throw
+      expect(result.valid).toBe(true);
+    });
+
+    it('should handle config with only required fields', () => {
+      const config = createConfig();
+
+      const result = validateConfigLogic(config);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+});
+
+describe('formatConfigValidationErrors', () => {
+  it('should format errors correctly', () => {
+    const result = {
+      valid: false,
+      errors: [
+        {
+          fields: ['budget.per_task_limit', 'budget.per_session_limit'],
+          message: 'per_task_limit cannot exceed per_session_limit',
+          severity: 'error' as const,
+        },
+      ],
+      warnings: [],
+    };
+
+    const lines = formatConfigValidationErrors(result);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('[ERROR]');
+    expect(lines[0]).toContain('per_task_limit cannot exceed per_session_limit');
+    expect(lines[0]).toContain('budget.per_task_limit');
+  });
+
+  it('should format warnings correctly', () => {
+    const result = {
+      valid: true,
+      errors: [],
+      warnings: [
+        {
+          fields: ['branch.base', 'branch.prefix'],
+          message: 'Branch prefix starts with base branch name',
+          severity: 'warning' as const,
+        },
+      ],
+    };
+
+    const lines = formatConfigValidationErrors(result);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('[WARNING]');
+    expect(lines[0]).toContain('Branch prefix');
+  });
+
+  it('should format both errors and warnings', () => {
+    const result = {
+      valid: false,
+      errors: [
+        {
+          fields: ['poll_interval'],
+          message: 'poll_interval must be at least 100ms',
+          severity: 'error' as const,
+        },
+      ],
+      warnings: [
+        {
+          fields: ['branch.base', 'branch.prefix'],
+          message: 'Branch prefix warning',
+          severity: 'warning' as const,
+        },
+      ],
+    };
+
+    const lines = formatConfigValidationErrors(result);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('[ERROR]');
+    expect(lines[1]).toContain('[WARNING]');
+  });
+
+  it('should return empty array for valid config with no warnings', () => {
+    const result = {
+      valid: true,
+      errors: [],
+      warnings: [],
+    };
+
+    const lines = formatConfigValidationErrors(result);
+    expect(lines).toHaveLength(0);
   });
 });

@@ -14,6 +14,8 @@ import {
   parseYamlValue,
   parseYamlNested,
   parseEnvOverrides,
+  loadConfigWithEnv,
+  validateConfigLogic,
   DEFAULT_ENV_PREFIX,
 } from './utils/config.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
@@ -725,6 +727,53 @@ async function validateHandler(
       console.log('    Tip: Use environment variables to override config values:');
       console.log(`    ${envPrefix}GITHUB__REPO=owner/repo`);
       console.log(`    ${envPrefix}ITERATION__MAX_ITERATIONS=10`);
+    }
+
+    // Cross-field logic validation
+    if (!quiet) {
+      console.log('');
+      console.log('Checking configuration logic:\n');
+    }
+
+    // Load the full config with env overrides for validation
+    const configWithSources = loadConfigWithEnv(configPath, { envPrefix, env: process.env });
+    const logicValidation = validateConfigLogic(configWithSources.config);
+
+    if (logicValidation.valid && logicValidation.warnings.length === 0) {
+      results.push({
+        name: 'config logic',
+        status: 'ok',
+        message: 'all cross-field constraints valid'
+      });
+      if (!quiet) {
+        console.log('\x1b[32m+\x1b[0m Configuration logic: all cross-field constraints valid');
+      }
+    } else {
+      // Add errors
+      for (const err of logicValidation.errors) {
+        results.push({
+          name: `config logic: ${err.fields[0]}`,
+          status: 'error',
+          message: err.message
+        });
+        if (!quiet) {
+          console.log(`\x1b[31mx\x1b[0m ${err.message}`);
+          console.log(`    Fields: ${err.fields.join(', ')}`);
+        }
+      }
+
+      // Add warnings
+      for (const warn of logicValidation.warnings) {
+        results.push({
+          name: `config logic: ${warn.fields[0]}`,
+          status: 'warning',
+          message: warn.message
+        });
+        if (!quiet) {
+          console.log(`\x1b[33m!\x1b[0m ${warn.message}`);
+          console.log(`    Fields: ${warn.fields.join(', ')}`);
+        }
+      }
     }
 
   } else {
