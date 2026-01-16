@@ -21,6 +21,13 @@ import { configExport, configImport } from './config-export-import.js';
 import { completion, getInstallationInstructions } from './completion.js';
 import { replay, replayLast, replayAllFailed } from './replay.js';
 import { diff } from './diff.js';
+import {
+  workspaceInit,
+  workspaceAdd,
+  workspaceRemove,
+  workspaceList,
+  workspaceStatus,
+} from './workspace.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -75,6 +82,8 @@ program
   .option('-t, --timeout <minutes>', 'Override task timeout in minutes (0 = disabled)', parseInt)
   .option('--debug', 'Enable debug log level (overrides config log_level)')
   .option('--ignore-deps', 'Process tasks regardless of dependency status')
+  .option('-w, --workspace', 'Process tasks across all workspace repositories')
+  .option('-r, --repo <name>', 'Process only a specific repository in workspace mode')
   .action(async (options) => {
     try {
       await start(options);
@@ -483,6 +492,89 @@ program
         // No arguments - show diff for current branch
         await diff(undefined, options);
       }
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+// Workspace command with subcommands for multi-repo support
+const workspaceCommand = program
+  .command('workspace')
+  .description('Manage multi-repo workspace configuration');
+
+workspaceCommand
+  .command('init')
+  .description('Initialize a multi-repo workspace')
+  .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
+  .option('-f, --force', 'Overwrite existing workspace configuration')
+  .option('-n, --name <name>', 'Workspace name')
+  .action(async (options) => {
+    try {
+      await workspaceInit(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+workspaceCommand
+  .command('add <repo>')
+  .description('Add a repository to the workspace')
+  .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
+  .option('-p, --path <path>', 'Local path for the repository')
+  .option('--remote <url>', 'Git remote URL for cloning')
+  .option('--priority <n>', 'Processing priority (lower = higher priority)', parseInt)
+  .option('--disabled', 'Add repository in disabled state')
+  .action(async (repo: string, options) => {
+    try {
+      await workspaceAdd(repo, {
+        ...options,
+        enabled: !options.disabled,
+      });
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+workspaceCommand
+  .command('remove <repo>')
+  .description('Remove a repository from the workspace')
+  .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .action(async (repo: string, options) => {
+    try {
+      await workspaceRemove(repo, options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+workspaceCommand
+  .command('list', { isDefault: true })
+  .description('List all configured repositories')
+  .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (options) => {
+    try {
+      await workspaceList(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+workspaceCommand
+  .command('status')
+  .description('Show combined queue view across all workspace repositories')
+  .option('-c, --config <path>', 'Path to workspace config (default: ./.chadgi/workspace.yaml)')
+  .option('-j, --json', 'Output as JSON')
+  .option('-l, --limit <n>', 'Limit number of tasks shown', parseInt)
+  .action(async (options) => {
+    try {
+      await workspaceStatus(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);

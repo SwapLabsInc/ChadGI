@@ -1,0 +1,58 @@
+# ChadGI Workspace Configuration
+# Multi-repository workspace for ChadGI task automation
+#
+# This file configures a workspace that allows ChadGI to process tasks
+# across multiple repositories from a single command.
+#
+# Usage:
+#   chadgi workspace init            - Create a new workspace
+#   chadgi workspace add <repo>      - Add a repository to the workspace
+#   chadgi workspace remove <repo>   - Remove a repository
+#   chadgi workspace list            - List all configured repositories
+#   chadgi workspace status          - Show combined task queue
+#   chadgi start --workspace         - Process tasks across all repos
+
+# Workspace metadata
+version: "1.0.0"
+name: my-workspace
+description: Multi-repository ChadGI workspace
+
+# Processing strategy for task selection across repositories
+# Options:
+#   - round-robin: Alternate between repos, one task at a time from each
+#   - priority: Process tasks by priority across all repos (highest priority first)
+#   - sequential: Complete all tasks in one repo before moving to the next
+strategy: round-robin
+
+# Base configuration that all repos inherit from (optional)
+# Repos can override any setting from the base config
+# base_config: ./shared-chadgi-config.yaml
+
+# Repository configurations
+# Each repo can be identified by its GitHub owner/repo name or a custom key
+repos:
+  # Example repository configuration:
+  # owner/repo-name:
+  #   path: /path/to/local/clone          # Required: Local path to the repository
+  #   remote: https://github.com/...       # Optional: Remote URL for cloning
+  #   branch_prefix: feature/              # Optional: Override branch prefix
+  #   test_command: npm test               # Optional: Override test command
+  #   build_command: npm run build         # Optional: Override build command
+  #   enabled: true                        # Optional: Enable/disable this repo (default: true)
+  #   priority: 1                          # Optional: Processing priority (lower = higher priority)
+
+# Workspace-level settings
+settings:
+  # Automatically clone missing repositories from their remotes
+  auto_clone: false
+
+  # Validate all repos in parallel (faster but uses more resources)
+  parallel_validation: true
+
+  # Aggregate statistics across all repositories
+  # When enabled, workspace-level stats are tracked in addition to per-repo stats
+  aggregate_stats: true
+
+# Timestamps (auto-managed by ChadGI)
+created_at: ""
+updated_at: ""
