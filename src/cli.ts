@@ -24,6 +24,7 @@ import { diff } from './diff.js';
 import { approve, reject } from './approve.js';
 import { benchmark } from './benchmark.js';
 import { logs, logsList, logsClear } from './logs.js';
+import { version } from './version.js';
 import {
   workspaceInit,
   workspaceAdd,
@@ -58,6 +59,13 @@ program
   .name('chadgi')
   .description('ChadGI - Autonomous Task Worker powered by Claude Code')
   .version(packageJson.version);
+
+program
+  .command('version')
+  .description('Display version information and check for updates')
+  .option('-j, --json', 'Output version info as JSON')
+  .option('-c, --check', 'Check npm registry for newer version')
+  .action(wrapCommand(version));
 
 program
   .command('init')
