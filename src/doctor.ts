@@ -12,6 +12,7 @@ import {
   DEFAULT_LOCK_TIMEOUT_MINUTES,
 } from './utils/locks.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
+import { gh, GhClientError } from './utils/gh-client.js';
 
 // Import shared types
 import type {
@@ -19,7 +20,6 @@ import type {
   ProgressData,
   HealthCheck,
   HealthReport,
-  RateLimitData,
 } from './types/index.js';
 
 interface DoctorOptions extends BaseCommandOptions {
@@ -34,11 +34,11 @@ async function checkRateLimit(): Promise<HealthCheck[]> {
   const checks: HealthCheck[] = [];
 
   try {
-    const output = execSync('gh api rate_limit', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-    const rateData: RateLimitData = JSON.parse(output);
+    // Use the new gh client for rate limit checking
+    const rateData = await gh.api.getRateLimit();
 
     // Check core API rate limit
-    const core = rateData.resources.core;
+    const core = rateData.core;
     const corePercentRemaining = (core.remaining / core.limit) * 100;
 
     if (corePercentRemaining > 20) {
@@ -56,7 +56,7 @@ async function checkRateLimit(): Promise<HealthCheck[]> {
         message: `Low: ${core.remaining}/${core.limit} requests remaining (${corePercentRemaining.toFixed(0)}%). Consider waiting before heavy operations.`,
       });
     } else {
-      const resetTime = new Date(core.reset * 1000).toLocaleTimeString();
+      const resetTime = core.reset.toLocaleTimeString();
       checks.push({
         name: 'GitHub API Rate Limit (Core)',
         category: 'api',
@@ -66,7 +66,7 @@ async function checkRateLimit(): Promise<HealthCheck[]> {
     }
 
     // Check GraphQL API rate limit
-    const graphql = rateData.resources.graphql;
+    const graphql = rateData.graphql;
     const graphqlPercentRemaining = (graphql.remaining / graphql.limit) * 100;
 
     if (graphqlPercentRemaining > 20) {
@@ -84,7 +84,7 @@ async function checkRateLimit(): Promise<HealthCheck[]> {
         message: `Low: ${graphql.remaining}/${graphql.limit} points remaining (${graphqlPercentRemaining.toFixed(0)}%)`,
       });
     } else {
-      const resetTime = new Date(graphql.reset * 1000).toLocaleTimeString();
+      const resetTime = graphql.reset.toLocaleTimeString();
       checks.push({
         name: 'GitHub API Rate Limit (GraphQL)',
         category: 'api',
@@ -93,11 +93,12 @@ async function checkRateLimit(): Promise<HealthCheck[]> {
       });
     }
   } catch (error) {
+    const errorMsg = error instanceof GhClientError ? error.message : (error as Error).message;
     checks.push({
       name: 'GitHub API Rate Limit',
       category: 'api',
       status: 'error',
-      message: `Could not check rate limit: ${(error as Error).message}`,
+      message: `Could not check rate limit: ${errorMsg}`,
     });
   }
 

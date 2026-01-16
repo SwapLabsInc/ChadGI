@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested, parseYamlBoolean, ensureChadgiDirExists } from './utils/config.js';
+import { gh, GhClientError } from './utils/gh-client.js';
 
 // Queue task from GitHub project board
 interface QueueTask {
@@ -140,7 +141,18 @@ function parseCategoryMappings(content: string): Record<string, string[]> {
   return mappings;
 }
 
-// Get issue labels from GitHub
+// Get issue labels from GitHub using the gh client
+async function getIssueLabelsAsync(issueNumber: number, repo: string): Promise<string[]> {
+  try {
+    const issue = await gh.issue.get(issueNumber, repo);
+    if (!issue) return [];
+    return issue.labels.map(l => l.name.toLowerCase());
+  } catch {
+    return [];
+  }
+}
+
+// Synchronous version for backward compatibility (used in getQueueTasks)
 function getIssueLabels(issueNumber: number, repo: string): string[] {
   try {
     const output = execSync(

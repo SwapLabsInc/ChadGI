@@ -282,3 +282,34 @@ export {
   conditionalMiddleware,
   passthrough,
 } from './middleware.js';
+
+// High-level GitHub Client
+export {
+  // Main client (use gh.issue, gh.pr, gh.project, gh.api)
+  gh,
+  // Error types
+  GhClientError,
+  type GhClientErrorCode,
+  type GhClientOptions,
+  // Issue types
+  type Issue,
+  type CreateIssueOptions,
+  type UpdateIssueOptions,
+  type ListIssuesOptions,
+  // PR types
+  type PullRequest,
+  type CreatePullRequestOptions,
+  type MergeStrategy,
+  type MergePullRequestOptions,
+  // Project types
+  type ProjectItem as GhProjectItem,
+  type ProjectItemContent,
+  type ProjectItemFilter,
+  type ProjectField as GhProjectField,
+  type Project,
+  // API types
+  type RateLimitInfo,
+  // Common types
+  type GitHubActor,
+  type GitHubLabel,
+} from './gh-client.js';
