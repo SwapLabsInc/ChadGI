@@ -17,8 +17,10 @@ export {
   resolveChadgiDir,
   loadConfig,
   chadgiDirExists,
+  ensureChadgiDirExists,
   getRepoOwner,
   getRepoName,
+  type EnsureChadgiDirOptions,
 } from './config.js';
 
 // Errors

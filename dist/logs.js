@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, watchFile,
 import { join, dirname, basename } from 'path';
 import { createInterface } from 'readline';
 import { colors } from './utils/colors.js';
-import { parseYamlNested, resolveConfigPath } from './utils/config.js';
+import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
 import { formatDate, formatRelativeTime, formatBytes, parseSince, horizontalLine, } from './utils/formatting.js';
 import { readTextFile } from './utils/data.js';
 // ============================================================================
@@ -354,12 +354,7 @@ async function promptConfirmation(message) {
 export async function logs(options = {}) {
     const cwd = process.cwd();
     const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config
     const configContent = existsSync(configPath)
         ? readFileSync(configPath, 'utf-8')
@@ -550,12 +545,7 @@ async function followLogs(logFilePath, options) {
 export async function logsList(options = {}) {
     const cwd = process.cwd();
     const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config
     const configContent = existsSync(configPath)
         ? readFileSync(configPath, 'utf-8')
@@ -616,12 +606,7 @@ export async function logsList(options = {}) {
 export async function logsClear(options = {}) {
     const cwd = process.cwd();
     const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config
     const configContent = existsSync(configPath)
         ? readFileSync(configPath, 'utf-8')

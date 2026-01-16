@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import type { ChadGIConfig, GitHubConfig, BranchConfig } from '../types/index.js';
+import { colors } from './colors.js';
 
 /**
  * Parse a simple YAML value (top-level key: value extraction)
@@ -159,6 +160,52 @@ export function loadConfig(configPath: string): {
  */
 export function chadgiDirExists(chadgiDir: string): boolean {
   return existsSync(chadgiDir);
+}
+
+/**
+ * Options for ensureChadgiDirExists function.
+ */
+export interface EnsureChadgiDirOptions {
+  /** Output error in JSON format instead of console error */
+  json?: boolean;
+}
+
+/**
+ * Ensure the ChadGI directory exists, exiting with an error if not.
+ *
+ * This utility consolidates the common pattern of checking if the .chadgi
+ * directory exists and displaying a consistent error message across all
+ * commands that require an initialized ChadGI setup.
+ *
+ * @param chadgiDir - Path to the .chadgi directory
+ * @param options - Optional configuration
+ * @param options.json - If true, output JSON error format instead of console error
+ *
+ * @example
+ * ```ts
+ * // Standard usage - exits with console error if directory doesn't exist
+ * ensureChadgiDirExists(chadgiDir);
+ *
+ * // JSON mode - outputs JSON error before exiting
+ * ensureChadgiDirExists(chadgiDir, { json: true });
+ * ```
+ */
+export function ensureChadgiDirExists(
+  chadgiDir: string,
+  options?: EnsureChadgiDirOptions
+): void {
+  if (existsSync(chadgiDir)) {
+    return;
+  }
+
+  if (options?.json) {
+    console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }));
+  } else {
+    console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
+    console.error('Run `chadgi init` first to initialize ChadGI.');
+  }
+
+  process.exit(1);
 }
 
 /**

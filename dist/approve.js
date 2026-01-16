@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
 import { toISOString } from './utils/formatting.js';
-import { resolveChadgiDir } from './utils/config.js';
+import { resolveChadgiDir, ensureChadgiDirExists } from './utils/config.js';
 /**
  * Get the current username for audit purposes
  */
@@ -73,17 +73,7 @@ function logApprovalToHistory(chadgiDir, issueNumber, phase, action, comment) {
  */
 export async function approve(options = {}) {
     const chadgiDir = resolveChadgiDir(options);
-    // Ensure .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        if (options.json) {
-            console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }));
-        }
-        else {
-            console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-            console.error('Run `chadgi init` first to initialize ChadGI.');
-        }
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir, { json: options.json });
     // Find pending approval lock files
     const pendingFiles = findPendingApprovals(chadgiDir, options.issueNumber);
     if (pendingFiles.length === 0) {
@@ -167,17 +157,7 @@ export async function approve(options = {}) {
  */
 export async function reject(options = {}) {
     const chadgiDir = resolveChadgiDir(options);
-    // Ensure .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        if (options.json) {
-            console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }));
-        }
-        else {
-            console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-            console.error('Run `chadgi init` first to initialize ChadGI.');
-        }
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir, { json: options.json });
     // Find pending approval lock files
     const pendingFiles = findPendingApprovals(chadgiDir, options.issueNumber);
     if (pendingFiles.length === 0) {

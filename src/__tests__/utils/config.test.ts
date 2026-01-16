@@ -4,7 +4,17 @@
  * Tests YAML parsing and configuration loading utilities.
  */
 
-import {
+import { jest } from '@jest/globals';
+import { vol } from 'memfs';
+
+// Mock the fs module
+jest.unstable_mockModule('fs', () => ({
+  existsSync: jest.fn((path: string) => vol.existsSync(path)),
+  readFileSync: jest.fn((path: string, encoding?: string) => vol.readFileSync(path, encoding)),
+}));
+
+// Import after mocking
+const {
   parseYamlValue,
   parseYamlNested,
   parseYamlBoolean,
@@ -13,7 +23,8 @@ import {
   resolveChadgiDir,
   getRepoOwner,
   getRepoName,
-} from '../../utils/config.js';
+  ensureChadgiDirExists,
+} = await import('../../utils/config.js');
 
 import {
   validConfig,
@@ -217,5 +228,108 @@ describe('resolveChadgiDir', () => {
     const resolveChadgiDirResult2 = resolveChadgiDir({ config: customConfig }, cwd);
     const resolveConfigPathResult2 = resolveConfigPath(customConfig, cwd);
     expect(resolveChadgiDirResult2).toBe(resolveConfigPathResult2.chadgiDir);
+  });
+});
+
+describe('ensureChadgiDirExists', () => {
+  // Store original process.exit
+  const originalExit = process.exit;
+  // Store original console.error and console.log
+  const originalConsoleError = console.error;
+  const originalConsoleLog = console.log;
+
+  let mockExit: jest.Mock;
+  let mockConsoleError: jest.Mock;
+  let mockConsoleLog: jest.Mock;
+
+  beforeEach(() => {
+    vol.reset();
+    // Mock process.exit to throw instead of actually exiting
+    mockExit = jest.fn(() => {
+      throw new Error('process.exit called');
+    }) as unknown as jest.Mock;
+    process.exit = mockExit as unknown as typeof process.exit;
+
+    // Mock console methods
+    mockConsoleError = jest.fn();
+    mockConsoleLog = jest.fn();
+    console.error = mockConsoleError;
+    console.log = mockConsoleLog;
+  });
+
+  afterEach(() => {
+    // Restore original functions
+    process.exit = originalExit;
+    console.error = originalConsoleError;
+    console.log = originalConsoleLog;
+  });
+
+  it('should return without error when directory exists', () => {
+    vol.fromJSON({
+      '/project/.chadgi/chadgi-config.yaml': '',
+    });
+
+    // Should not throw
+    expect(() => ensureChadgiDirExists('/project/.chadgi')).not.toThrow();
+    expect(mockExit).not.toHaveBeenCalled();
+    expect(mockConsoleError).not.toHaveBeenCalled();
+    expect(mockConsoleLog).not.toHaveBeenCalled();
+  });
+
+  it('should exit with error when directory does not exist (non-JSON mode)', () => {
+    vol.fromJSON({
+      '/project/other-file.txt': '',
+    });
+
+    expect(() => ensureChadgiDirExists('/project/.chadgi')).toThrow('process.exit called');
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(mockConsoleError).toHaveBeenCalledTimes(2);
+    expect(mockConsoleError.mock.calls[0][0]).toContain('Error: .chadgi directory not found');
+    expect(mockConsoleError.mock.calls[1][0]).toContain('chadgi init');
+  });
+
+  it('should exit with JSON error when directory does not exist (JSON mode)', () => {
+    vol.fromJSON({
+      '/project/other-file.txt': '',
+    });
+
+    expect(() => ensureChadgiDirExists('/project/.chadgi', { json: true })).toThrow('process.exit called');
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      JSON.stringify({ success: false, error: '.chadgi directory not found' })
+    );
+    expect(mockConsoleError).not.toHaveBeenCalled();
+  });
+
+  it('should not print JSON error when directory exists and JSON mode is enabled', () => {
+    vol.fromJSON({
+      '/project/.chadgi/chadgi-config.yaml': '',
+    });
+
+    expect(() => ensureChadgiDirExists('/project/.chadgi', { json: true })).not.toThrow();
+    expect(mockExit).not.toHaveBeenCalled();
+    expect(mockConsoleLog).not.toHaveBeenCalled();
+    expect(mockConsoleError).not.toHaveBeenCalled();
+  });
+
+  it('should handle undefined options', () => {
+    vol.fromJSON({
+      '/project/other-file.txt': '',
+    });
+
+    expect(() => ensureChadgiDirExists('/project/.chadgi', undefined)).toThrow('process.exit called');
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(mockConsoleError).toHaveBeenCalled();
+  });
+
+  it('should handle options with json: false', () => {
+    vol.fromJSON({
+      '/project/other-file.txt': '',
+    });
+
+    expect(() => ensureChadgiDirExists('/project/.chadgi', { json: false })).toThrow('process.exit called');
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(mockConsoleError).toHaveBeenCalled();
+    expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 });

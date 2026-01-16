@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
+import { colors } from './colors.js';
 /**
  * Parse a simple YAML value (top-level key: value extraction)
  *
@@ -138,6 +139,39 @@ export function loadConfig(configPath) {
  */
 export function chadgiDirExists(chadgiDir) {
     return existsSync(chadgiDir);
+}
+/**
+ * Ensure the ChadGI directory exists, exiting with an error if not.
+ *
+ * This utility consolidates the common pattern of checking if the .chadgi
+ * directory exists and displaying a consistent error message across all
+ * commands that require an initialized ChadGI setup.
+ *
+ * @param chadgiDir - Path to the .chadgi directory
+ * @param options - Optional configuration
+ * @param options.json - If true, output JSON error format instead of console error
+ *
+ * @example
+ * ```ts
+ * // Standard usage - exits with console error if directory doesn't exist
+ * ensureChadgiDirExists(chadgiDir);
+ *
+ * // JSON mode - outputs JSON error before exiting
+ * ensureChadgiDirExists(chadgiDir, { json: true });
+ * ```
+ */
+export function ensureChadgiDirExists(chadgiDir, options) {
+    if (existsSync(chadgiDir)) {
+        return;
+    }
+    if (options?.json) {
+        console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }));
+    }
+    else {
+        console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
+        console.error('Run `chadgi init` first to initialize ChadGI.');
+    }
+    process.exit(1);
 }
 /**
  * Get the repository owner from a repo string (owner/repo format)

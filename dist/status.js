@@ -1,7 +1,6 @@
-import { existsSync } from 'fs';
 // Import shared utilities
 import { colors } from './utils/colors.js';
-import { resolveConfigPath } from './utils/config.js';
+import { resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
 import { formatDuration } from './utils/formatting.js';
 import { loadProgressData, loadPauseLock, findPendingApproval, loadAllTaskLocks } from './utils/data.js';
 function formatDate(isoDate) {
@@ -264,16 +263,7 @@ function printStatus(statusInfo) {
 export async function status(options = {}) {
     const cwd = process.cwd();
     const { chadgiDir } = resolveConfigPath(options.config, cwd);
-    if (!existsSync(chadgiDir)) {
-        if (options.json) {
-            console.log(JSON.stringify({ state: 'unknown', error: '.chadgi directory not found' }, null, 2));
-        }
-        else {
-            console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-            console.error('Run `chadgi init` first to initialize ChadGI.');
-        }
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir, { json: options.json });
     // Load data using shared utilities
     const progress = loadProgressData(chadgiDir);
     const pauseInfo = loadPauseLock(chadgiDir);

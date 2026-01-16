@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, watchFile, unwatchFile, statSync } from 'fs';
 import { join } from 'path';
 import { colors } from './utils/colors.js';
-import { resolveChadgiDir } from './utils/config.js';
+import { resolveChadgiDir, ensureChadgiDirExists } from './utils/config.js';
 // ANSI escape codes for cursor control
 const cursor = {
     hide: '\x1b[?25l',
@@ -360,16 +360,7 @@ function renderProgressBar(percent, width) {
 }
 export async function watch(options = {}) {
     const chadgiDir = resolveChadgiDir(options);
-    if (!existsSync(chadgiDir)) {
-        if (options.json) {
-            console.log(JSON.stringify({ active: false, state: 'no_session', error: '.chadgi directory not found' }, null, 2));
-        }
-        else {
-            console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-            console.error('Run `chadgi init` first to initialize ChadGI.');
-        }
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir, { json: options.json });
     const progressFile = join(chadgiDir, 'chadgi-progress.json');
     // Single check mode (--once flag)
     if (options.once) {

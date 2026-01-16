@@ -70,6 +70,34 @@ export declare function loadConfig(configPath: string): {
  */
 export declare function chadgiDirExists(chadgiDir: string): boolean;
 /**
+ * Options for ensureChadgiDirExists function.
+ */
+export interface EnsureChadgiDirOptions {
+    /** Output error in JSON format instead of console error */
+    json?: boolean;
+}
+/**
+ * Ensure the ChadGI directory exists, exiting with an error if not.
+ *
+ * This utility consolidates the common pattern of checking if the .chadgi
+ * directory exists and displaying a consistent error message across all
+ * commands that require an initialized ChadGI setup.
+ *
+ * @param chadgiDir - Path to the .chadgi directory
+ * @param options - Optional configuration
+ * @param options.json - If true, output JSON error format instead of console error
+ *
+ * @example
+ * ```ts
+ * // Standard usage - exits with console error if directory doesn't exist
+ * ensureChadgiDirExists(chadgiDir);
+ *
+ * // JSON mode - outputs JSON error before exiting
+ * ensureChadgiDirExists(chadgiDir, { json: true });
+ * ```
+ */
+export declare function ensureChadgiDirExists(chadgiDir: string, options?: EnsureChadgiDirOptions): void;
+/**
  * Get the repository owner from a repo string (owner/repo format)
  *
  * @param repo - Repository in owner/repo format

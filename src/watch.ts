@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, watchFile, unwatchFile, statSync } from 'fs';
 import { join } from 'path';
 import { colors } from './utils/colors.js';
-import { resolveChadgiDir } from './utils/config.js';
+import { resolveChadgiDir, ensureChadgiDirExists } from './utils/config.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, RecentTool, ParallelWorkerTask, ParallelSessionProgress } from './types/index.js';
@@ -440,16 +440,7 @@ function renderProgressBar(percent: number, width: number): string {
 
 export async function watch(options: WatchOptions = {}): Promise<void> {
   const chadgiDir = resolveChadgiDir(options);
-
-  if (!existsSync(chadgiDir)) {
-    if (options.json) {
-      console.log(JSON.stringify({ active: false, state: 'no_session', error: '.chadgi directory not found' }, null, 2));
-    } else {
-      console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-      console.error('Run `chadgi init` first to initialize ChadGI.');
-    }
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir, { json: options.json });
 
   const progressFile = join(chadgiDir, 'chadgi-progress.json');
 

@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
+import { ensureChadgiDirExists } from './utils/config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 export async function resume(options = {}) {
@@ -10,12 +11,7 @@ export async function resume(options = {}) {
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
     const chadgiDir = dirname(configPath);
-    // Ensure .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-        console.error('Run `chadgi init` first to initialize ChadGI.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     const pauseLockFile = join(chadgiDir, 'pause.lock');
     const progressFile = join(chadgiDir, 'chadgi-progress.json');
     // Check if paused

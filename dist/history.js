@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 // Import shared utilities
 import { colors } from './utils/colors.js';
-import { parseYamlNested, resolveConfigPath } from './utils/config.js';
+import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
 import { formatDuration, formatDate, formatCost, parseSince, horizontalLine, truncate } from './utils/formatting.js';
 import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
@@ -199,12 +199,7 @@ function printHistory(entries, total, sinceDate, statusFilter, _repo) {
 export async function history(options = {}) {
     const cwd = process.cwd();
     const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error('Error: .chadgi directory not found.');
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config for repo info
     let repo = 'owner/repo';
     if (existsSync(configPath)) {

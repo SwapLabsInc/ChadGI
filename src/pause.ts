@@ -3,7 +3,7 @@ import { join } from 'path';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
 import { toISOString, parseDuration } from './utils/formatting.js';
-import { resolveChadgiDir } from './utils/config.js';
+import { resolveChadgiDir, ensureChadgiDirExists } from './utils/config.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -15,13 +15,7 @@ interface PauseOptions extends BaseCommandOptions {
 
 export async function pause(options: PauseOptions = {}): Promise<void> {
   const chadgiDir = resolveChadgiDir(options);
-
-  // Ensure .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-    console.error('Run `chadgi init` first to initialize ChadGI.');
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir);
 
   const pauseLockFile = join(chadgiDir, 'pause.lock');
   const progressFile = join(chadgiDir, 'chadgi-progress.json');
