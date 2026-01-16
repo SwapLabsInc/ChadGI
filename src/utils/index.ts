@@ -25,6 +25,7 @@ export {
 
 // Errors
 export {
+  // Error classes
   ChadGIError,
   ConfigError,
   ConfigNotFoundError,
@@ -38,9 +39,23 @@ export {
   BudgetExceededError,
   TaskTimeoutError,
   MaxIterationsError,
+  // Error utilities
   isChadGIError,
   getErrorCode,
   getErrorMessage,
+  // Error context types
+  type OperationType,
+  type ErrorContextIdentifiers,
+  type ErrorContext,
+  type CreateContextOptions as CreateErrorContextOptions,
+  // Error context functions
+  createErrorContext,
+  attachContext,
+  hasErrorContext,
+  getErrorContext,
+  withContext,
+  withContextAsync,
+  serializeError,
 } from './errors.js';
 
 // Formatting
@@ -163,12 +178,24 @@ export {
 
 // File Operations (atomic writes and safe parsing)
 export {
+  // Atomic write functions
   atomicWriteFile,
   atomicWriteJson,
+  // Safe write functions with retry
   safeWriteFile,
   safeWriteJson,
+  // Safe parsing functions
   safeParseJson,
   safeParseAndValidate,
+  // Context-aware file operations
+  readFileWithContext,
+  writeFileWithContext,
+  writeJsonWithContext,
+  safeWriteFileWithContext,
+  safeWriteJsonWithContext,
+  existsWithContext,
+  deleteFileWithContext,
+  // Types
   type SafeWriteOptions,
   type SafeParseSuccess,
   type SafeParseFailure,
@@ -385,10 +412,12 @@ export {
   type CreateJsonResponseOptions,
   type CreateJsonErrorOptions,
   type ErrorCode,
+  type SerializedErrorContext,
   // Factory functions
   createResponseMeta,
   createJsonResponse,
   createJsonError,
+  createJsonErrorFromError,
   // Error codes
   ErrorCodes,
   // Type guards

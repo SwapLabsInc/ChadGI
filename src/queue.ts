@@ -6,6 +6,7 @@ import { parseYamlValue, parseYamlNested, parseYamlBoolean, ensureChadgiDirExist
 import { gh, GhClientError } from './utils/gh-client.js';
 import { Section, Table, Badge, type TableColumn } from './utils/textui.js';
 import { logSilentError, ErrorCategory } from './utils/diagnostics.js';
+import { createErrorContext, attachContext, type ErrorContext } from './utils/errors.js';
 
 // Queue task from GitHub project board
 interface QueueTask {
@@ -36,6 +37,13 @@ interface ActionResult {
   issueNumber: number;
   message: string;
   targetColumn?: string;
+  /** Operation context for error diagnostics (only present on failure) */
+  context?: {
+    operation: string;
+    identifiers?: Record<string, unknown>;
+    startedAt: string;
+    durationMs?: number;
+  };
 }
 
 interface QueueOptions {
@@ -625,6 +633,13 @@ export async function queue(options: QueueOptions = {}): Promise<void> {
 
 // Skip a task (move to Backlog)
 export async function queueSkip(options: QueueSkipOptions): Promise<void> {
+  // Create operation context for error tracking
+  const opContext = createErrorContext({
+    operation: 'queue-process',
+    identifiers: { issueNumber: options.issueNumber, taskId: `skip-${options.issueNumber}` },
+    metadata: { action: 'skip' },
+  });
+
   const cwd = process.cwd();
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;
@@ -668,11 +683,18 @@ export async function queueSkip(options: QueueSkipOptions): Promise<void> {
     );
 
     if (!item) {
+      const durationMs = Date.now() - opContext.startedAt.getTime();
       const result: ActionResult = {
         success: false,
         action: 'skip',
         issueNumber: options.issueNumber,
         message: `Issue #${options.issueNumber} not found in ${readyColumn} column`,
+        context: {
+          operation: opContext.operation,
+          identifiers: opContext.identifiers as Record<string, unknown> | undefined,
+          startedAt: opContext.startedAt.toISOString(),
+          durationMs,
+        },
       };
 
       if (options.json) {
@@ -739,6 +761,13 @@ export async function queueSkip(options: QueueSkipOptions): Promise<void> {
 
 // Promote a task (move to front of queue)
 export async function queuePromote(options: QueuePromoteOptions): Promise<void> {
+  // Create operation context for error tracking
+  const opContext = createErrorContext({
+    operation: 'queue-process',
+    identifiers: { issueNumber: options.issueNumber, taskId: `promote-${options.issueNumber}` },
+    metadata: { action: 'promote' },
+  });
+
   const cwd = process.cwd();
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;

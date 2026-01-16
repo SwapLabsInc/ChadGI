@@ -39,6 +39,13 @@ import {
   safeExecGhJsonWithRetry,
   type ExecWithRetryOptions,
 } from './github.js';
+import {
+  createErrorContext,
+  attachContext,
+  type ErrorContext,
+  type ErrorContextIdentifiers,
+  type OperationType,
+} from './errors.js';
 
 // ============================================================================
 // Error Types
@@ -61,77 +68,167 @@ export type GhClientErrorCode =
  * Custom error class for GitHub client operations with specific error codes
  */
 export class GhClientError extends Error {
+  /** Error code for classification */
+  public readonly code: GhClientErrorCode;
+  /** Original error that caused this error */
+  public readonly cause?: Error;
+  /** Operation context for enriched diagnostics */
+  public operationContext?: ErrorContext;
+
   constructor(
     message: string,
-    public readonly code: GhClientErrorCode,
-    public readonly cause?: Error
+    code: GhClientErrorCode,
+    cause?: Error,
+    operationContext?: ErrorContext
   ) {
     super(message);
     this.name = 'GhClientError';
+    this.code = code;
+    this.cause = cause;
+    this.operationContext = operationContext;
   }
 
   /**
-   * Create a GhClientError from a raw error
+   * Serialize error to a plain object for JSON output.
    */
-  static fromError(error: unknown, context: string): GhClientError {
+  toJSON(): Record<string, unknown> {
+    const result: Record<string, unknown> = {
+      name: this.name,
+      code: this.code,
+      message: this.message,
+    };
+
+    if (this.operationContext) {
+      result.context = {
+        operation: this.operationContext.operation,
+        identifiers: this.operationContext.identifiers,
+        startedAt: this.operationContext.startedAt.toISOString(),
+        durationMs: this.operationContext.durationMs,
+        metadata: this.operationContext.metadata,
+      };
+    }
+
+    return result;
+  }
+
+  /**
+   * Create a GhClientError from a raw error with optional operation context.
+   *
+   * @param error - The original error
+   * @param contextDescription - Human-readable context description
+   * @param operationContext - Optional ErrorContext for enriched diagnostics
+   */
+  static fromError(
+    error: unknown,
+    contextDescription: string,
+    operationContext?: ErrorContext
+  ): GhClientError {
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Compute duration if context is provided
+    let enrichedContext = operationContext;
+    if (operationContext && operationContext.durationMs === undefined) {
+      enrichedContext = {
+        ...operationContext,
+        durationMs: Date.now() - operationContext.startedAt.getTime(),
+      };
+    }
 
     // Classify the error
     if (/\b404\b|not found/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: Resource not found`,
+        `${contextDescription}: Resource not found`,
         'NOT_FOUND',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
     if (/\b401\b|\b403\b|unauthorized|forbidden|bad credentials/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: Authentication failed`,
+        `${contextDescription}: Authentication failed`,
         'AUTH_ERROR',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
     if (/rate limit|too many requests/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: Rate limit exceeded`,
+        `${contextDescription}: Rate limit exceeded`,
         'RATE_LIMIT',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
     if (/\b422\b|validation failed|unprocessable/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: Validation error - ${errorMessage}`,
+        `${contextDescription}: Validation error - ${errorMessage}`,
         'VALIDATION_ERROR',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
     if (/\b50[234]\b|bad gateway|service unavailable|gateway timeout/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: GitHub server error`,
+        `${contextDescription}: GitHub server error`,
         'SERVER_ERROR',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
     if (/ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|timeout|network/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: Network error`,
+        `${contextDescription}: Network error`,
         'NETWORK_ERROR',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
     if (/JSON|parse|syntax/i.test(errorMessage)) {
       return new GhClientError(
-        `${context}: Failed to parse response`,
+        `${contextDescription}: Failed to parse response`,
         'PARSE_ERROR',
-        error instanceof Error ? error : undefined
+        error instanceof Error ? error : undefined,
+        enrichedContext
       );
     }
 
     return new GhClientError(
-      `${context}: ${errorMessage}`,
+      `${contextDescription}: ${errorMessage}`,
       'UNKNOWN',
-      error instanceof Error ? error : undefined
+      error instanceof Error ? error : undefined,
+      enrichedContext
     );
+  }
+
+  /**
+   * Create a GhClientError with context for a GitHub API operation.
+   *
+   * Convenience method that creates an ErrorContext and wraps the error.
+   *
+   * @param error - The original error
+   * @param operation - Operation type (e.g., 'github-issue', 'github-pr')
+   * @param identifiers - Relevant identifiers (repo, issue number, etc.)
+   * @param contextDescription - Human-readable context description
+   * @param startTime - Operation start time (for duration calculation)
+   */
+  static fromErrorWithContext(
+    error: unknown,
+    operation: OperationType,
+    identifiers: ErrorContextIdentifiers,
+    contextDescription: string,
+    startTime?: Date
+  ): GhClientError {
+    const context = createErrorContext({
+      operation,
+      identifiers,
+    });
+
+    // Use provided start time if available
+    if (startTime) {
+      context.startedAt = startTime;
+    }
+
+    return GhClientError.fromError(error, contextDescription, context);
   }
 }
 
@@ -387,12 +484,13 @@ export const issueOperations = {
    * @param options - Issue creation options
    * @param clientOptions - Client options
    * @returns Created issue data
-   * @throws GhClientError if creation fails
+   * @throws GhClientError if creation fails (with operation context)
    */
   async create(
     options: CreateIssueOptions,
     clientOptions: GhClientOptions = {}
   ): Promise<Issue> {
+    const startTime = new Date();
     const args: string[] = [
       `issue create`,
       `--repo "${options.repo}"`,
@@ -433,7 +531,13 @@ export const issueOperations = {
         labels: options.labels?.map((name) => ({ name })) || [],
       };
     } catch (error) {
-      throw GhClientError.fromError(error, 'Failed to create issue');
+      throw GhClientError.fromErrorWithContext(
+        error,
+        'github-issue',
+        { repo: options.repo },
+        'Failed to create issue',
+        startTime
+      );
     }
   },
 
@@ -445,7 +549,7 @@ export const issueOperations = {
    * @param updates - Fields to update
    * @param clientOptions - Client options
    * @returns true if successful
-   * @throws GhClientError if update fails
+   * @throws GhClientError if update fails (with operation context)
    */
   async update(
     number: number,
@@ -453,6 +557,7 @@ export const issueOperations = {
     updates: UpdateIssueOptions,
     clientOptions: GhClientOptions = {}
   ): Promise<boolean> {
+    const startTime = new Date();
     const args: string[] = [`issue edit ${number}`, `--repo "${repo}"`];
 
     if (updates.title) {
@@ -483,7 +588,13 @@ export const issueOperations = {
       await execGhWithRetry(args.join(' '), clientOptions);
       return true;
     } catch (error) {
-      throw GhClientError.fromError(error, `Failed to update issue #${number}`);
+      throw GhClientError.fromErrorWithContext(
+        error,
+        'github-issue',
+        { issueNumber: number, repo },
+        `Failed to update issue #${number}`,
+        startTime
+      );
     }
   },
 
@@ -512,12 +623,14 @@ export const issueOperations = {
    * @param repo - Repository in owner/repo format
    * @param clientOptions - Client options
    * @returns true if successful
+   * @throws GhClientError if close fails (with operation context)
    */
   async close(
     number: number,
     repo: string,
     clientOptions: GhClientOptions = {}
   ): Promise<boolean> {
+    const startTime = new Date();
     try {
       await execGhWithRetry(
         `issue close ${number} --repo "${repo}"`,
@@ -525,7 +638,13 @@ export const issueOperations = {
       );
       return true;
     } catch (error) {
-      throw GhClientError.fromError(error, `Failed to close issue #${number}`);
+      throw GhClientError.fromErrorWithContext(
+        error,
+        'github-issue',
+        { issueNumber: number, repo },
+        `Failed to close issue #${number}`,
+        startTime
+      );
     }
   },
 

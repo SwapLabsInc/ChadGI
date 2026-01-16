@@ -36,6 +36,10 @@ jest.unstable_mockModule('fs', () => ({
       vol.writeFileSync(path, content);
     }
   }),
+  readFileSync: jest.fn((path: string, encoding?: string) => {
+    // Default implementation using memfs
+    return vol.readFileSync(path, encoding);
+  }),
   renameSync: jest.fn((oldPath: string, newPath: string) => {
     if (renameSyncImpl) {
       renameSyncImpl(oldPath, newPath);
