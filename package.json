@@ -11,7 +11,7 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "bash tests/test-gigachad-mode.sh && bash tests/test-dry-run-mode.sh && bash tests/test-session-stats.sh && bash tests/test-retry-delay.sh && bash tests/test-webhook-notifications.sh && bash tests/test-task-timeout.sh && bash tests/test-pause-resume.sh && bash tests/test-error-diagnostics.sh && bash tests/test-insights.sh && bash tests/test-template-variables.sh && bash tests/test-doctor.sh && bash tests/test-config-inheritance.sh && bash tests/test-cleanup.sh && bash tests/test-category.sh && bash tests/test-priority.sh && bash tests/test-dependencies.sh && bash tests/test-estimate.sh && bash tests/test-queue.sh && bash tests/test-watch.sh && bash tests/test-history.sh",
+    "test": "bash tests/test-gigachad-mode.sh && bash tests/test-dry-run-mode.sh && bash tests/test-session-stats.sh && bash tests/test-retry-delay.sh && bash tests/test-webhook-notifications.sh && bash tests/test-task-timeout.sh && bash tests/test-pause-resume.sh && bash tests/test-error-diagnostics.sh && bash tests/test-insights.sh && bash tests/test-template-variables.sh && bash tests/test-doctor.sh && bash tests/test-config-inheritance.sh && bash tests/test-cleanup.sh && bash tests/test-category.sh && bash tests/test-priority.sh && bash tests/test-dependencies.sh && bash tests/test-estimate.sh && bash tests/test-queue.sh && bash tests/test-watch.sh && bash tests/test-history.sh && bash tests/test-setup.sh",
     "prepublishOnly": "npm run build",
     "release": "./scripts/publish.sh"
   },
