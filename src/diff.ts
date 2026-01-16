@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync, spawnSync } from 'child_process';
+import { colors } from './utils/colors.js';
 
 export interface DiffOptions {
   config?: string;
@@ -43,21 +44,6 @@ interface CommitInfo {
   date: string;
 }
 
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  purple: '\x1b[35m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  white: '\x1b[37m',
-  bgRed: '\x1b[41m',
-  bgGreen: '\x1b[42m',
-};
 
 // Parse nested YAML value
 function parseYamlNested(content: string, parent: string, key: string): string | null {

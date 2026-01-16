@@ -294,7 +294,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 24: setup.ts has color output support"
 
-if grep -q "colors\s*=" "$PROJECT_ROOT/src/setup.ts"; then
+if grep -q "colors\s*=\|from './utils/colors.js'" "$PROJECT_ROOT/src/setup.ts"; then
     pass "setup.ts has color output support"
 else
     fail "setup.ts should have color output support"

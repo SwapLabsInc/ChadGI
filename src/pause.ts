@@ -1,5 +1,6 @@
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
+import { colors } from './utils/colors.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -8,17 +9,6 @@ interface PauseOptions extends BaseCommandOptions {
   for?: string;
   reason?: string;
 }
-
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  yellow: '\x1b[33m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  purple: '\x1b[35m',
-};
 
 /**
  * Parse duration string (e.g., "30m", "2h", "1h30m") to milliseconds

@@ -420,7 +420,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 35: Color output support"
 
-if grep -q "colors\s*=" "$PROJECT_ROOT/src/snapshot.ts"; then
+if grep -q "colors\s*=\|from './utils/colors.js'" "$PROJECT_ROOT/src/snapshot.ts"; then
     pass "Color output support implemented"
 else
     fail "Color output support should be implemented"

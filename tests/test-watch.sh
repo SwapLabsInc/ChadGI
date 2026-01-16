@@ -184,7 +184,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 14: watch.ts has color constants"
 
-if grep -q "colors = {" "$PROJECT_ROOT/src/watch.ts"; then
+if grep -q "colors = {\|from './utils/colors.js'" "$PROJECT_ROOT/src/watch.ts"; then
     pass "Color constants exist"
 else
     fail "watch should have color constants for output"

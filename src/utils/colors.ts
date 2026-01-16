@@ -21,6 +21,10 @@ export const colors = {
   cyan: '\x1b[36m',
   white: '\x1b[37m',
   gray: '\x1b[90m',
+
+  // Background colors
+  bgRed: '\x1b[41m',
+  bgGreen: '\x1b[42m',
 } as const;
 
 export type ColorName = keyof typeof colors;

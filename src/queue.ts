@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
+import { colors } from './utils/colors.js';
 
 // Queue task from GitHub project board
 interface QueueTask {
@@ -47,18 +48,6 @@ interface QueuePromoteOptions extends QueueOptions {
   issueNumber: number;
 }
 
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  purple: '\x1b[35m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-};
 
 // Parse YAML value (simple key: value extraction)
 function parseYamlValue(content: string, key: string): string | null {

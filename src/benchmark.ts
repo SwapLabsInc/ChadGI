@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 
 import { join, dirname, resolve, basename } from 'path';
 import { execSync, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { colors } from './utils/colors.js';
 
 // Import shared types
 import type { BaseCommandOptions } from './types/index.js';
@@ -115,18 +116,6 @@ interface BenchmarkOptions extends BaseCommandOptions {
   dryRun?: boolean;
 }
 
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  purple: '\x1b[35m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-};
 
 // Standard benchmark tasks for quick mode
 const QUICK_BENCHMARK_TASKS: BenchmarkTask[] = [
