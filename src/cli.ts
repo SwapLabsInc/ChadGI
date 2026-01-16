@@ -12,6 +12,7 @@ import { resume } from './resume.js';
 import { status } from './status.js';
 import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
+import { estimate } from './estimate.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -196,6 +197,23 @@ program
   .action(async (options) => {
     try {
       await cleanup(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('estimate')
+  .description('Estimate API costs for tasks in the Ready queue')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output estimate as JSON')
+  .option('-b, --budget <amount>', 'Show how many tasks fit within budget', parseFloat)
+  .option('-d, --days <n>', 'Use only historical data from the last N days', parseInt)
+  .option('--category <type>', 'Filter estimates by task category (e.g., bug, feature, refactor)')
+  .action(async (options) => {
+    try {
+      await estimate(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
