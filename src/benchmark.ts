@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
-import { join, dirname, resolve, basename } from 'path';
+import { join, basename } from 'path';
 import { execSync, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import { colors } from './utils/colors.js';
 import { createProgressBar, ProgressBar } from './utils/progress.js';
+import { resolveChadgiDir } from './utils/config.js';
 
 // Import shared types
 import type { BaseCommandOptions } from './types/index.js';
@@ -972,10 +973,7 @@ function printAvailableTasks(quickTasks: BenchmarkTask[], fullTasks: BenchmarkTa
 }
 
 export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
 
   // Load custom tasks
   const customTasks = loadCustomTasks(chadgiDir);

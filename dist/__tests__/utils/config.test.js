@@ -3,7 +3,7 @@
  *
  * Tests YAML parsing and configuration loading utilities.
  */
-import { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, resolveConfigPath, getRepoOwner, getRepoName, } from '../../utils/config.js';
+import { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, resolveConfigPath, resolveChadgiDir, getRepoOwner, getRepoName, } from '../../utils/config.js';
 import { validConfig, minimalConfig, configWithPriority, configWithDependencies, } from '../fixtures/configs.js';
 describe('parseYamlValue', () => {
     it('should parse top-level string values', () => {
@@ -125,6 +125,46 @@ describe('getRepoName', () => {
     });
     it('should handle single-segment strings', () => {
         expect(getRepoName('repo')).toBe('repo');
+    });
+});
+describe('resolveChadgiDir', () => {
+    it('should return default .chadgi directory when no options provided', () => {
+        const result = resolveChadgiDir(undefined, '/project');
+        expect(result).toBe('/project/.chadgi');
+    });
+    it('should return default .chadgi directory when options is empty object', () => {
+        const result = resolveChadgiDir({}, '/project');
+        expect(result).toBe('/project/.chadgi');
+    });
+    it('should return default .chadgi directory when options.config is undefined', () => {
+        const result = resolveChadgiDir({ config: undefined }, '/project');
+        expect(result).toBe('/project/.chadgi');
+    });
+    it('should return parent directory of provided config path', () => {
+        const result = resolveChadgiDir({ config: '/custom/path/config.yaml' }, '/project');
+        expect(result).toBe('/custom/path');
+    });
+    it('should resolve relative config paths', () => {
+        // Note: resolve() uses the actual cwd, so we test the structure
+        const result = resolveChadgiDir({ config: './custom/config.yaml' }, '/project');
+        expect(result).toContain('custom');
+    });
+    it('should handle nested config directories', () => {
+        const result = resolveChadgiDir({ config: '/a/b/c/d/config.yaml' }, '/project');
+        expect(result).toBe('/a/b/c/d');
+    });
+    it('should be consistent with resolveConfigPath chadgiDir output', () => {
+        // Test that resolveChadgiDir returns the same chadgiDir as resolveConfigPath
+        const cwd = '/project';
+        // Test with no config
+        const resolveChadgiDirResult = resolveChadgiDir(undefined, cwd);
+        const resolveConfigPathResult = resolveConfigPath(undefined, cwd);
+        expect(resolveChadgiDirResult).toBe(resolveConfigPathResult.chadgiDir);
+        // Test with custom config
+        const customConfig = '/custom/config.yaml';
+        const resolveChadgiDirResult2 = resolveChadgiDir({ config: customConfig }, cwd);
+        const resolveConfigPathResult2 = resolveConfigPath(customConfig, cwd);
+        expect(resolveChadgiDirResult2).toBe(resolveConfigPathResult2.chadgiDir);
     });
 });
 //# sourceMappingURL=config.test.js.map

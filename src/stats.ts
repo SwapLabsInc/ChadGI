@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join } from 'path';
 import { colors } from './utils/colors.js';
+import { resolveChadgiDir } from './utils/config.js';
 
 // Import shared types
 import type { BaseCommandOptions, SessionStats, TaskResult } from './types/index.js';
@@ -29,10 +30,7 @@ function formatDate(isoDate: string): string {
 }
 
 export async function stats(options: StatsOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
   const statsFile = join(chadgiDir, 'chadgi-stats.json');
 
   if (!existsSync(statsFile)) {

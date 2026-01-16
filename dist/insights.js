@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join } from 'path';
 import { colors } from './utils/colors.js';
+import { resolveChadgiDir } from './utils/config.js';
 function formatDuration(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -443,10 +444,7 @@ function printInsights(analysis, chadgiDir) {
     console.log(`==========================================================${colors.reset}`);
 }
 export async function insights(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     // Load data
     let { sessions, tasks } = loadInsightsData(chadgiDir, options.days);
     if (sessions.length === 0 && tasks.length === 0) {

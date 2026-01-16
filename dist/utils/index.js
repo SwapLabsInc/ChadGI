@@ -6,7 +6,7 @@
 // Colors
 export { colors } from './colors.js';
 // Configuration
-export { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, resolveConfigPath, loadConfig, chadgiDirExists, getRepoOwner, getRepoName, } from './config.js';
+export { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, resolveConfigPath, resolveChadgiDir, loadConfig, chadgiDirExists, getRepoOwner, getRepoName, } from './config.js';
 // Errors
 export { ChadGIError, ConfigError, ConfigNotFoundError, NotInitializedError, GitHubError, GitHubAuthError, ProjectNotFoundError, GitError, ValidationError, FileError, BudgetExceededError, TaskTimeoutError, MaxIterationsError, isChadGIError, getErrorCode, getErrorMessage, } from './errors.js';
 // Formatting

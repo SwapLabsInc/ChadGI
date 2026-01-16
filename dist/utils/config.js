@@ -157,4 +157,21 @@ export function getRepoOwner(repo) {
 export function getRepoName(repo) {
     return repo.split('/')[1] || repo;
 }
+/**
+ * Resolve the ChadGI configuration directory path.
+ *
+ * This is a convenience function for commands that only need the directory path.
+ * It consolidates the common pattern of resolving the config directory from
+ * either a custom config path or using the default .chadgi directory.
+ *
+ * @param options - Optional object containing a config path
+ * @param cwd - Current working directory (defaults to process.cwd())
+ * @returns The path to the ChadGI configuration directory
+ */
+export function resolveChadgiDir(options, cwd = process.cwd()) {
+    if (options?.config) {
+        return dirname(resolve(options.config));
+    }
+    return join(cwd, '.chadgi');
+}
 //# sourceMappingURL=config.js.map

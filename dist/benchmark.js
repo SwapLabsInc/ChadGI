@@ -1,9 +1,10 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
-import { join, dirname, resolve, basename } from 'path';
+import { join, basename } from 'path';
 import { execSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import { colors } from './utils/colors.js';
 import { createProgressBar } from './utils/progress.js';
+import { resolveChadgiDir } from './utils/config.js';
 // Standard benchmark tasks for quick mode
 const QUICK_BENCHMARK_TASKS = [
     {
@@ -783,10 +784,7 @@ function printAvailableTasks(quickTasks, fullTasks, customTasks) {
     console.log(`${colors.dim}Use --tasks <id1,id2,...> to run specific tasks${colors.reset}`);
 }
 export async function benchmark(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     // Load custom tasks
     const customTasks = loadCustomTasks(chadgiDir);
     // List mode

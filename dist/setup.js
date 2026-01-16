@@ -1,10 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join, resolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
-import { parseYamlNested } from './utils/config.js';
+import { parseYamlNested, resolveChadgiDir } from './utils/config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 function execCommandSilent(command) {
@@ -175,10 +175,7 @@ function getDefaultValues(repo) {
     };
 }
 export async function setup(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
+    const chadgiDir = resolveChadgiDir(options);
     const configPath = options.config
         ? resolve(options.config)
         : join(chadgiDir, 'chadgi-config.yaml');

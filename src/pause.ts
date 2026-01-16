@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { join } from 'path';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
 import { toISOString, parseDuration } from './utils/formatting.js';
+import { resolveChadgiDir } from './utils/config.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -13,10 +14,7 @@ interface PauseOptions extends BaseCommandOptions {
 }
 
 export async function pause(options: PauseOptions = {}): Promise<void> {
-  const cwd = process.cwd();
-  const chadgiDir = options.config
-    ? dirname(resolve(options.config))
-    : join(cwd, '.chadgi');
+  const chadgiDir = resolveChadgiDir(options);
 
   // Ensure .chadgi directory exists
   if (!existsSync(chadgiDir)) {
