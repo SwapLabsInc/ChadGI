@@ -3,6 +3,7 @@ import { join, dirname, resolve, basename } from 'path';
 import { execSync, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import { colors } from './utils/colors.js';
+import { createProgressBar, ProgressBar } from './utils/progress.js';
 
 // Import shared types
 import type { BaseCommandOptions } from './types/index.js';
@@ -676,7 +677,8 @@ async function runBenchmark(
   tasks: BenchmarkTask[],
   config: BenchmarkConfig,
   mode: 'quick' | 'full' | 'custom',
-  dryRun: boolean = false
+  dryRun: boolean = false,
+  jsonMode: boolean = false
 ): Promise<BenchmarkRunResult> {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
@@ -684,28 +686,47 @@ async function runBenchmark(
   const taskResults: TaskRunResult[] = [];
 
   const iterations = config.iterations || 1;
+  const totalTaskRuns = tasks.length * iterations;
 
-  console.log(`${colors.cyan}Running ${tasks.length} benchmark tasks (${iterations} iteration${iterations > 1 ? 's' : ''})...${colors.reset}\n`);
+  // Create progress bar for benchmark runs
+  const progress = createProgressBar(totalTaskRuns, { label: 'Benchmarking' }, jsonMode);
+  let progressCount = 0;
+
+  if (!jsonMode && !progress) {
+    console.log(`${colors.cyan}Running ${tasks.length} benchmark tasks (${iterations} iteration${iterations > 1 ? 's' : ''})...${colors.reset}\n`);
+  }
 
   for (let iter = 0; iter < iterations; iter++) {
-    if (iterations > 1) {
+    if (!jsonMode && !progress && iterations > 1) {
       console.log(`${colors.bold}Iteration ${iter + 1}/${iterations}${colors.reset}`);
     }
 
     for (const task of tasks) {
-      process.stdout.write(`  ${task.name}... `);
+      progressCount++;
+      const iterLabel = iterations > 1 ? ` [${iter + 1}/${iterations}]` : '';
+      progress?.update(progressCount, `${task.name}${iterLabel}`);
+
+      if (!jsonMode && !progress) {
+        process.stdout.write(`  ${task.name}... `);
+      }
+
       const result = await runBenchmarkTask(task, config, dryRun);
       taskResults.push(result);
 
-      if (result.status === 'success') {
-        console.log(`${colors.green}OK${colors.reset} (${formatDuration(result.durationSecs)})`);
-      } else if (result.status === 'timeout') {
-        console.log(`${colors.yellow}TIMEOUT${colors.reset}`);
-      } else {
-        console.log(`${colors.red}FAILED${colors.reset}`);
+      if (!jsonMode && !progress) {
+        if (result.status === 'success') {
+          console.log(`${colors.green}OK${colors.reset} (${formatDuration(result.durationSecs)})`);
+        } else if (result.status === 'timeout') {
+          console.log(`${colors.yellow}TIMEOUT${colors.reset}`);
+        } else {
+          console.log(`${colors.red}FAILED${colors.reset}`);
+        }
       }
     }
   }
+
+  // Complete the progress bar
+  progress?.complete();
 
   const endTime = Date.now();
   const totalDurationSecs = (endTime - startTime) / 1000;
@@ -1013,7 +1034,7 @@ export async function benchmark(options: BenchmarkOptions = {}): Promise<void> {
   }
   console.log('');
 
-  const result = await runBenchmark(tasksToRun, config, mode, options.dryRun || false);
+  const result = await runBenchmark(tasksToRun, config, mode, options.dryRun || false, options.json || false);
 
   // Load history for comparison
   const history = loadBenchmarkHistory(chadgiDir);

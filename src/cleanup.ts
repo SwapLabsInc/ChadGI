@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { colors } from './utils/colors.js';
 import { parseYamlNested } from './utils/config.js';
+import { createProgressBar } from './utils/progress.js';
 
 export interface CleanupOptions {
   config?: string;
@@ -465,15 +466,22 @@ export async function cleanup(options: CleanupOptions = {}): Promise<void> {
     console.log('');
   }
 
-  // Perform cleanup
+  // Perform cleanup with progress bar
+  const progress = createProgressBar(totalItems, { label: 'Cleaning' }, options.json);
+  let progressCount = 0;
+
   // Clean branches
   if (cleanBranches) {
     for (const branch of orphanedBranches.local) {
+      progressCount++;
+      progress?.update(progressCount, `local: ${branch}`);
       if (deleteLocalBranch(branch, dryRun)) {
         result.branches.local.push(branch);
       }
     }
     for (const branch of orphanedBranches.remote) {
+      progressCount++;
+      progress?.update(progressCount, `remote: ${branch}`);
       if (deleteRemoteBranch(branch, dryRun)) {
         result.branches.remote.push(branch);
       }
@@ -483,6 +491,8 @@ export async function cleanup(options: CleanupOptions = {}): Promise<void> {
   // Clean diagnostics
   if (cleanDiagnostics) {
     for (const diag of oldDiagnostics) {
+      progressCount++;
+      progress?.update(progressCount, `diagnostic: ${diag}`);
       if (deleteDiagnostic(chadgiDir, diag, dryRun)) {
         result.diagnostics.push(diag);
       }
@@ -492,11 +502,16 @@ export async function cleanup(options: CleanupOptions = {}): Promise<void> {
   // Clean logs
   if (cleanLogs) {
     for (const log of oldLogs) {
+      progressCount++;
+      progress?.update(progressCount, `log: ${log}`);
       if (deleteLogFile(chadgiDir, configContent, log, dryRun)) {
         result.logs.push(log);
       }
     }
   }
+
+  // Complete the progress bar
+  progress?.complete();
 
   // Calculate summary
   result.summary.branchesDeleted = result.branches.local.length + result.branches.remote.length;

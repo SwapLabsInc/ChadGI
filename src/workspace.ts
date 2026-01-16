@@ -4,6 +4,7 @@ import { execSync, spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
+import { createProgressBar, createSpinner } from './utils/progress.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -769,7 +770,7 @@ export async function workspaceStatus(options: WorkspaceStatusOptions = {}): Pro
 
   const repos = Object.entries(config.repos).filter(([, repoConfig]) => repoConfig.enabled !== false);
 
-  // Gather tasks from all repos
+  // Gather tasks from all repos with progress
   const allTasks: Array<{
     repo: string;
     issueNumber: number;
@@ -778,7 +779,14 @@ export async function workspaceStatus(options: WorkspaceStatusOptions = {}): Pro
     category?: string;
   }> = [];
 
+  // Create progress bar for fetching tasks from repos
+  const progress = createProgressBar(repos.length, { label: 'Fetching tasks' }, options.json);
+  let progressCount = 0;
+
   for (const [repoName, repoConfig] of repos) {
+    progressCount++;
+    progress?.update(progressCount, repoName);
+
     const validation = validateRepoPath(repoConfig.path);
     if (!validation.valid) continue;
 
@@ -790,6 +798,9 @@ export async function workspaceStatus(options: WorkspaceStatusOptions = {}): Pro
       });
     }
   }
+
+  // Complete the progress bar
+  progress?.complete();
 
   // Sort by priority
   const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
