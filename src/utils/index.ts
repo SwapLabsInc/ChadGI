@@ -139,3 +139,15 @@ export {
   maskSensitiveKeys,
   createMaskedLogger,
 } from './secrets.js';
+
+// Validation
+export {
+  NUMERIC_CONSTRAINTS,
+  validateNumeric,
+  createNumericParser,
+  validateNumericOptions,
+  formatConstraintBounds,
+  type NumericConstraint,
+  type ConstraintName,
+  type ValidationResult,
+} from './validation.js';
