@@ -837,6 +837,18 @@ load_config() {
     DEPENDENCY_CACHE_TIMEOUT=$(parse_yaml_nested_merged "dependencies" "cache_timeout" "${MERGED_CONFIG_FILES[@]}")
     DEPENDENCY_CACHE_TIMEOUT="${DEPENDENCY_CACHE_TIMEOUT:-300}"
 
+    # Budget settings - protect against runaway costs
+    BUDGET_PER_TASK_LIMIT=$(parse_yaml_nested_merged "budget" "per_task_limit" "${MERGED_CONFIG_FILES[@]}")
+    BUDGET_PER_TASK_LIMIT="${BUDGET_PER_TASK_LIMIT:-}"
+    BUDGET_PER_SESSION_LIMIT=$(parse_yaml_nested_merged "budget" "per_session_limit" "${MERGED_CONFIG_FILES[@]}")
+    BUDGET_PER_SESSION_LIMIT="${BUDGET_PER_SESSION_LIMIT:-}"
+    BUDGET_ON_TASK_EXCEEDED=$(parse_yaml_nested_merged "budget" "on_task_budget_exceeded" "${MERGED_CONFIG_FILES[@]}")
+    BUDGET_ON_TASK_EXCEEDED="${BUDGET_ON_TASK_EXCEEDED:-skip}"
+    BUDGET_ON_SESSION_EXCEEDED=$(parse_yaml_nested_merged "budget" "on_session_budget_exceeded" "${MERGED_CONFIG_FILES[@]}")
+    BUDGET_ON_SESSION_EXCEEDED="${BUDGET_ON_SESSION_EXCEEDED:-stop}"
+    BUDGET_WARNING_THRESHOLD=$(parse_yaml_nested_merged "budget" "warning_threshold" "${MERGED_CONFIG_FILES[@]}")
+    BUDGET_WARNING_THRESHOLD="${BUDGET_WARNING_THRESHOLD:-80}"
+
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
     [[ "$GENERATE_TEMPLATE" != /* ]] && GENERATE_TEMPLATE="$CHADGI_DIR/$GENERATE_TEMPLATE"
@@ -1857,6 +1869,36 @@ notify_session_ended() {
     notify_event "session_ended" "$TITLE_TEXT" "$MESSAGE" "#95a5a6" "10070709" "$EVENT_DATA"
 }
 
+notify_budget_warning() {
+    local BUDGET_TYPE=$1      # "task" or "session"
+    local CURRENT_COST=$2
+    local LIMIT=$3
+    local PERCENTAGE=$4
+    local ISSUE_NUM=${5:-""}
+
+    local TITLE_TEXT="Budget Warning: ${BUDGET_TYPE^} approaching limit"
+    local MESSAGE="Current cost: \$${CURRENT_COST}\nLimit: \$${LIMIT}\nUsage: ${PERCENTAGE}%"
+    [ -n "$ISSUE_NUM" ] && MESSAGE="${MESSAGE}\nTask: #${ISSUE_NUM}"
+    local EVENT_DATA="{\"budget_type\": \"${BUDGET_TYPE}\", \"current_cost\": ${CURRENT_COST}, \"limit\": ${LIMIT}, \"percentage\": ${PERCENTAGE}, \"issue_number\": ${ISSUE_NUM:-null}}"
+
+    notify_event "budget_warning" "$TITLE_TEXT" "$MESSAGE" "#f39c12" "15844367" "$EVENT_DATA"
+}
+
+notify_budget_exceeded() {
+    local BUDGET_TYPE=$1      # "task" or "session"
+    local CURRENT_COST=$2
+    local LIMIT=$3
+    local ACTION=$4           # "skip", "fail", "stop", "warn"
+    local ISSUE_NUM=${5:-""}
+
+    local TITLE_TEXT="Budget Exceeded: ${BUDGET_TYPE^} limit reached"
+    local MESSAGE="Cost: \$${CURRENT_COST}\nLimit: \$${LIMIT}\nAction: ${ACTION}"
+    [ -n "$ISSUE_NUM" ] && MESSAGE="${MESSAGE}\nTask: #${ISSUE_NUM}"
+    local EVENT_DATA="{\"budget_type\": \"${BUDGET_TYPE}\", \"current_cost\": ${CURRENT_COST}, \"limit\": ${LIMIT}, \"action\": \"${ACTION}\", \"issue_number\": ${ISSUE_NUM:-null}}"
+
+    notify_event "budget_exceeded" "$TITLE_TEXT" "$MESSAGE" "#e74c3c" "15158332" "$EVENT_DATA"
+}
+
 # Test webhook connectivity
 # Usage: test_webhook_connectivity
 # Returns 0 if at least one webhook works, 1 if all fail or none configured
@@ -1915,6 +1957,223 @@ test_webhook_connectivity() {
     else
         return 1
     fi
+}
+
+#------------------------------------------------------------------------------
+# Budget Management
+#------------------------------------------------------------------------------
+
+# State variables for budget warning tracking (to avoid repeated warnings)
+TASK_BUDGET_WARNING_SENT=false
+SESSION_BUDGET_WARNING_SENT=false
+
+# Check if budget limits are enabled (non-empty values)
+is_budget_enabled() {
+    [ -n "$BUDGET_PER_TASK_LIMIT" ] || [ -n "$BUDGET_PER_SESSION_LIMIT" ]
+}
+
+is_task_budget_enabled() {
+    [ -n "$BUDGET_PER_TASK_LIMIT" ]
+}
+
+is_session_budget_enabled() {
+    [ -n "$BUDGET_PER_SESSION_LIMIT" ]
+}
+
+# Calculate percentage of budget used
+# Usage: calculate_budget_percentage <current> <limit>
+# Returns: integer percentage (0-100+)
+calculate_budget_percentage() {
+    local CURRENT=$1
+    local LIMIT=$2
+
+    if [ -z "$LIMIT" ] || [ "$LIMIT" = "0" ]; then
+        echo "0"
+        return
+    fi
+
+    # Use bc for floating point math, multiply by 100 and truncate to integer
+    local PERCENTAGE=$(echo "scale=0; ($CURRENT * 100) / $LIMIT" | bc 2>/dev/null || echo "0")
+    echo "$PERCENTAGE"
+}
+
+# Check if task budget warning threshold is reached
+# Usage: check_task_budget_warning <current_task_cost>
+# Returns: 0 if warning should be issued, 1 otherwise
+check_task_budget_warning() {
+    local CURRENT_COST=$1
+
+    if ! is_task_budget_enabled; then
+        return 1
+    fi
+
+    if [ "$TASK_BUDGET_WARNING_SENT" = "true" ]; then
+        return 1
+    fi
+
+    local PERCENTAGE=$(calculate_budget_percentage "$CURRENT_COST" "$BUDGET_PER_TASK_LIMIT")
+
+    if [ "$PERCENTAGE" -ge "$BUDGET_WARNING_THRESHOLD" ] && [ "$PERCENTAGE" -lt 100 ]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Check if session budget warning threshold is reached
+# Usage: check_session_budget_warning <total_session_cost>
+# Returns: 0 if warning should be issued, 1 otherwise
+check_session_budget_warning() {
+    local CURRENT_COST=$1
+
+    if ! is_session_budget_enabled; then
+        return 1
+    fi
+
+    if [ "$SESSION_BUDGET_WARNING_SENT" = "true" ]; then
+        return 1
+    fi
+
+    local PERCENTAGE=$(calculate_budget_percentage "$CURRENT_COST" "$BUDGET_PER_SESSION_LIMIT")
+
+    if [ "$PERCENTAGE" -ge "$BUDGET_WARNING_THRESHOLD" ] && [ "$PERCENTAGE" -lt 100 ]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Check if task budget is exceeded
+# Usage: check_task_budget_exceeded <current_task_cost>
+# Returns: 0 if budget exceeded, 1 otherwise
+check_task_budget_exceeded() {
+    local CURRENT_COST=$1
+
+    if ! is_task_budget_enabled; then
+        return 1
+    fi
+
+    # Compare using bc for floating point
+    local EXCEEDED=$(echo "$CURRENT_COST >= $BUDGET_PER_TASK_LIMIT" | bc 2>/dev/null || echo "0")
+
+    [ "$EXCEEDED" = "1" ]
+}
+
+# Check if session budget is exceeded
+# Usage: check_session_budget_exceeded <total_session_cost>
+# Returns: 0 if budget exceeded, 1 otherwise
+check_session_budget_exceeded() {
+    local CURRENT_COST=$1
+
+    if ! is_session_budget_enabled; then
+        return 1
+    fi
+
+    # Compare using bc for floating point
+    local EXCEEDED=$(echo "$CURRENT_COST >= $BUDGET_PER_SESSION_LIMIT" | bc 2>/dev/null || echo "0")
+
+    [ "$EXCEEDED" = "1" ]
+}
+
+# Handle task budget exceeded
+# Usage: handle_task_budget_exceeded <current_task_cost> <issue_number>
+# Returns: 0 if task should be skipped/failed, 1 if continue (warn mode)
+handle_task_budget_exceeded() {
+    local CURRENT_COST=$1
+    local ISSUE_NUMBER=$2
+
+    log_error "Task budget exceeded: \$${CURRENT_COST} >= \$${BUDGET_PER_TASK_LIMIT}"
+    notify_budget_exceeded "task" "$CURRENT_COST" "$BUDGET_PER_TASK_LIMIT" "$BUDGET_ON_TASK_EXCEEDED" "$ISSUE_NUMBER"
+
+    case "$BUDGET_ON_TASK_EXCEEDED" in
+        "skip")
+            log_warn "Action: Skipping task #${ISSUE_NUMBER} (on_task_budget_exceeded: skip)"
+            return 0
+            ;;
+        "fail")
+            log_warn "Action: Failing task #${ISSUE_NUMBER} (on_task_budget_exceeded: fail)"
+            return 0
+            ;;
+        "warn")
+            log_warn "Action: Continuing despite budget (on_task_budget_exceeded: warn)"
+            return 1
+            ;;
+        *)
+            log_warn "Unknown action '${BUDGET_ON_TASK_EXCEEDED}', defaulting to skip"
+            return 0
+            ;;
+    esac
+}
+
+# Handle session budget exceeded
+# Usage: handle_session_budget_exceeded <total_session_cost>
+# Returns: 0 if session should stop, 1 if continue (warn mode)
+handle_session_budget_exceeded() {
+    local CURRENT_COST=$1
+
+    log_error "Session budget exceeded: \$${CURRENT_COST} >= \$${BUDGET_PER_SESSION_LIMIT}"
+    notify_budget_exceeded "session" "$CURRENT_COST" "$BUDGET_PER_SESSION_LIMIT" "$BUDGET_ON_SESSION_EXCEEDED" ""
+
+    case "$BUDGET_ON_SESSION_EXCEEDED" in
+        "stop")
+            log_warn "Action: Stopping session (on_session_budget_exceeded: stop)"
+            return 0
+            ;;
+        "warn")
+            log_warn "Action: Continuing despite budget (on_session_budget_exceeded: warn)"
+            return 1
+            ;;
+        *)
+            log_warn "Unknown action '${BUDGET_ON_SESSION_EXCEEDED}', defaulting to stop"
+            return 0
+            ;;
+    esac
+}
+
+# Check budgets and emit warnings/actions
+# Called after cost is updated from Claude output
+# Usage: check_budgets_and_act <task_cost> <session_cost> <issue_number>
+# Returns: 0 = continue, 1 = skip task, 2 = stop session
+check_budgets_and_act() {
+    local TASK_COST=$1
+    local SESSION_COST=$2
+    local ISSUE_NUMBER=$3
+
+    # Skip budget checks in dry-run mode
+    if [ "$DRY_RUN" = "true" ]; then
+        return 0
+    fi
+
+    # Check session budget first (higher priority)
+    if check_session_budget_exceeded "$SESSION_COST"; then
+        if handle_session_budget_exceeded "$SESSION_COST"; then
+            return 2  # Stop session
+        fi
+    elif check_session_budget_warning "$SESSION_COST"; then
+        local PERCENTAGE=$(calculate_budget_percentage "$SESSION_COST" "$BUDGET_PER_SESSION_LIMIT")
+        log_warn "Session budget warning: \$${SESSION_COST} (${PERCENTAGE}% of \$${BUDGET_PER_SESSION_LIMIT})"
+        notify_budget_warning "session" "$SESSION_COST" "$BUDGET_PER_SESSION_LIMIT" "$PERCENTAGE" ""
+        SESSION_BUDGET_WARNING_SENT=true
+    fi
+
+    # Check task budget
+    if check_task_budget_exceeded "$TASK_COST"; then
+        if handle_task_budget_exceeded "$TASK_COST" "$ISSUE_NUMBER"; then
+            return 1  # Skip/fail task
+        fi
+    elif check_task_budget_warning "$TASK_COST"; then
+        local PERCENTAGE=$(calculate_budget_percentage "$TASK_COST" "$BUDGET_PER_TASK_LIMIT")
+        log_warn "Task budget warning: \$${TASK_COST} (${PERCENTAGE}% of \$${BUDGET_PER_TASK_LIMIT})"
+        notify_budget_warning "task" "$TASK_COST" "$BUDGET_PER_TASK_LIMIT" "$PERCENTAGE" "$ISSUE_NUMBER"
+        TASK_BUDGET_WARNING_SENT=true
+    fi
+
+    return 0
+}
+
+# Reset task budget tracking for new task
+reset_task_budget_state() {
+    TASK_BUDGET_WARNING_SENT=false
 }
 
 #------------------------------------------------------------------------------
@@ -2250,6 +2509,8 @@ TASK_RETRY_COUNT=0
 TASK_ERROR_RECOVERY_TIME=0
 TASK_COST=0
 TASK_FAILURE_PHASE=""
+TASK_BUDGET_EXCEEDED=false
+SESSION_BUDGET_EXCEEDED=false
 
 # Reset task metrics for a new task
 reset_task_metrics() {
@@ -2264,6 +2525,9 @@ reset_task_metrics() {
     TASK_ERROR_RECOVERY_TIME=0
     TASK_COST=0
     TASK_FAILURE_PHASE=""
+    TASK_BUDGET_EXCEEDED=false
+    # Reset task-level budget warning state
+    reset_task_budget_state
 }
 
 # Save detailed task metrics to chadgi-metrics.json
@@ -3262,6 +3526,24 @@ If you're still implementing features, continue working. Don't signal until ALL 
         fi
 
         if [ "$IMPL_COMPLETE" = "false" ]; then
+            # Check budget limits before continuing to next iteration
+            local BUDGET_RESULT
+            check_budgets_and_act "${TASK_COST:-0}" "${TOTAL_COST:-0}" "$ISSUE_NUMBER"
+            BUDGET_RESULT=$?
+
+            if [ $BUDGET_RESULT -eq 2 ]; then
+                # Session budget exceeded - stop immediately
+                log_error "Stopping task due to session budget limit"
+                TASK_BUDGET_EXCEEDED=true
+                SESSION_BUDGET_EXCEEDED=true
+                break
+            elif [ $BUDGET_RESULT -eq 1 ]; then
+                # Task budget exceeded - skip this task
+                log_error "Stopping task due to task budget limit"
+                TASK_BUDGET_EXCEEDED=true
+                break
+            fi
+
             ITERATION=$((ITERATION + 1))
             if [ $ITERATION -le $MAX_ITERATIONS ]; then
                 # Calculate retry delay based on backoff strategy
@@ -3283,7 +3565,15 @@ If you're still implementing features, continue working. Don't signal until ALL 
         # Track phase 1 failure for metrics
         TASK_FAILURE_PHASE="phase1"
 
-        if [ "$TASK_TIMEOUT_TRIGGERED" = "true" ]; then
+        if [ "$TASK_BUDGET_EXCEEDED" = "true" ]; then
+            if [ "$SESSION_BUDGET_EXCEEDED" = "true" ]; then
+                log_error "Task stopped due to session budget exceeded"
+                return 125  # Custom exit code for session budget exceeded
+            else
+                log_error "Task stopped due to task budget exceeded"
+                return 126  # Custom exit code for task budget exceeded
+            fi
+        elif [ "$TASK_TIMEOUT_TRIGGERED" = "true" ]; then
             log_error "Task timed out after ${TASK_TIMEOUT} minutes"
             return 124  # Standard timeout exit code
         else
@@ -4168,6 +4458,18 @@ else
 fi
 log_info "Log Level: $(get_log_level_name $CURRENT_LOG_LEVEL)"
 log_info "Log File: $LOG_FILE"
+# Show budget limits if configured
+if is_budget_enabled; then
+    if is_task_budget_enabled; then
+        log_info "Budget (per-task): \$${BUDGET_PER_TASK_LIMIT} (action: ${BUDGET_ON_TASK_EXCEEDED})"
+    fi
+    if is_session_budget_enabled; then
+        log_info "Budget (per-session): \$${BUDGET_PER_SESSION_LIMIT} (action: ${BUDGET_ON_SESSION_EXCEEDED})"
+    fi
+    log_info "Budget warning at: ${BUDGET_WARNING_THRESHOLD}%"
+else
+    log_info "Budget limits: disabled"
+fi
 
 echo -e "${YELLOW}Press Ctrl+C at any time to stop${NC}\n"
 
@@ -4434,6 +4736,26 @@ PROMPT_EOF
         # Send task failed notification
         notify_task_failed "$ISSUE_NUMBER" "$ISSUE_TITLE" "$FAILURE_REASON" "$FAILURE_DETAILS"
 
+        # Check if session budget was exceeded - need to stop the entire session
+        if [ "$SESSION_BUDGET_EXCEEDED" = "true" ]; then
+            log_error "Session budget exceeded - stopping ChadGI"
+
+            # Display and save session statistics before exit
+            print_session_summary
+            save_session_stats
+
+            # Send session ended notification
+            local EXIT_SESSION_END_EPOCH=$(date +%s)
+            local EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
+            local EXIT_FAILED_COUNT=0
+            for TASK in $FAILED_TASKS; do
+                EXIT_FAILED_COUNT=$((EXIT_FAILED_COUNT + 1))
+            done
+            notify_session_ended "$ISSUES_COMPLETED" "$EXIT_FAILED_COUNT" "$EXIT_SESSION_DURATION" "${TOTAL_COST:-0}"
+
+            exit 125  # Custom exit code for session budget exceeded
+        fi
+
         # Handle failed task based on config (same behavior for timeout and max_iterations)
         case "$ON_MAX_ITERATIONS" in
             "rollback")
@@ -4500,6 +4822,29 @@ PROMPT_EOF
         echo -e "${PURPLE}${CHAD_TAGLINE}${NC}"
     fi
     [ -n "$TOTAL_COST" ] && [ "$TOTAL_COST" != "0" ] && echo -e "${DIM}Total session cost: \$${TOTAL_COST}${NC}"
+
+    # Check session budget after completing task
+    # This catches cases where a task completes successfully but pushes us over budget
+    if check_session_budget_exceeded "${TOTAL_COST:-0}"; then
+        if handle_session_budget_exceeded "${TOTAL_COST:-0}"; then
+            log_error "Session budget exceeded after task completion - stopping ChadGI"
+
+            # Display and save session statistics before exit
+            print_session_summary
+            save_session_stats
+
+            # Send session ended notification
+            local EXIT_SESSION_END_EPOCH=$(date +%s)
+            local EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
+            local EXIT_FAILED_COUNT=0
+            for TASK in $FAILED_TASKS; do
+                EXIT_FAILED_COUNT=$((EXIT_FAILED_COUNT + 1))
+            done
+            notify_session_ended "$ISSUES_COMPLETED" "$EXIT_FAILED_COUNT" "$EXIT_SESSION_DURATION" "${TOTAL_COST:-0}"
+
+            exit 125  # Custom exit code for session budget exceeded
+        fi
+    fi
 
     # Check for pause signal after task completion (before sleeping)
     if [ -f "$PAUSE_LOCK_FILE" ]; then

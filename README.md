@@ -287,7 +287,59 @@ output:
   show_tool_details: true
   show_cost: true
   truncate_length: 60
+
+# Budget limits - protect against runaway costs
+budget:
+  per_task_limit: 2.00       # USD - skip task if exceeded
+  per_session_limit: 20.00   # USD - stop session if exceeded
+  on_task_budget_exceeded: skip   # skip | fail | warn
+  on_session_budget_exceeded: stop  # stop | warn
+  warning_threshold: 80      # Percentage at which to warn
 ```
+
+### Budget Limits
+
+ChadGI can automatically stop when API costs exceed configured limits, protecting against runaway expenses:
+
+```yaml
+budget:
+  # Maximum cost (USD) for a single task before action is taken
+  per_task_limit: 2.00
+
+  # Maximum total cost (USD) for the entire ChadGI session
+  per_session_limit: 20.00
+
+  # What to do when per-task budget is exceeded
+  # Options: skip (move to next task), fail (treat as failure), warn (log warning but continue)
+  on_task_budget_exceeded: skip
+
+  # What to do when per-session budget is exceeded
+  # Options: stop (end session gracefully), warn (log warning but continue)
+  on_session_budget_exceeded: stop
+
+  # Percentage threshold for warning (0-100) - warns when approaching limit
+  warning_threshold: 80
+```
+
+**Behavior:**
+
+| Limit Type | Actions | Description |
+|------------|---------|-------------|
+| `per_task_limit` | `skip` | Skips the current task and moves to the next one |
+| | `fail` | Treats the task as failed (follows `on_max_iterations` behavior) |
+| | `warn` | Logs a warning but continues executing the task |
+| `per_session_limit` | `stop` | Gracefully stops the entire ChadGI session |
+| | `warn` | Logs a warning but continues processing tasks |
+
+**Warning Threshold:**
+
+When cost reaches 80% (default) of any limit, ChadGI logs a warning and sends a webhook notification (if configured). This gives you early notice before limits are hit.
+
+**Notes:**
+- Budget limits are checked after each Claude CLI invocation completes
+- Costs are accumulated from Claude's JSON output (`total_cost_usd` field)
+- Budget checks are skipped in `--dry-run` mode
+- Set limit values to empty (`per_task_limit: `) to disable that specific limit
 
 ### Template Variables
 
