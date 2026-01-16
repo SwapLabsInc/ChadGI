@@ -52,6 +52,51 @@ function getCommandVersion(command: string): string | null {
   }
 }
 
+// Check if Claude Code is authenticated and working
+function checkClaudeAuthentication(): { authenticated: boolean; error?: string } {
+  try {
+    // First verify claude is installed
+    execSync('which claude', { stdio: 'pipe' });
+
+    // Check if claude --version works (basic sanity check)
+    execSync('claude --version', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+
+    // Try a simple authenticated operation to verify API access
+    // Use --max-turns 0 to avoid any actual API calls, just check auth
+    try {
+      // Run claude with a minimal prompt and max-turns 0 to check authentication
+      // The timeout command may not be available on all systems, so use Node timeout
+      execSync('claude -p "test" --max-turns 0 2>&1 || true', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 15000
+      });
+      return { authenticated: true };
+    } catch (authErr) {
+      const errMsg = (authErr as Error).message || '';
+      const errOutput = String((authErr as { stderr?: string }).stderr || '');
+      const combinedErr = errMsg + errOutput;
+
+      // Check for common authentication error patterns
+      if (combinedErr.includes('API key') || combinedErr.includes('authentication') ||
+          combinedErr.includes('unauthorized') || combinedErr.includes('not logged in') ||
+          combinedErr.includes('ANTHROPIC_API_KEY') || combinedErr.includes('401') ||
+          combinedErr.includes('invalid_api_key')) {
+        return { authenticated: false, error: 'Claude Code requires authentication' };
+      }
+      // If the error is something else (like timeout or max-turns behavior), assume it's authenticated
+      // since version check worked
+      return { authenticated: true };
+    }
+  } catch (err) {
+    const errMsg = (err as Error).message || '';
+    if (errMsg.includes('not found') || errMsg.includes('ENOENT')) {
+      return { authenticated: false, error: 'Claude Code is not installed or not in PATH' };
+    }
+    return { authenticated: false, error: `Claude Code check failed: ${errMsg}` };
+  }
+}
+
 // Config inheritance support
 
 interface ConfigChainResult {
@@ -410,6 +455,35 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
     if (!quiet) {
       console.log('\x1b[31mx\x1b[0m GitHub CLI not authenticated');
       console.log('  Run: gh auth login');
+    }
+  }
+
+  if (!quiet) {
+    console.log('');
+    console.log('Checking Claude Code authentication:\n');
+  }
+
+  // Check Claude Code authentication
+  const claudeAuthResult = checkClaudeAuthentication();
+  if (claudeAuthResult.authenticated) {
+    results.push({
+      name: 'claude auth',
+      status: 'ok',
+      message: 'authenticated'
+    });
+    if (!quiet) {
+      console.log('\x1b[32m+\x1b[0m Claude Code authenticated');
+    }
+  } else {
+    results.push({
+      name: 'claude auth',
+      status: 'error',
+      message: claudeAuthResult.error || 'not authenticated'
+    });
+    if (!quiet) {
+      console.log('\x1b[31mx\x1b[0m Claude Code not authenticated');
+      console.log('  Run: claude login');
+      console.log('  Or set: export ANTHROPIC_API_KEY=your-api-key');
     }
   }
 

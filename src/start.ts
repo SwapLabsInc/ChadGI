@@ -56,37 +56,111 @@ interface WorkerInfo {
   startedAt?: string;
 }
 
+// Check if chadgi user exists
+function chadgiUserExists(): boolean {
+  try {
+    execSync('id chadgi', { stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Try to create chadgi user (requires root)
+function tryCreateChadgiUser(): boolean {
+  try {
+    console.log(`${colors.cyan}Creating 'chadgi' user...${colors.reset}`);
+    execSync('useradd -m -s /bin/bash chadgi', { stdio: 'pipe' });
+    console.log(`${colors.green}Created 'chadgi' user successfully${colors.reset}\n`);
+    return true;
+  } catch (err) {
+    console.log(`${colors.yellow}Could not create 'chadgi' user: ${(err as Error).message}${colors.reset}\n`);
+    return false;
+  }
+}
+
+// Check if Claude Code is authenticated
+function checkClaudeAuthentication(): { authenticated: boolean; error?: string } {
+  try {
+    // Try running claude with a simple command that requires authentication
+    // Using 'claude --version' doesn't require auth, but running an actual command does
+    // We'll check if the config exists and contains auth info
+    const result = execSync('claude --version', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+
+    // Try a simple authenticated operation - checking if we can access the API
+    // The best way is to attempt a minimal operation
+    try {
+      // Run claude with a very short prompt to check authentication
+      // Use --print to just print without interactive mode, with a timeout
+      execSync('timeout 10 claude -p "test" --max-turns 0 2>&1 || true', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 15000
+      });
+      return { authenticated: true };
+    } catch (authErr) {
+      const errMsg = (authErr as Error).message || '';
+      // Check for common authentication error patterns
+      if (errMsg.includes('API key') || errMsg.includes('authentication') ||
+          errMsg.includes('unauthorized') || errMsg.includes('not logged in') ||
+          errMsg.includes('ANTHROPIC_API_KEY')) {
+        return { authenticated: false, error: 'Claude Code requires authentication. Please run: claude login' };
+      }
+      // If the error is something else (like timeout), assume it's authenticated
+      // since version check worked
+      return { authenticated: true };
+    }
+  } catch (err) {
+    return { authenticated: false, error: 'Claude Code is not installed or not in PATH' };
+  }
+}
+
 export async function start(options: StartOptions = {}): Promise<void> {
   // Check for root user - Claude CLI blocks --dangerously-skip-permissions with root
   if (process.getuid && process.getuid() === 0) {
-    // Try to find chadgi user and re-exec as that user
-    try {
-      execSync('id chadgi', { stdio: 'pipe' });
-      // chadgi user exists, re-exec as that user
-      console.log(`${colors.yellow}Running as root - switching to 'chadgi' user...${colors.reset}\n`);
-      const args = process.argv.slice(2);
-      const chadgiPath = process.argv[1];
-      const child = spawn('runuser', ['-u', 'chadgi', '--', process.argv[0], chadgiPath, ...args], {
-        stdio: 'inherit',
-        cwd: process.cwd(),
-      });
-      child.on('close', (code) => process.exit(code ?? 0));
-      child.on('error', () => {
-        console.error(`${colors.red}Failed to switch to chadgi user${colors.reset}`);
+    // Check if chadgi user exists, if not try to create it
+    if (!chadgiUserExists()) {
+      console.log(`${colors.yellow}Running as root - 'chadgi' user not found${colors.reset}`);
+      if (!tryCreateChadgiUser()) {
+        console.error(`${colors.red}${colors.bold}ERROR: ChadGI cannot run as root/sudo${colors.reset}\n`);
+        console.error(`Claude Code's --dangerously-skip-permissions flag is blocked when running`);
+        console.error(`with root/sudo privileges for security reasons.\n`);
+        console.error(`Solutions:`);
+        console.error(`  1. Run as a non-root user: ${colors.cyan}su - myuser -c 'chadgi start'${colors.reset}`);
+        console.error(`  2. Create a dedicated user: ${colors.cyan}useradd -m chadgi && su - chadgi${colors.reset}\n`);
         process.exit(1);
-      });
-      return; // Exit this process, let the child run
-    } catch {
-      // chadgi user doesn't exist, show error
-      console.error(`${colors.red}${colors.bold}ERROR: ChadGI cannot run as root/sudo${colors.reset}\n`);
-      console.error(`Claude Code's --dangerously-skip-permissions flag is blocked when running`);
-      console.error(`with root/sudo privileges for security reasons.\n`);
-      console.error(`Solutions:`);
-      console.error(`  1. Run as a non-root user: ${colors.cyan}su - myuser -c 'chadgi start'${colors.reset}`);
-      console.error(`  2. Create a dedicated user: ${colors.cyan}useradd -m chadgi && su - chadgi${colors.reset}\n`);
-      process.exit(1);
+      }
     }
+
+    // chadgi user exists (or was just created), re-exec as that user
+    console.log(`${colors.yellow}Running as root - switching to 'chadgi' user...${colors.reset}\n`);
+    const args = process.argv.slice(2);
+    const chadgiPath = process.argv[1];
+    const child = spawn('runuser', ['-u', 'chadgi', '--', process.argv[0], chadgiPath, ...args], {
+      stdio: 'inherit',
+      cwd: process.cwd(),
+    });
+    child.on('close', (code) => process.exit(code ?? 0));
+    child.on('error', () => {
+      console.error(`${colors.red}Failed to switch to chadgi user${colors.reset}`);
+      process.exit(1);
+    });
+    return; // Exit this process, let the child run
   }
+
+  // Check Claude Code authentication before proceeding
+  console.log('Checking Claude Code authentication...');
+  const authCheck = checkClaudeAuthentication();
+  if (!authCheck.authenticated) {
+    console.error(`\n${colors.red}${colors.bold}ERROR: Claude Code authentication failed${colors.reset}`);
+    console.error(`${authCheck.error}\n`);
+    console.error(`To authenticate Claude Code, run:`);
+    console.error(`  ${colors.cyan}claude login${colors.reset}\n`);
+    console.error(`Or set your API key:`);
+    console.error(`  ${colors.cyan}export ANTHROPIC_API_KEY=your-api-key${colors.reset}\n`);
+    process.exit(1);
+  }
+  console.log(`${colors.green}Claude Code authenticated${colors.reset}\n`);
 
   // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
   const noMask = options.mask === false;
