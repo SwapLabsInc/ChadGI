@@ -11,12 +11,6 @@
       }
     ],
     [
-      "@semantic-release/exec",
-      {
-        "publishCmd": "npm publish --provenance --access public"
-      }
-    ],
-    [
       "@semantic-release/git",
       {
         "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
