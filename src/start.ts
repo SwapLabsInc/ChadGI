@@ -11,6 +11,7 @@ interface StartOptions {
   config?: string;
   dryRun?: boolean;
   timeout?: number;
+  debug?: boolean;
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
@@ -19,6 +20,7 @@ export async function start(options: StartOptions = {}): Promise<void> {
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;
   const dryRun = options.dryRun ?? false;
   const timeout = options.timeout;
+  const debugMode = options.debug ?? false;
 
   if (dryRun) {
     console.log('Starting ChadGI in DRY-RUN mode...\n');
@@ -36,6 +38,10 @@ export async function start(options: StartOptions = {}): Promise<void> {
     } else {
       console.log(`Task timeout: ${timeout} minutes (via --timeout flag)\n`);
     }
+  }
+
+  if (debugMode) {
+    console.log('Debug mode: ENABLED (log level set to DEBUG)\n');
   }
 
   // Validate configuration first
@@ -65,7 +71,8 @@ export async function start(options: StartOptions = {}): Promise<void> {
     ...process.env,
     CHADGI_DIR: chadgiDir,
     CONFIG_FILE: configPath,
-    DRY_RUN: dryRun ? 'true' : 'false'
+    DRY_RUN: dryRun ? 'true' : 'false',
+    DEBUG_MODE: debugMode ? 'true' : 'false'
   };
 
   // Add timeout override if specified via CLI

@@ -70,7 +70,11 @@ output:
   show_tool_details: true   # Show rich tool output (commands, files, etc.)
   show_cost: true           # Show cost at end of run
   truncate_length: 60       # Max length for command/path display
-  show_timestamps: true     # Show timestamps in output
+  # Structured logging settings
+  log_level: INFO           # DEBUG, INFO, WARN, ERROR - controls verbosity
+  log_file: ./chadgi.log    # Log file path (relative to .chadgi directory)
+  max_log_size_mb: 10       # Rotate log when it exceeds this size
+  max_log_files: 5          # Keep this many rotated log files
 
 # Branding settings - Chad does what Chad wants
 branding:
