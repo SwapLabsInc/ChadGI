@@ -29,8 +29,8 @@ npm install -g chadgi
 cd your-project
 chadgi init
 
-# Edit configuration
-edit .chadgi/chadgi-config.yaml
+# Run interactive setup wizard (recommended)
+chadgi setup
 
 # Validate setup
 chadgi validate
@@ -75,6 +75,47 @@ Creates:
 - `.chadgi/chadgi-task.md` - Task prompt template
 - `.chadgi/chadgi-generate-task.md` - Task generation template
 - `.chadgi/.gitignore` - Ignores progress file
+
+### `chadgi setup`
+
+Interactive configuration wizard that guides you through setting up ChadGI.
+
+```bash
+chadgi setup                    # Launch interactive wizard
+chadgi setup --non-interactive  # Use sensible defaults for CI environments
+chadgi setup --config /path/to/config  # Configure specific file
+```
+
+The wizard:
+- Auto-detects your git remote repository
+- Lists available GitHub Projects for selection
+- Validates project board has required columns (Ready, In Progress, In Review)
+- Configures base branch, GigaChad mode, budget limits, and notifications
+- Shows a summary before saving changes
+- Preserves existing configuration values as defaults when re-running
+
+Example interaction:
+```
+$ chadgi setup
+
+ChadGI Setup Wizard
+
+Detected repository: SwapLabsInc/ChadGI
+
+? Select GitHub Project:
+  > ChadGI Tasks (#7)
+    Sprint Board (#3)
+    Backlog (#1)
+
+? Base branch [main]: main
+? Enable GigaChad mode (auto-merge PRs)? [y/N]: n
+? Per-task budget limit (USD, blank for no limit): 2.00
+? Configure Slack notifications? [y/N]: y
+? Slack webhook URL: https://hooks.slack.com/...
+
+Configuration saved to .chadgi/chadgi-config.yaml
+Run 'chadgi validate' to verify your setup.
+```
 
 ### `chadgi setup-project`
 

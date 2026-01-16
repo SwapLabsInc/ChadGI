@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { init } from './init.js';
+import { setup } from './setup.js';
 import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
@@ -41,6 +42,21 @@ program
   .action(async (options) => {
     try {
       await init(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('setup')
+  .description('Interactive configuration wizard for ChadGI')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-n, --non-interactive', 'Run with sensible defaults for CI environments')
+  .option('-r, --reconfigure <section>', 'Reconfigure a specific section (github, branch, budget, notifications)')
+  .action(async (options) => {
+    try {
+      await setup(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
