@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
+import { toISOString } from './utils/formatting.js';
 
 // Import shared types
 import type {
@@ -21,13 +22,6 @@ interface RejectOptions extends BaseCommandOptions {
   issueNumber?: number;
   message?: string;
   skip?: boolean;
-}
-
-/**
- * Format a Date as ISO string without milliseconds
- */
-function toISOString(date: Date): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 /**

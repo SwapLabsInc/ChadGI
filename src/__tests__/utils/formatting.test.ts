@@ -18,6 +18,8 @@ import {
   pad,
   parseSince,
   horizontalLine,
+  toISOString,
+  parseDuration,
 } from '../../utils/formatting.js';
 
 describe('formatDuration', () => {
@@ -276,5 +278,113 @@ describe('horizontalLine', () => {
   it('should create a line with custom character', () => {
     const result = horizontalLine(10, '=');
     expect(result).toBe('==========');
+  });
+});
+
+describe('toISOString', () => {
+  it('should format date as ISO string without milliseconds', () => {
+    const date = new Date('2026-01-15T10:30:45.123Z');
+    const result = toISOString(date);
+    expect(result).toBe('2026-01-15T10:30:45Z');
+  });
+
+  it('should handle dates with .000 milliseconds', () => {
+    const date = new Date('2026-01-15T10:30:45.000Z');
+    const result = toISOString(date);
+    expect(result).toBe('2026-01-15T10:30:45Z');
+  });
+
+  it('should handle dates with various milliseconds', () => {
+    expect(toISOString(new Date('2026-01-01T00:00:00.999Z'))).toBe('2026-01-01T00:00:00Z');
+    expect(toISOString(new Date('2026-12-31T23:59:59.001Z'))).toBe('2026-12-31T23:59:59Z');
+    expect(toISOString(new Date('2026-06-15T12:00:00.500Z'))).toBe('2026-06-15T12:00:00Z');
+  });
+
+  it('should work with the current date', () => {
+    const now = new Date();
+    const result = toISOString(now);
+    // Should not contain milliseconds
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(result).not.toContain('.');
+  });
+
+  it('should handle epoch date', () => {
+    const epoch = new Date(0);
+    const result = toISOString(epoch);
+    expect(result).toBe('1970-01-01T00:00:00Z');
+  });
+});
+
+describe('parseDuration', () => {
+  describe('valid duration strings', () => {
+    it('should parse minutes only', () => {
+      expect(parseDuration('30m')).toBe(30 * 60 * 1000);
+      expect(parseDuration('1m')).toBe(60 * 1000);
+      expect(parseDuration('90m')).toBe(90 * 60 * 1000);
+    });
+
+    it('should parse hours only', () => {
+      expect(parseDuration('1h')).toBe(60 * 60 * 1000);
+      expect(parseDuration('2h')).toBe(2 * 60 * 60 * 1000);
+      expect(parseDuration('24h')).toBe(24 * 60 * 60 * 1000);
+    });
+
+    it('should parse combined hours and minutes', () => {
+      expect(parseDuration('1h30m')).toBe((60 + 30) * 60 * 1000);
+      expect(parseDuration('2h45m')).toBe((2 * 60 + 45) * 60 * 1000);
+      expect(parseDuration('1h1m')).toBe(61 * 60 * 1000);
+    });
+
+    it('should be case insensitive', () => {
+      expect(parseDuration('30M')).toBe(30 * 60 * 1000);
+      expect(parseDuration('2H')).toBe(2 * 60 * 60 * 1000);
+      expect(parseDuration('1H30M')).toBe((60 + 30) * 60 * 1000);
+    });
+
+    it('should handle hours before minutes or minutes before hours', () => {
+      expect(parseDuration('30m1h')).toBe((60 + 30) * 60 * 1000);
+    });
+  });
+
+  describe('invalid duration strings', () => {
+    it('should return null for empty string', () => {
+      expect(parseDuration('')).toBeNull();
+    });
+
+    it('should return null for null/undefined input', () => {
+      expect(parseDuration(null as unknown as string)).toBeNull();
+      expect(parseDuration(undefined as unknown as string)).toBeNull();
+    });
+
+    it('should return null for invalid formats', () => {
+      expect(parseDuration('invalid')).toBeNull();
+      expect(parseDuration('abc')).toBeNull();
+      expect(parseDuration('30')).toBeNull();
+      expect(parseDuration('h30')).toBeNull();
+    });
+
+    it('should return null for zero duration', () => {
+      expect(parseDuration('0m')).toBeNull();
+      expect(parseDuration('0h')).toBeNull();
+      expect(parseDuration('0h0m')).toBeNull();
+    });
+
+    it('should return null for non-string input', () => {
+      expect(parseDuration(123 as unknown as string)).toBeNull();
+      expect(parseDuration({} as unknown as string)).toBeNull();
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle large values', () => {
+      expect(parseDuration('999h')).toBe(999 * 60 * 60 * 1000);
+      expect(parseDuration('999m')).toBe(999 * 60 * 1000);
+    });
+
+    it('should handle whitespace in input', () => {
+      // The current implementation doesn't trim, so these should work based on regex
+      expect(parseDuration(' 30m')).toBe(30 * 60 * 1000);
+      expect(parseDuration('30m ')).toBe(30 * 60 * 1000);
+    });
   });
 });

@@ -55,6 +55,8 @@ export {
   pad,
   parseSince,
   horizontalLine,
+  toISOString,
+  parseDuration,
 } from './formatting.js';
 
 // GitHub

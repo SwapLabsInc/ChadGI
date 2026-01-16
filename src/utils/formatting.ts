@@ -261,3 +261,44 @@ export function parseSince(since: string): Date | null {
 export function horizontalLine(length: number = 78, char: string = '─'): string {
   return char.repeat(length);
 }
+
+/**
+ * Format a Date as ISO string without milliseconds
+ *
+ * @param date - Date object to format
+ * @returns ISO string with .000Z replaced by Z (e.g., "2026-01-15T10:30:00Z")
+ */
+export function toISOString(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * Parse a duration string (e.g., "30m", "2h", "1h30m") to milliseconds
+ *
+ * Supported formats:
+ * - "30m" - 30 minutes
+ * - "2h" - 2 hours
+ * - "1h30m" - 1 hour and 30 minutes
+ * - "90m" - 90 minutes
+ *
+ * @param duration - Duration string to parse
+ * @returns Duration in milliseconds, or null if parsing fails
+ */
+export function parseDuration(duration: string): number | null {
+  if (!duration || typeof duration !== 'string') {
+    return null;
+  }
+
+  const hourMatch = duration.match(/(\d+)h/i);
+  const minMatch = duration.match(/(\d+)m/i);
+
+  let ms = 0;
+  if (hourMatch) {
+    ms += parseInt(hourMatch[1], 10) * 60 * 60 * 1000;
+  }
+  if (minMatch) {
+    ms += parseInt(minMatch[1], 10) * 60 * 1000;
+  }
+
+  return ms > 0 ? ms : null;
+}

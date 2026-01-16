@@ -103,4 +103,24 @@ export declare function parseSince(since: string): Date | null;
  * @returns The horizontal line string
  */
 export declare function horizontalLine(length?: number, char?: string): string;
+/**
+ * Format a Date as ISO string without milliseconds
+ *
+ * @param date - Date object to format
+ * @returns ISO string with .000Z replaced by Z (e.g., "2026-01-15T10:30:00Z")
+ */
+export declare function toISOString(date: Date): string;
+/**
+ * Parse a duration string (e.g., "30m", "2h", "1h30m") to milliseconds
+ *
+ * Supported formats:
+ * - "30m" - 30 minutes
+ * - "2h" - 2 hours
+ * - "1h30m" - 1 hour and 30 minutes
+ * - "90m" - 90 minutes
+ *
+ * @param duration - Duration string to parse
+ * @returns Duration in milliseconds, or null if parsing fails
+ */
+export declare function parseDuration(duration: string): number | null;
 //# sourceMappingURL=formatting.d.ts.map
