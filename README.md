@@ -739,6 +739,46 @@ This means Claude Code will:
 - The previous task may be partially complete
 - ChadGI will continue from where it left off
 
+## Testing
+
+ChadGI uses two types of tests:
+
+### Unit Tests (Jest/TypeScript)
+
+Unit tests cover core utilities and logic functions:
+
+```bash
+npm run test:unit           # Run unit tests
+npm run test:coverage       # Run with coverage report
+npm run test:watch          # Watch mode for development
+```
+
+**Test coverage targets:**
+- `src/utils/formatting.ts` - Date, duration, and value formatting
+- `src/utils/config.ts` - YAML parsing and configuration loading
+- `src/utils/data.ts` - Session stats and metrics data loading
+
+Unit tests use:
+- **Jest** with `ts-jest` for TypeScript support
+- **memfs** for virtual file system mocking
+- **jest.unstable_mockModule** for ESM module mocking
+
+### Integration Tests (Bash)
+
+Integration tests verify CLI commands and end-to-end workflows:
+
+```bash
+npm run test:integration    # Run all integration tests
+```
+
+These tests spawn actual ChadGI processes and verify output.
+
+### Running All Tests
+
+```bash
+npm test                    # Runs both unit and integration tests
+```
+
 ## License
 
 MIT
