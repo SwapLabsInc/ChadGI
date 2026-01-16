@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.1...v1.1.2) (2026-01-16)
+
+
+### Bug Fixes
+
+* run npm publish directly in workflow for OIDC context ([7eef930](https://github.com/SwapLabsInc/ChadGI/commit/7eef930da0836f98d454922a542b9c6e7e63ee7e))
+
 ## [1.1.1](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.0...v1.1.1) (2026-01-16)
 
 
