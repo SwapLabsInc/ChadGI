@@ -3959,7 +3959,7 @@ run_claude_streaming() {
     local LAST_INPUT=""
     local TASK_COST=0
 
-    claude --dangerously-skip-permissions --print --verbose --output-format stream-json "$(cat "$PROMPT_FILE")" 2>&1 | \
+    cat "$PROMPT_FILE" | claude --dangerously-skip-permissions --print --verbose --output-format stream-json 2>&1 | \
         while IFS= read -r line; do
             # Skip empty lines
             [ -z "$line" ] && continue
@@ -4041,7 +4041,7 @@ run_claude_with_output() {
 
     # Run Claude in background so we can monitor timeout
     (
-        claude --dangerously-skip-permissions --print --verbose --output-format stream-json "$(cat "$PROMPT_FILE")" 2>&1 | tee "$RAW_OUTPUT" | \
+        cat "$PROMPT_FILE" | claude --dangerously-skip-permissions --print --verbose --output-format stream-json 2>&1 | tee "$RAW_OUTPUT" | \
             while IFS= read -r line; do
                 [ -z "$line" ] && continue
                 local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
@@ -4326,7 +4326,7 @@ Do not run any commands that would modify the repository.
 DRY_RUN_EOF
 
     # Run Claude with --print only (no dangerous permissions)
-    claude --print "$(cat "$DRY_RUN_PROMPT")" 2>&1 || true
+    cat "$DRY_RUN_PROMPT" | claude --print 2>&1 || true
 
     rm -f "$DRY_RUN_PROMPT"
 
