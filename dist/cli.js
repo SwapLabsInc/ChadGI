@@ -18,6 +18,7 @@ import { estimate } from './estimate.js';
 import { queue, queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
 import { completion, getInstallationInstructions } from './completion.js';
+import { replay, replayLast, replayAllFailed } from './replay.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -409,6 +410,44 @@ completionCommand
     .description('Show installation instructions for all shells')
     .action(() => {
     console.log(getInstallationInstructions());
+});
+// Replay command for retrying failed tasks
+program
+    .command('replay [issue-number]')
+    .description('Retry failed tasks')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-j, --json', 'Output results as JSON')
+    .option('--last', 'Retry the most recent failed task')
+    .option('--all-failed', 'Retry all failed tasks from the last session')
+    .option('--fresh', 'Start from a clean branch (discard previous work)')
+    .option('--continue', 'Continue from where the task left off')
+    .option('--dry-run', 'Preview what would happen without making changes')
+    .option('--yes', 'Skip confirmation prompts')
+    .action(async (issueNumberArg, options) => {
+    try {
+        if (options.last) {
+            await replayLast(options);
+        }
+        else if (options.allFailed) {
+            await replayAllFailed(options);
+        }
+        else if (issueNumberArg) {
+            const num = parseInt(issueNumberArg, 10);
+            if (isNaN(num)) {
+                console.error('Error: Issue number must be a valid number');
+                process.exit(1);
+            }
+            await replay(num, options);
+        }
+        else {
+            // No arguments - show list of failed tasks
+            await replay(undefined, options);
+        }
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
 });
 program.parse();
 //# sourceMappingURL=cli.js.map
