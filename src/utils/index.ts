@@ -160,3 +160,12 @@ export {
   safeWriteJson,
   type SafeWriteOptions,
 } from './fileOps.js';
+
+// Progress (progress bars and spinners)
+export {
+  ProgressBar,
+  Spinner,
+  createProgressBar,
+  createSpinner,
+  type ProgressBarOptions,
+} from './progress.js';

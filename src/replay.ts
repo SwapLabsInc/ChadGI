@@ -4,6 +4,7 @@ import { execSync, spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { colors } from './utils/colors.js';
 import { parseYamlNested } from './utils/config.js';
+import { createProgressBar } from './utils/progress.js';
 
 // Import shared types
 import type {
@@ -914,9 +915,16 @@ export async function replayAllFailed(options: ReplayOptions = {}): Promise<void
   const replayedTasks: number[] = [];
   const failedToReplay: number[] = [];
 
+  // Create progress bar for processing tasks
+  const progress = createProgressBar(failedTasks.length, { label: 'Replaying' }, options.json);
+  let progressCount = 0;
+
   // Process each failed task
   for (const task of failedTasks) {
-    if (!options.json) {
+    progressCount++;
+    progress?.update(progressCount, `#${task.issueNumber}`);
+
+    if (!options.json && !progress) {
       console.log(`${colors.cyan}Processing issue #${task.issueNumber}...${colors.reset}`);
     }
 
@@ -946,16 +954,13 @@ export async function replayAllFailed(options: ReplayOptions = {}): Promise<void
     if (moved) {
       incrementRetryCount(chadgiDir, task.issueNumber);
       replayedTasks.push(task.issueNumber);
-      if (!options.json) {
-        console.log(`  ${colors.green}Queued #${task.issueNumber} for replay${colors.reset}`);
-      }
     } else {
       failedToReplay.push(task.issueNumber);
-      if (!options.json) {
-        console.log(`  ${colors.red}Failed to queue #${task.issueNumber}${colors.reset}`);
-      }
     }
   }
+
+  // Complete the progress bar
+  progress?.complete();
 
   if (options.json) {
     const result: ReplayResult = {
