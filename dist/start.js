@@ -61,6 +61,9 @@ export async function start(options = {}) {
     if (ignoreDeps) {
         console.log('Dependency checking: DISABLED (via --ignore-deps flag)\n');
     }
+    if (options.resume) {
+        console.log('Resume mode: ENABLED (will continue on existing branch from progress file)\n');
+    }
     // Check for pending migrations
     if (hasPendingMigrations(configPath)) {
         const migrationMessage = getMigrationStatusMessage(configPath);
@@ -93,7 +96,8 @@ export async function start(options = {}) {
         IGNORE_DEPS: ignoreDeps ? 'true' : 'false',
         INTERACTIVE_MODE: interactiveMode ? 'true' : 'false',
         NO_MASK: noMask ? 'true' : 'false',
-        FORCE_CLAIM: forceClaim ? 'true' : 'false'
+        FORCE_CLAIM: forceClaim ? 'true' : 'false',
+        RESUME_MODE: options.resume ? 'true' : 'false',
     };
     // Add timeout override if specified via CLI
     if (timeout !== undefined) {
@@ -132,6 +136,7 @@ function runRepoTask(repoPath, configPath, options) {
             INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
             NO_MASK: options.mask === false ? 'true' : 'false',
             FORCE_CLAIM: options.forceClaim ? 'true' : 'false',
+            RESUME_MODE: options.resume ? 'true' : 'false',
             WORKSPACE_MODE: 'true',
             WORKSPACE_SINGLE_TASK: 'true', // Process only one task then exit
         };

@@ -763,6 +763,23 @@ Unit tests use:
 - **memfs** for virtual file system mocking
 - **jest.unstable_mockModule** for ESM module mocking
 
+### Bash Unit Tests (Bats)
+
+Bash function unit tests use [bats-core](https://github.com/bats-core/bats-core) to test pure functions in `scripts/chadgi.sh`:
+
+```bash
+npm run test:bash           # Run bash unit tests
+```
+
+**Test coverage targets:**
+- `mask_secrets` - Secret pattern redaction
+- `parse_log_level` - Log level string to number conversion
+- `strip_colors` - ANSI escape sequence removal
+- `format_duration` - Time formatting (hours/minutes/seconds)
+- `parse_yaml_value` - YAML key-value extraction
+- `calculate_budget_percentage` - Budget percentage calculation
+- `check_task_budget_exceeded` / `check_session_budget_exceeded` - Budget threshold detection
+
 ### Integration Tests (Bash)
 
 Integration tests verify CLI commands and end-to-end workflows:
@@ -776,7 +793,7 @@ These tests spawn actual ChadGI processes and verify output.
 ### Running All Tests
 
 ```bash
-npm test                    # Runs both unit and integration tests
+npm test                    # Runs unit, bash, and integration tests
 ```
 
 ## License

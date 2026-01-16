@@ -143,6 +143,7 @@ program
     .option('-i, --interactive', 'Enable human-in-the-loop approval mode for reviewing changes')
     .option('--no-mask', 'Disable secret masking in logs (warning: exposes sensitive data)')
     .option('--force-claim', 'Override stale task locks when claiming tasks')
+    .option('--resume', 'Resume work on existing branch from interrupted session')
     .action(wrapCommand(start));
 program
     .command('setup-project')

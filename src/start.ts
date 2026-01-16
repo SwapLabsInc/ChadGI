@@ -31,6 +31,7 @@ interface StartOptions {
   interactive?: boolean;
   mask?: boolean;  // --no-mask flag sets this to false
   forceClaim?: boolean;  // --force-claim flag to override stale locks
+  resume?: boolean;  // --resume flag to continue interrupted task
 }
 
 interface WorkerInfo {
@@ -100,6 +101,10 @@ export async function start(options: StartOptions = {}): Promise<void> {
     console.log('Dependency checking: DISABLED (via --ignore-deps flag)\n');
   }
 
+  if (options.resume) {
+    console.log('Resume mode: ENABLED (will continue on existing branch from progress file)\n');
+  }
+
   // Check for pending migrations
   if (hasPendingMigrations(configPath)) {
     const migrationMessage = getMigrationStatusMessage(configPath);
@@ -138,7 +143,8 @@ export async function start(options: StartOptions = {}): Promise<void> {
     IGNORE_DEPS: ignoreDeps ? 'true' : 'false',
     INTERACTIVE_MODE: interactiveMode ? 'true' : 'false',
     NO_MASK: noMask ? 'true' : 'false',
-    FORCE_CLAIM: forceClaim ? 'true' : 'false'
+    FORCE_CLAIM: forceClaim ? 'true' : 'false',
+    RESUME_MODE: options.resume ? 'true' : 'false',
   };
 
   // Add timeout override if specified via CLI
@@ -188,6 +194,7 @@ function runRepoTask(
       INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
       NO_MASK: options.mask === false ? 'true' : 'false',
       FORCE_CLAIM: options.forceClaim ? 'true' : 'false',
+      RESUME_MODE: options.resume ? 'true' : 'false',
       WORKSPACE_MODE: 'true',
       WORKSPACE_SINGLE_TASK: 'true', // Process only one task then exit
     };
