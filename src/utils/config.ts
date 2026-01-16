@@ -15,6 +15,7 @@ import type {
   LoadConfigEnvOptions,
 } from '../types/index.js';
 import { colors } from './colors.js';
+import { debugLog, debugFileOp } from './debug.js';
 
 /**
  * Parse a simple YAML value (top-level key: value extraction)
@@ -119,9 +120,11 @@ export function loadConfig(configPath: string): {
   branch: BranchConfig;
   exists: boolean;
 } {
+  debugFileOp('check', configPath);
   const exists = existsSync(configPath);
 
   if (!exists) {
+    debugLog('Config file not found, using defaults', { path: configPath });
     return {
       content: '',
       github: {
@@ -139,9 +142,10 @@ export function loadConfig(configPath: string): {
     };
   }
 
+  debugFileOp('read', configPath);
   const content = readFileSync(configPath, 'utf-8');
 
-  return {
+  const config = {
     content,
     github: {
       repo: parseYamlNested(content, 'github', 'repo') || 'owner/repo',
@@ -157,6 +161,15 @@ export function loadConfig(configPath: string): {
     },
     exists: true,
   };
+
+  debugLog('Config loaded', {
+    path: configPath,
+    repo: config.github.repo,
+    projectNumber: config.github.project_number,
+    baseBranch: config.branch.base,
+  });
+
+  return config;
 }
 
 /**
@@ -541,6 +554,12 @@ export function loadConfigWithEnv(
 
   // Parse and apply environment variable overrides
   const envOverrides = parseEnvOverrides(envPrefix, env);
+  if (envOverrides.length > 0) {
+    debugLog('Applying environment variable overrides', {
+      count: envOverrides.length,
+      overrides: envOverrides.map(o => ({ envVar: o.envVar, configPath: o.configPath })),
+    });
+  }
   applyEnvOverrides(config, envOverrides);
 
   return {

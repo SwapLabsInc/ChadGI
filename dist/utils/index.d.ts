@@ -14,4 +14,5 @@ export { NUMERIC_CONSTRAINTS, validateNumeric, createNumericParser, validateNume
 export { atomicWriteFile, atomicWriteJson, safeWriteFile, safeWriteJson, type SafeWriteOptions, } from './fileOps.js';
 export { ProgressBar, Spinner, createProgressBar, createSpinner, type ProgressBarOptions, } from './progress.js';
 export { DEFAULT_LOCK_TIMEOUT_MINUTES, HEARTBEAT_INTERVAL_MS, LOCKS_DIRECTORY, generateSessionId, getLocksDir, getLockFilePath, ensureLocksDir, readTaskLock, isLockStale, isProcessRunning, acquireTaskLock, releaseTaskLock, forceReleaseTaskLock, updateLockHeartbeat, listTaskLocks, findStaleLocks, cleanupStaleLocks, isIssueLocked, isLockedByOther, startHeartbeat, releaseAllSessionLocks, } from './locks.js';
+export { ENV_VERBOSE, ENV_TRACE, PREFIX_DEBUG, PREFIX_TRACE, initDebugFromEnv, getDebugConfig, setVerbosityLevel, enableVerbose, enableTrace, disableDebug, resetDebugConfig, setTimestamps, setMaskSecretsInDebug, isVerbose, isTrace, debugLog, traceLog, startTiming, startTraceTiming, debugDecision, debugFileOp, traceApi, traceApiResponse, type VerbosityLevel, type DebugConfig, } from './debug.js';
 //# sourceMappingURL=index.d.ts.map

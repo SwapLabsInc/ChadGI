@@ -203,3 +203,35 @@ export {
   startHeartbeat,
   releaseAllSessionLocks,
 } from './locks.js';
+
+// Debug (verbose and trace logging)
+export {
+  // Configuration
+  ENV_VERBOSE,
+  ENV_TRACE,
+  PREFIX_DEBUG,
+  PREFIX_TRACE,
+  initDebugFromEnv,
+  getDebugConfig,
+  setVerbosityLevel,
+  enableVerbose,
+  enableTrace,
+  disableDebug,
+  resetDebugConfig,
+  setTimestamps,
+  setMaskSecretsInDebug,
+  isVerbose,
+  isTrace,
+  // Logging functions
+  debugLog,
+  traceLog,
+  startTiming,
+  startTraceTiming,
+  debugDecision,
+  debugFileOp,
+  traceApi,
+  traceApiResponse,
+  // Types
+  type VerbosityLevel,
+  type DebugConfig,
+} from './debug.js';

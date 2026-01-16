@@ -39,4 +39,10 @@ export { atomicWriteFile, atomicWriteJson, safeWriteFile, safeWriteJson, } from 
 export { ProgressBar, Spinner, createProgressBar, createSpinner, } from './progress.js';
 // Locks (task lock utilities)
 export { DEFAULT_LOCK_TIMEOUT_MINUTES, HEARTBEAT_INTERVAL_MS, LOCKS_DIRECTORY, generateSessionId, getLocksDir, getLockFilePath, ensureLocksDir, readTaskLock, isLockStale, isProcessRunning, acquireTaskLock, releaseTaskLock, forceReleaseTaskLock, updateLockHeartbeat, listTaskLocks, findStaleLocks, cleanupStaleLocks, isIssueLocked, isLockedByOther, startHeartbeat, releaseAllSessionLocks, } from './locks.js';
+// Debug (verbose and trace logging)
+export { 
+// Configuration
+ENV_VERBOSE, ENV_TRACE, PREFIX_DEBUG, PREFIX_TRACE, initDebugFromEnv, getDebugConfig, setVerbosityLevel, enableVerbose, enableTrace, disableDebug, resetDebugConfig, setTimestamps, setMaskSecretsInDebug, isVerbose, isTrace, 
+// Logging functions
+debugLog, traceLog, startTiming, startTraceTiming, debugDecision, debugFileOp, traceApi, traceApiResponse, } from './debug.js';
 //# sourceMappingURL=index.js.map

@@ -6,6 +6,7 @@
  */
 
 import { execSync } from 'child_process';
+import { traceApi, traceApiResponse, traceLog, startTraceTiming, debugLog } from './debug.js';
 
 const DEFAULT_TIMEOUT = 10000;
 
@@ -214,11 +215,19 @@ export interface ExecOptions {
 export function execGh(command: string, options: ExecOptions = {}): string {
   const { timeout = DEFAULT_TIMEOUT } = options;
 
-  return execSync(`gh ${command}`, {
+  const startTime = performance.now();
+  traceApi('gh', command);
+
+  const output = execSync(`gh ${command}`, {
     encoding: 'utf-8',
     stdio: ['pipe', 'pipe', 'pipe'],
     timeout,
   });
+
+  const duration = performance.now() - startTime;
+  traceApiResponse(command.split(' ')[0], output.substring(0, 500), duration);
+
+  return output;
 }
 
 /**
@@ -278,10 +287,10 @@ export interface ExecWithRetryOptions extends ExecOptions, RetryOptions {}
  */
 function defaultRetryCallback(attempt: number, maxAttempts: number, error: Error, delayMs: number): void {
   const classification = classifyError(error);
-  console.log(
-    `GitHub API ${classification.type} error, retrying in ${Math.round(delayMs)}ms ` +
-    `(attempt ${attempt}/${maxAttempts}): ${error.message.slice(0, 100)}`
-  );
+  const message = `GitHub API ${classification.type} error, retrying in ${Math.round(delayMs)}ms ` +
+    `(attempt ${attempt}/${maxAttempts}): ${error.message.slice(0, 100)}`;
+  console.log(message);
+  debugLog('Retry scheduled', { attempt, maxAttempts, errorType: classification.type, delayMs });
 }
 
 /**
