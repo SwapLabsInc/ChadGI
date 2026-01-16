@@ -10,6 +10,7 @@ interface ValidateOptions {
   config?: string;
   quiet?: boolean;
   notifyTest?: boolean;
+  strict?: boolean;
 }
 
 interface ValidationResult {
@@ -65,6 +66,101 @@ function parseYamlNested(content: string, parent: string, key: string): string |
     }
   }
   return null;
+}
+
+// Valid template variables as documented in README.md
+const VALID_TEMPLATE_VARIABLES = new Set([
+  'ISSUE_NUMBER',
+  'ISSUE_TITLE',
+  'ISSUE_URL',
+  'ISSUE_BODY',
+  'BRANCH_NAME',
+  'BASE_BRANCH',
+  'REPO',
+  'REPO_OWNER',
+  'PROJECT_NUMBER',
+  'READY_COLUMN',
+  'COMPLETION_PROMISE',
+  'TEST_COMMAND',
+  'BUILD_COMMAND',
+  // Additional internal variables used in templates
+  'CHAD_TAGLINE',
+  'CHAD_LABEL',
+  'CHAD_FOOTER',
+  'ISSUE_PREFIX',
+  'EXISTING_ISSUES',
+  'GITHUB_USERNAME',
+]);
+
+interface TemplateVariableMatch {
+  variable: string;
+  line: number;
+  column: number;
+}
+
+function extractTemplateVariables(content: string): TemplateVariableMatch[] {
+  const matches: TemplateVariableMatch[] = [];
+  const lines = content.split('\n');
+  const variablePattern = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    let match;
+    while ((match = variablePattern.exec(line)) !== null) {
+      matches.push({
+        variable: match[1],
+        line: lineIndex + 1,
+        column: match.index + 1,
+      });
+    }
+  }
+
+  return matches;
+}
+
+function parseCustomVariables(configContent: string): string[] {
+  const customVars: string[] = [];
+  const lines = configContent.split('\n');
+  let inCustomVars = false;
+
+  for (const line of lines) {
+    if (line.match(/^custom_template_variables:/)) {
+      inCustomVars = true;
+      continue;
+    }
+    if (inCustomVars && line.match(/^[a-z]/)) {
+      inCustomVars = false;
+    }
+    if (inCustomVars && line.match(/^\s+-\s*/)) {
+      const varName = line.replace(/^\s+-\s*/, '').replace(/["']/g, '').trim();
+      if (varName) {
+        customVars.push(varName);
+      }
+    }
+  }
+
+  return customVars;
+}
+
+export interface TemplateValidationResult {
+  templatePath: string;
+  unknownVariables: TemplateVariableMatch[];
+}
+
+export function validateTemplateVariables(
+  templatePath: string,
+  customVariables: string[] = []
+): TemplateValidationResult {
+  const content = readFileSync(templatePath, 'utf-8');
+  const matches = extractTemplateVariables(content);
+  const allValidVariables = new Set([...VALID_TEMPLATE_VARIABLES, ...customVariables]);
+
+  const unknownVariables = matches.filter(m => !allValidVariables.has(m.variable));
+
+  return {
+    templatePath,
+    unknownVariables,
+  };
 }
 
 export async function validate(options: ValidateOptions = {}): Promise<boolean> {
@@ -262,6 +358,69 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
       });
       if (!quiet) {
         console.log(`\x1b[31mx\x1b[0m Generate template not found: ${generateTemplatePath}`);
+      }
+    }
+
+    // Validate template variables
+    if (!quiet) {
+      console.log('');
+      console.log('Checking template variables:\n');
+    }
+
+    const customVariables = parseCustomVariables(configContent);
+    const templatesToValidate: string[] = [];
+
+    if (existsSync(templatePath)) {
+      templatesToValidate.push(templatePath);
+    }
+    if (existsSync(generateTemplatePath)) {
+      templatesToValidate.push(generateTemplatePath);
+    }
+
+    let hasUnknownVariables = false;
+    for (const tmplPath of templatesToValidate) {
+      const validation = validateTemplateVariables(tmplPath, customVariables);
+      const templateBasename = tmplPath.split('/').pop() || tmplPath;
+
+      if (validation.unknownVariables.length === 0) {
+        results.push({
+          name: `template vars: ${templateBasename}`,
+          status: 'ok',
+          message: 'all variables valid'
+        });
+        if (!quiet) {
+          console.log(`\x1b[32m+\x1b[0m ${templateBasename}: all variables valid`);
+        }
+      } else {
+        hasUnknownVariables = true;
+        // In strict mode, unknown variables are errors; otherwise warnings
+        const status = options.strict ? 'error' : 'warning';
+        const icon = options.strict ? 'x' : '!';
+        const color = options.strict ? '\x1b[31m' : '\x1b[33m';
+
+        results.push({
+          name: `template vars: ${templateBasename}`,
+          status,
+          message: `${validation.unknownVariables.length} unknown variable(s)`
+        });
+
+        if (!quiet) {
+          console.log(`${color}${icon}\x1b[0m ${templateBasename}: ${validation.unknownVariables.length} unknown variable(s)`);
+          for (const v of validation.unknownVariables) {
+            console.log(`    Line ${v.line}, col ${v.column}: {{${v.variable}}} (unknown)`);
+          }
+        }
+      }
+    }
+
+    if (hasUnknownVariables && !quiet) {
+      console.log('');
+      if (options.strict) {
+        console.log('\x1b[33m!\x1b[0m Unknown variables cause errors in --strict mode');
+      } else {
+        console.log('\x1b[33m!\x1b[0m Tip: Add custom variables to config with custom_template_variables:');
+        console.log('    custom_template_variables:');
+        console.log('      - MY_CUSTOM_VAR');
       }
     }
 
