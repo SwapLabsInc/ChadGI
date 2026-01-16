@@ -10,6 +10,7 @@ import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
 import { doctor } from './doctor.js';
+import { cleanup } from './cleanup.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -166,6 +167,27 @@ program
     .action(async (options) => {
     try {
         await doctor(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('cleanup')
+    .description('Clean up stale branches, old diagnostics, and rotated log files')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('--branches', 'Delete orphaned feature branches (local and remote)')
+    .option('--diagnostics', 'Remove diagnostic artifacts older than N days')
+    .option('--logs', 'Remove rotated log files beyond retention limit')
+    .option('--all', 'Run all cleanup operations')
+    .option('--dry-run', 'Preview what would be deleted without making changes')
+    .option('--yes', 'Skip confirmation prompts')
+    .option('--days <n>', 'Retention days for diagnostics (default: 30)', parseInt)
+    .option('-j, --json', 'Output results as JSON')
+    .action(async (options) => {
+    try {
+        await cleanup(options);
     }
     catch (error) {
         console.error('Error:', error.message);
