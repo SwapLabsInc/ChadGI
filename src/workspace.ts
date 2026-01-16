@@ -74,22 +74,6 @@ export interface WorkspaceStatusOptions {
   limit?: number;
 }
 
-// Helper to parse simple YAML values
-function parseYamlValue(content: string, key: string): string | undefined {
-  const regex = new RegExp(`^${key}:\\s*(.*)$`, 'm');
-  const match = content.match(regex);
-  if (match) {
-    let value = match[1].trim();
-    // Remove quotes if present
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    return value || undefined;
-  }
-  return undefined;
-}
-
 // Parse YAML to object (simplified parser for workspace config)
 function parseYamlToObject(content: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};

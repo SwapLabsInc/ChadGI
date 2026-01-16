@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { colors } from './utils/colors.js';
+import { parseYamlNested } from './utils/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -130,35 +131,6 @@ async function promptSelect(rl: ReturnType<typeof createInterface>, question: st
   }
   // Default to first option if invalid
   return options[0].value;
-}
-
-function parseYamlValue(content: string, key: string): string | null {
-  const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-  if (match) {
-    return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-  }
-  return null;
-}
-
-function parseYamlNested(content: string, parent: string, key: string): string | null {
-  const lines = content.split('\n');
-  let inParent = false;
-  for (const line of lines) {
-    if (line.match(new RegExp(`^${parent}:`))) {
-      inParent = true;
-      continue;
-    }
-    if (inParent && line.match(/^[a-z]/)) {
-      inParent = false;
-    }
-    if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-      const value = line.split(':')[1];
-      if (value) {
-        return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-      }
-    }
-  }
-  return null;
 }
 
 function loadExistingConfig(configPath: string): Partial<ConfigValues> {
