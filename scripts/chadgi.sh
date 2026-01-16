@@ -4023,6 +4023,11 @@ run_claude_streaming() {
                         TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
                     fi
                     ;;
+                "")
+                    # Non-JSON output (likely an error message from Claude CLI)
+                    # Display it so users can see what went wrong
+                    echo -e "${RED}$line${NC}"
+                    ;;
             esac
         done
 
@@ -4062,6 +4067,10 @@ run_claude_with_output() {
                         TOTAL_COST=$(echo "$TOTAL_COST + $COST" | bc 2>/dev/null || echo "$COST")
                         TASK_COST=$(echo "$TASK_COST + $COST" | bc 2>/dev/null || echo "$COST")
                     fi
+                elif [ -z "$TYPE" ]; then
+                    # Non-JSON output (likely an error message from Claude CLI)
+                    # Display it so users can see what went wrong
+                    echo -e "${RED}$line${NC}"
                 fi
             done
     ) &
@@ -5521,6 +5530,21 @@ cat << 'EOF'
 
 EOF
 echo -e "${NC}"
+
+# Note: Root user check is handled by the CLI (start.ts) which will auto-switch
+# to the 'chadgi' user if available. This is just a safety net.
+if [ "$EUID" -eq 0 ] || [ "$(id -u)" -eq 0 ]; then
+    echo -e "${RED}${BOLD}ERROR: ChadGI cannot run as root/sudo${NC}"
+    echo ""
+    echo -e "Claude Code's --dangerously-skip-permissions flag is blocked when running"
+    echo -e "with root/sudo privileges for security reasons."
+    echo ""
+    echo -e "Solutions:"
+    echo -e "  1. Run as a non-root user: ${CYAN}su - myuser -c 'chadgi start'${NC}"
+    echo -e "  2. Create a dedicated user: ${CYAN}useradd -m chadgi && su - chadgi${NC}"
+    echo ""
+    exit 1
+fi
 
 # Initialize session
 SESSION_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)

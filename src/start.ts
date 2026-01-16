@@ -57,6 +57,37 @@ interface WorkerInfo {
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
+  // Check for root user - Claude CLI blocks --dangerously-skip-permissions with root
+  if (process.getuid && process.getuid() === 0) {
+    // Try to find chadgi user and re-exec as that user
+    try {
+      execSync('id chadgi', { stdio: 'pipe' });
+      // chadgi user exists, re-exec as that user
+      console.log(`${colors.yellow}Running as root - switching to 'chadgi' user...${colors.reset}\n`);
+      const args = process.argv.slice(2);
+      const chadgiPath = process.argv[1];
+      const child = spawn('runuser', ['-u', 'chadgi', '--', process.argv[0], chadgiPath, ...args], {
+        stdio: 'inherit',
+        cwd: process.cwd(),
+      });
+      child.on('close', (code) => process.exit(code ?? 0));
+      child.on('error', () => {
+        console.error(`${colors.red}Failed to switch to chadgi user${colors.reset}`);
+        process.exit(1);
+      });
+      return; // Exit this process, let the child run
+    } catch {
+      // chadgi user doesn't exist, show error
+      console.error(`${colors.red}${colors.bold}ERROR: ChadGI cannot run as root/sudo${colors.reset}\n`);
+      console.error(`Claude Code's --dangerously-skip-permissions flag is blocked when running`);
+      console.error(`with root/sudo privileges for security reasons.\n`);
+      console.error(`Solutions:`);
+      console.error(`  1. Run as a non-root user: ${colors.cyan}su - myuser -c 'chadgi start'${colors.reset}`);
+      console.error(`  2. Create a dedicated user: ${colors.cyan}useradd -m chadgi && su - chadgi${colors.reset}\n`);
+      process.exit(1);
+    }
+  }
+
   // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
   const noMask = options.mask === false;
   if (noMask) {
