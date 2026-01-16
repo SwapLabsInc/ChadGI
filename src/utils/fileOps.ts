@@ -9,11 +9,12 @@
  * debugging corrupted or malformed JSON files.
  */
 
-import { writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
+import { writeFileSync, renameSync, unlinkSync, existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { isVerbose } from './debug.js';
 import type { DataSchema, ValidationResult } from './data-schema.js';
 import { logSilentError, ErrorCategory } from './diagnostics.js';
+import { withContext, withContextAsync, type ErrorContextIdentifiers } from './errors.js';
 
 /**
  * Default number of retry attempts for transient failures
@@ -476,4 +477,172 @@ export function safeParseAndValidate<T>(
   }
 
   return validation.data ?? null;
+}
+
+// ============================================================================
+// Context-Aware File Operations
+// ============================================================================
+
+/**
+ * Read a file with automatic error context attachment.
+ *
+ * Wraps fs.readFileSync with error context that includes:
+ * - Operation type ('file-read')
+ * - File path
+ * - Timing information
+ *
+ * @param filePath - The file path to read
+ * @param encoding - File encoding (default: 'utf-8')
+ * @returns File contents as string
+ * @throws ChadGIError with context if read fails
+ *
+ * @example
+ * ```typescript
+ * const content = readFileWithContext('/path/to/config.json');
+ * ```
+ */
+export function readFileWithContext(filePath: string, encoding: BufferEncoding = 'utf-8'): string {
+  return withContext(
+    'file-read',
+    { filePath },
+    () => readFileSync(filePath, encoding)
+  );
+}
+
+/**
+ * Write a file atomically with automatic error context attachment.
+ *
+ * Combines atomic write safety with error context enrichment.
+ *
+ * @param filePath - The target file path
+ * @param content - The content to write
+ * @throws ChadGIError with context if write fails
+ *
+ * @example
+ * ```typescript
+ * writeFileWithContext('/path/to/config.json', JSON.stringify(data));
+ * ```
+ */
+export function writeFileWithContext(filePath: string, content: string): void {
+  withContext(
+    'file-write',
+    { filePath },
+    () => atomicWriteFile(filePath, content)
+  );
+}
+
+/**
+ * Write JSON data atomically with automatic error context attachment.
+ *
+ * @param filePath - The target file path
+ * @param data - The data to serialize and write
+ * @throws ChadGIError with context if write fails
+ *
+ * @example
+ * ```typescript
+ * writeJsonWithContext('/path/to/progress.json', { status: 'running' });
+ * ```
+ */
+export function writeJsonWithContext(filePath: string, data: unknown): void {
+  withContext(
+    'file-write',
+    { filePath },
+    () => atomicWriteJson(filePath, data),
+    { contentType: 'json' }
+  );
+}
+
+/**
+ * Safely write a file with retries and error context attachment.
+ *
+ * @param filePath - The target file path
+ * @param content - The content to write
+ * @param options - Write options (retries, delay)
+ * @returns Promise that resolves when write succeeds
+ * @throws ChadGIError with context if all retries fail
+ *
+ * @example
+ * ```typescript
+ * await safeWriteFileWithContext('/path/to/file.txt', content, { maxRetries: 5 });
+ * ```
+ */
+export async function safeWriteFileWithContext(
+  filePath: string,
+  content: string,
+  options: SafeWriteOptions = {}
+): Promise<void> {
+  await withContextAsync(
+    'file-write',
+    { filePath },
+    () => safeWriteFile(filePath, content, options),
+    { retryable: true, maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES }
+  );
+}
+
+/**
+ * Safely write JSON with retries and error context attachment.
+ *
+ * @param filePath - The target file path
+ * @param data - The data to serialize and write
+ * @param options - Write options (retries, delay)
+ * @returns Promise that resolves when write succeeds
+ * @throws ChadGIError with context if all retries fail
+ *
+ * @example
+ * ```typescript
+ * await safeWriteJsonWithContext('/path/to/config.json', { key: 'value' });
+ * ```
+ */
+export async function safeWriteJsonWithContext(
+  filePath: string,
+  data: unknown,
+  options: SafeWriteOptions = {}
+): Promise<void> {
+  await withContextAsync(
+    'file-write',
+    { filePath },
+    () => safeWriteJson(filePath, data, options),
+    { contentType: 'json', retryable: true, maxRetries: options.maxRetries ?? DEFAULT_MAX_RETRIES }
+  );
+}
+
+/**
+ * Check if a file exists with error context on failure.
+ *
+ * Note: This function doesn't throw on "file not found" - it returns false.
+ * It only throws (with context) on unexpected errors like permission issues.
+ *
+ * @param filePath - The file path to check
+ * @returns true if file exists, false otherwise
+ */
+export function existsWithContext(filePath: string): boolean {
+  return withContext(
+    'file-read',
+    { filePath },
+    () => existsSync(filePath),
+    { checkOnly: true }
+  );
+}
+
+/**
+ * Delete a file with error context attachment.
+ *
+ * @param filePath - The file path to delete
+ * @throws ChadGIError with context if delete fails (and file exists)
+ *
+ * @example
+ * ```typescript
+ * deleteFileWithContext('/path/to/temp-file.txt');
+ * ```
+ */
+export function deleteFileWithContext(filePath: string): void {
+  withContext(
+    'file-delete',
+    { filePath },
+    () => {
+      if (existsSync(filePath)) {
+        unlinkSync(filePath);
+      }
+    }
+  );
 }

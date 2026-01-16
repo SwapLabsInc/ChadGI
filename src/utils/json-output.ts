@@ -107,6 +107,33 @@ export interface ResponseMeta {
 }
 
 /**
+ * Serialized error context for JSON output.
+ * This is the JSON-safe version of ErrorContext from errors.ts.
+ */
+export interface SerializedErrorContext {
+  /** Operation being performed (e.g., 'file-read', 'github-api', 'queue-fetch') */
+  operation: string;
+  /** Relevant identifiers for the operation */
+  identifiers?: {
+    filePath?: string;
+    issueNumber?: number;
+    prNumber?: number;
+    taskId?: string;
+    repo?: string;
+    projectNumber?: number | string;
+    sessionId?: string;
+    endpoint?: string;
+    command?: string;
+  };
+  /** ISO timestamp when the operation started */
+  startedAt: string;
+  /** Duration in milliseconds from start to error */
+  durationMs?: number;
+  /** Additional context metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Error information for failed responses.
  */
 export interface ResponseError {
@@ -116,6 +143,8 @@ export interface ResponseError {
   message: string;
   /** Optional additional details */
   details?: Record<string, unknown>;
+  /** Optional operation context for enriched diagnostics */
+  context?: SerializedErrorContext;
 }
 
 /**
@@ -177,6 +206,8 @@ export interface CreateJsonErrorOptions {
   message: string;
   /** Optional additional error details */
   details?: Record<string, unknown>;
+  /** Optional operation context for enriched diagnostics */
+  context?: SerializedErrorContext;
   /** Command name for metadata */
   command?: string;
   /** Execution start time (for calculating runtime_ms) */
@@ -287,7 +318,7 @@ export function createJsonResponse<T>(
  * ```
  */
 export function createJsonError(options: CreateJsonErrorOptions): JsonResponse<never> {
-  const { code, message, details, command, startTime, meta: metaOverrides } = options;
+  const { code, message, details, context, command, startTime, meta: metaOverrides } = options;
 
   const errorInfo: ResponseError = {
     code,
@@ -296,6 +327,10 @@ export function createJsonError(options: CreateJsonErrorOptions): JsonResponse<n
 
   if (details) {
     errorInfo.details = details;
+  }
+
+  if (context) {
+    errorInfo.context = context;
   }
 
   return {
@@ -416,4 +451,69 @@ export function outputJsonData<T>(
 ): void {
   const response = createJsonResponse({ ...options, data });
   outputJsonResponse(response);
+}
+
+/**
+ * Create a JSON error response from any error, including ChadGIError with context.
+ *
+ * This is a convenience function that extracts error information and context
+ * from various error types and creates a unified JSON error response.
+ *
+ * @param error - The error to convert (can be Error, ChadGIError, or any value)
+ * @param options - Additional options for the error response
+ * @returns A unified JSON error response
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await someOperation();
+ * } catch (error) {
+ *   const response = createJsonErrorFromError(error, { command: 'my-command' });
+ *   outputJsonResponse(response);
+ * }
+ * ```
+ */
+export function createJsonErrorFromError(
+  error: unknown,
+  options: {
+    command?: string;
+    startTime?: number;
+    meta?: Partial<ResponseMeta>;
+  } = {}
+): JsonResponse<never> {
+  // Extract error code
+  let code = 'UNKNOWN_ERROR';
+  let message = 'An unknown error occurred';
+  let context: SerializedErrorContext | undefined;
+
+  // Check if it's a ChadGIError (has code property)
+  if (error && typeof error === 'object' && 'code' in error) {
+    const chadError = error as { code: string; message?: string; context?: { operation: string; identifiers?: unknown; startedAt: Date; durationMs?: number; metadata?: unknown } };
+    code = chadError.code;
+    message = chadError.message || message;
+
+    // Extract context if present
+    if (chadError.context) {
+      context = {
+        operation: chadError.context.operation,
+        identifiers: chadError.context.identifiers as SerializedErrorContext['identifiers'],
+        startedAt: chadError.context.startedAt instanceof Date
+          ? chadError.context.startedAt.toISOString()
+          : String(chadError.context.startedAt),
+        durationMs: chadError.context.durationMs,
+        metadata: chadError.context.metadata as Record<string, unknown>,
+      };
+    }
+  } else if (error instanceof Error) {
+    message = error.message;
+  } else if (error !== null && error !== undefined) {
+    message = String(error);
+  }
+
+  return createJsonError({
+    code,
+    message,
+    context,
+    ...options,
+  });
 }
