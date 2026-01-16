@@ -370,3 +370,20 @@ export {
   outputJsonResponse,
   outputJsonData,
 } from './json-output.js';
+
+// CLI Options (centralized option definitions)
+export {
+  // Constants
+  STANDARD_OPTION_NAMES,
+  OPTION_DEFINITIONS,
+  DEFAULT_CONFIG_PATH,
+  // Types
+  type StandardOptionName,
+  type OptionDefinition,
+  // Helper functions
+  addStandardOption,
+  addStandardOptions,
+  getOptionDefinition,
+  isStandardOption,
+  hasOption,
+} from './cli-options.js';

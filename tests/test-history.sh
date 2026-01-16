@@ -76,8 +76,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 4: history command has --limit option"
 
+# Check either inline option definition or centralized addStandardOptions with 'limit'
 if grep -A10 "command('history')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-limit"; then
     pass "--limit option exists for history command"
+elif grep -A5 "command('history')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'limit'"; then
+    pass "--limit option exists via addStandardOptions"
 else
     fail "history command should have --limit option"
 fi
@@ -87,8 +90,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 5: history command has --since option"
 
+# Check either inline option definition or centralized addStandardOptions with 'since'
 if grep -A10 "command('history')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-since"; then
     pass "--since option exists for history command"
+elif grep -A5 "command('history')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'since'"; then
+    pass "--since option exists via addStandardOptions"
 else
     fail "history command should have --since option"
 fi
@@ -109,8 +115,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 7: history command has --json option"
 
+# Check either inline option definition or centralized addStandardOptions with 'json'
 if grep -A10 "command('history')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-json"; then
     pass "--json option exists for history command"
+elif grep -A5 "command('history')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'json'"; then
+    pass "--json option exists via addStandardOptions"
 else
     fail "history command should have --json option"
 fi

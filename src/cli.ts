@@ -57,6 +57,7 @@ import {
   isVerbose,
   isTrace,
 } from './utils/debug.js';
+import { addStandardOptions } from './utils/cli-options.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -165,23 +166,22 @@ program
   .option('-j, --json', 'Output statistics as JSON')
   .action(wrapCommand(stats));
 
-program
-  .command('history')
-  .description('View task execution history')
-  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-l, --limit <n>', 'Number of entries to show (default: 10)', createNumericParser('limit', 'limit'))
-  .option('-s, --since <time>', 'Show tasks since (e.g., 7d, 2w, 1m, 2024-01-01)')
+addStandardOptions(
+  program
+    .command('history')
+    .description('View task execution history'),
+  ['config', 'json', 'limit', 'since']
+)
   .option('--status <outcome>', 'Filter by outcome (success, failed, skipped)')
-  .option('-j, --json', 'Output history as JSON')
   .action(wrapCommand(historyMiddleware));
 
-program
-  .command('insights')
-  .description('Display aggregated performance analytics and profiling')
-  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-j, --json', 'Output insights as JSON')
+addStandardOptions(
+  program
+    .command('insights')
+    .description('Display aggregated performance analytics and profiling'),
+  ['config', 'json', 'days']
+)
   .option('-e, --export <path>', 'Export metrics data to file')
-  .option('-d, --days <n>', 'Show only data from the last N days', createNumericParser('days', 'days'))
   .option('--category <type>', 'Filter insights by task category (e.g., bug, feature, refactor)')
   .action(wrapCommand(insightsMiddleware));
 
@@ -200,12 +200,12 @@ program
   .option('--restart', 'Start ChadGI if not currently running')
   .action(wrapCommand(resume));
 
-program
-  .command('status')
-  .description('Show current ChadGI session state')
-  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-j, --json', 'Output status as JSON')
-  .action(wrapCommand(status));
+addStandardOptions(
+  program
+    .command('status')
+    .description('Show current ChadGI session state'),
+  ['config', 'json']
+).action(wrapCommand(status));
 
 program
   .command('watch')
@@ -216,27 +216,26 @@ program
   .option('-i, --interval <ms>', 'Refresh interval in milliseconds (default: 2000, min: 100)', createNumericParser('interval', 'interval'))
   .action(wrapCommand(watch));
 
-program
-  .command('doctor')
-  .description('Run comprehensive health checks and diagnostics')
-  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-j, --json', 'Output health report as JSON')
+addStandardOptions(
+  program
+    .command('doctor')
+    .description('Run comprehensive health checks and diagnostics'),
+  ['config', 'json']
+)
   .option('--fix', 'Auto-remediate simple issues (clear stale locks, etc.)')
   .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
   .action(wrapCommand(doctorMiddleware));
 
-program
-  .command('cleanup')
-  .description('Clean up stale branches, old diagnostics, and rotated log files')
-  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+addStandardOptions(
+  program
+    .command('cleanup')
+    .description('Clean up stale branches, old diagnostics, and rotated log files'),
+  ['config', 'json', 'dryRun', 'yes', 'days']
+)
   .option('--branches', 'Delete orphaned feature branches (local and remote)')
   .option('--diagnostics', 'Remove diagnostic artifacts older than N days')
   .option('--logs', 'Remove rotated log files beyond retention limit')
   .option('--all', 'Run all cleanup operations')
-  .option('--dry-run', 'Preview what would be deleted without making changes')
-  .option('--yes', 'Skip confirmation prompts')
-  .option('--days <n>', 'Retention days for diagnostics (default: 30)', createNumericParser('days', 'days'))
-  .option('-j, --json', 'Output results as JSON')
   .action(wrapCommand(cleanup));
 
 program
@@ -288,13 +287,12 @@ const queueCommand = program
   .command('queue')
   .description('View and manage the task queue');
 
-queueCommand
-  .command('list', { isDefault: true })
-  .description('List tasks in the Ready column')
-  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
-  .option('-j, --json', 'Output queue as JSON')
-  .option('-l, --limit <n>', 'Show only the first N tasks', createNumericParser('limit', 'limit'))
-  .action(wrapCommand(queueMiddleware));
+addStandardOptions(
+  queueCommand
+    .command('list', { isDefault: true })
+    .description('List tasks in the Ready column'),
+  ['config', 'json', 'limit']
+).action(wrapCommand(queueMiddleware));
 
 queueCommand
   .command('skip <issue-number>')

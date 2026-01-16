@@ -109,8 +109,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 7: queue command has --json option"
 
+# Check either inline option definition or centralized addStandardOptions with 'json'
 if grep -A5 "command('list'" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-json"; then
     pass "--json option exists for queue list"
+elif grep -A5 "command('list'" "$PROJECT_ROOT/src/cli.ts" | grep -q "'json'"; then
+    pass "--json option exists via addStandardOptions"
 else
     fail "queue list should have --json option"
 fi
@@ -120,8 +123,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 8: queue command has --limit option"
 
+# Check either inline option definition or centralized addStandardOptions with 'limit'
 if grep -A5 "command('list'" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-limit"; then
     pass "--limit option exists for queue list"
+elif grep -A5 "command('list'" "$PROJECT_ROOT/src/cli.ts" | grep -q "'limit'"; then
+    pass "--limit option exists via addStandardOptions"
 else
     fail "queue list should have --limit option"
 fi

@@ -76,8 +76,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 4: insights command has --json option"
 
+# Check either inline option definition or centralized addStandardOptions with 'json'
 if grep -A10 "command('insights')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-json"; then
     pass "--json option exists for insights command"
+elif grep -A5 "command('insights')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'json'"; then
+    pass "--json option exists via addStandardOptions"
 else
     fail "insights command should have --json option"
 fi
@@ -98,8 +101,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 6: insights command has --days option"
 
+# Check either inline option definition or centralized addStandardOptions with 'days'
 if grep -A10 "command('insights')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-days"; then
     pass "--days option exists for insights command"
+elif grep -A5 "command('insights')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'days'"; then
+    pass "--days option exists via addStandardOptions"
 else
     fail "insights command should have --days option"
 fi
