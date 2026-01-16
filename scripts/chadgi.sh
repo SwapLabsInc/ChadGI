@@ -2192,44 +2192,44 @@ parse_hook_config() {
         "pre_task")
             HOOK_PRE_TASK_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_PRE_TASK_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_PRE_TASK_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_PRE_TASK_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_PRE_TASK_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_PRE_TASK_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_PRE_TASK_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_PRE_TASK_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_PRE_TASK_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_PRE_TASK_ENABLED=true || true
             ;;
         "post_implementation")
             HOOK_POST_IMPL_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_POST_IMPL_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_POST_IMPL_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_IMPL_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_POST_IMPL_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_IMPL_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_POST_IMPL_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_IMPL_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_POST_IMPL_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_IMPL_ENABLED=true || true
             ;;
         "pre_pr")
             HOOK_PRE_PR_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_PRE_PR_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_PRE_PR_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_PRE_PR_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_PRE_PR_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_PRE_PR_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_PRE_PR_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_PRE_PR_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_PRE_PR_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_PRE_PR_ENABLED=true || true
             ;;
         "post_pr")
             HOOK_POST_PR_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_POST_PR_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_POST_PR_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_PR_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_POST_PR_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_PR_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_POST_PR_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_PR_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_POST_PR_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_PR_ENABLED=true || true
             ;;
         "post_merge")
             HOOK_POST_MERGE_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_POST_MERGE_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_POST_MERGE_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_MERGE_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_POST_MERGE_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_MERGE_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_POST_MERGE_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_POST_MERGE_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_POST_MERGE_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_POST_MERGE_ENABLED=true || true
             ;;
         "on_failure")
             HOOK_ON_FAILURE_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_ON_FAILURE_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_ON_FAILURE_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_ON_FAILURE_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_ON_FAILURE_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_ON_FAILURE_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_ON_FAILURE_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_ON_FAILURE_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_ON_FAILURE_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_ON_FAILURE_ENABLED=true || true
             ;;
         "on_budget_warning")
             HOOK_ON_BUDGET_WARNING_SCRIPT="$SCRIPT"
             [ -n "$TIMEOUT" ] && HOOK_ON_BUDGET_WARNING_TIMEOUT="$TIMEOUT"
-            [ "$CAN_ABORT" = "true" ] && HOOK_ON_BUDGET_WARNING_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_ON_BUDGET_WARNING_CAN_ABORT=false
-            [ "$ENABLED" = "false" ] && HOOK_ON_BUDGET_WARNING_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_ON_BUDGET_WARNING_ENABLED=true
+            [ "$CAN_ABORT" = "true" ] && HOOK_ON_BUDGET_WARNING_CAN_ABORT=true || [ "$CAN_ABORT" = "false" ] && HOOK_ON_BUDGET_WARNING_CAN_ABORT=false || true
+            [ "$ENABLED" = "false" ] && HOOK_ON_BUDGET_WARNING_ENABLED=false || [ "$ENABLED" = "true" ] && HOOK_ON_BUDGET_WARNING_ENABLED=true || true
             ;;
     esac
 }
@@ -5608,9 +5608,9 @@ while true; do
                     print_session_summary
                     save_session_stats
                     # Send session ended notification
-                    local EXIT_SESSION_END_EPOCH=$(date +%s)
-                    local EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
-                    local EXIT_FAILED_COUNT=0
+                    EXIT_SESSION_END_EPOCH=$(date +%s)
+                    EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
+                    EXIT_FAILED_COUNT=0
                     for TASK in $FAILED_TASKS; do
                         EXIT_FAILED_COUNT=$((EXIT_FAILED_COUNT + 1))
                     done
@@ -5643,13 +5643,13 @@ while true; do
     fi
     # Show dependency status if enabled
     if [ "$DEPENDENCIES_ENABLED" = "true" ] && [ "$IGNORE_DEPS" != "true" ]; then
-        local DEP_STATUS=$(get_dependency_status "$ISSUE_NUMBER" "$ISSUE_BODY")
+        DEP_STATUS=$(get_dependency_status "$ISSUE_NUMBER" "$ISSUE_BODY")
         echo -e "${BLUE}   Dependencies: ${NC}$DEP_STATUS"
     fi
     log_info "Queue depth: $ISSUE_COUNT issue(s)"
     # Show skipped tasks if any
     if [ -n "$SKIPPED_TASKS" ]; then
-        local SKIPPED_COUNT=$(echo "$SKIPPED_TASKS" | wc -w | tr -d ' ')
+        SKIPPED_COUNT=$(echo "$SKIPPED_TASKS" | wc -w | tr -d ' ')
         log_info "Skipped $SKIPPED_COUNT task(s) with unresolved dependencies"
     fi
 
@@ -5660,9 +5660,9 @@ while true; do
 
     if ! acquire_task_lock "$ISSUE_NUMBER"; then
         # Failed to acquire lock - issue is being processed by another session
-        local LOCK_FILE=$(get_task_lock_path "$ISSUE_NUMBER")
-        local LOCK_SESSION=""
-        local LOCK_HOST=""
+        LOCK_FILE=$(get_task_lock_path "$ISSUE_NUMBER")
+        LOCK_SESSION=""
+        LOCK_HOST=""
         if command -v jq &>/dev/null && [ -f "$LOCK_FILE" ]; then
             LOCK_SESSION=$(jq -r '.session_id // "unknown"' "$LOCK_FILE" 2>/dev/null)
             LOCK_HOST=$(jq -r '.hostname // "unknown"' "$LOCK_FILE" 2>/dev/null)
@@ -5773,7 +5773,6 @@ while true; do
         fi
         echo ""
 
-        local APPROVAL_RESULT
         wait_for_approval "pre_task" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
         APPROVAL_RESULT=$?
 
@@ -5869,7 +5868,7 @@ PROMPT_EOF
         save_progress "error" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
 
         # Use enhanced error classification
-        local ERROR_OUTPUT_FILE=$(mktemp)
+        ERROR_OUTPUT_FILE=$(mktemp)
         # Try to capture any recent output for classification
         if [ -f "$TEST_RESULTS" ]; then
             cp "$TEST_RESULTS" "$ERROR_OUTPUT_FILE" 2>/dev/null || true
@@ -5890,8 +5889,8 @@ PROMPT_EOF
             fi
         fi
 
-        local FAILURE_REASON="$LAST_ERROR_TYPE"
-        local FAILURE_DETAILS="$LAST_ERROR_DETAILS"
+        FAILURE_REASON="$LAST_ERROR_TYPE"
+        FAILURE_DETAILS="$LAST_ERROR_DETAILS"
 
         # Collect diagnostic artifacts if enabled
         collect_diagnostics "$ISSUE_NUMBER" "$LAST_ERROR_TYPE" "$LAST_ERROR_DETAILS" "$ERROR_OUTPUT_FILE"
@@ -5905,8 +5904,8 @@ PROMPT_EOF
         FAILED_TASKS="${FAILED_TASKS} ${ISSUE_NUMBER}:${FAILURE_REASON}"
 
         # Calculate task duration for metrics
-        local TASK_END_EPOCH=$(date +%s)
-        local TASK_DURATION=$((TASK_END_EPOCH - CURRENT_TASK_START_EPOCH))
+        TASK_END_EPOCH=$(date +%s)
+        TASK_DURATION=$((TASK_END_EPOCH - CURRENT_TASK_START_EPOCH))
 
         # Save detailed task metrics
         save_task_metrics "$ISSUE_NUMBER" "failed" "$TASK_DURATION" "$FAILURE_REASON" "$TASK_FAILURE_PHASE"
@@ -5929,9 +5928,9 @@ PROMPT_EOF
             save_session_stats
 
             # Send session ended notification
-            local EXIT_SESSION_END_EPOCH=$(date +%s)
-            local EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
-            local EXIT_FAILED_COUNT=0
+            EXIT_SESSION_END_EPOCH=$(date +%s)
+            EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
+            EXIT_FAILED_COUNT=0
             for TASK in $FAILED_TASKS; do
                 EXIT_FAILED_COUNT=$((EXIT_FAILED_COUNT + 1))
             done
@@ -5966,8 +5965,8 @@ PROMPT_EOF
     fi
 
     # Calculate task duration
-    local TASK_END_EPOCH=$(date +%s)
-    local TASK_DURATION=$((TASK_END_EPOCH - CURRENT_TASK_START_EPOCH))
+    TASK_END_EPOCH=$(date +%s)
+    TASK_DURATION=$((TASK_END_EPOCH - CURRENT_TASK_START_EPOCH))
 
     # Record successful task with duration
     SUCCESSFUL_TASKS="${SUCCESSFUL_TASKS} ${ISSUE_NUMBER}:${TASK_DURATION}"
@@ -6026,9 +6025,9 @@ PROMPT_EOF
             save_session_stats
 
             # Send session ended notification
-            local EXIT_SESSION_END_EPOCH=$(date +%s)
-            local EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
-            local EXIT_FAILED_COUNT=0
+            EXIT_SESSION_END_EPOCH=$(date +%s)
+            EXIT_SESSION_DURATION=$((EXIT_SESSION_END_EPOCH - SESSION_START_EPOCH))
+            EXIT_FAILED_COUNT=0
             for TASK in $FAILED_TASKS; do
                 EXIT_FAILED_COUNT=$((EXIT_FAILED_COUNT + 1))
             done

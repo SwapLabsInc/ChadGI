@@ -1,0 +1,8 @@
+============================================================
+ChadGI Session Started: 2026-01-16T16:00:51Z
+Log Level: INFO
+============================================================
+[2026-01-16T16:00:51Z] [INFO ] Task Source: Project Board
+[2026-01-16T16:00:51Z] [INFO ] Repository: owner/repo
+[2026-01-16T16:00:51Z] [INFO ] Project: #1
+[2026-01-16T16:00:51Z] [INFO ] Columns: Ready -> In Progress -> In Review

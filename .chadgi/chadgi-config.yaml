@@ -114,9 +114,9 @@ priority:
 # Budget tracking integrates with existing cost tracking from Claude output
 budget:
   # Maximum cost (USD) for a single task before action is taken
-  per_task_limit: 2.00
+  # per_task_limit: 2.00
   # Maximum total cost (USD) for the entire ChadGI session
-  per_session_limit: 20.00
+  # per_session_limit: 20.00
   # What to do when per-task budget is exceeded
   # Options: skip (move to next task), fail (treat as failure), warn (log warning but continue)
   on_task_budget_exceeded: skip
