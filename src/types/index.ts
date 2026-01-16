@@ -660,6 +660,87 @@ export interface UpdateCheckCache {
   current_version: string;
 }
 
+// ============================================================================
+// Task Lock Types
+// ============================================================================
+
+/**
+ * Task lock file data for preventing concurrent processing of same issue.
+ * Lock file format: issue-<number>.lock in .chadgi/locks/ directory
+ */
+export interface TaskLockData {
+  /** Issue number that is locked */
+  issue_number: number;
+  /** Unique session identifier to distinguish lock owners */
+  session_id: string;
+  /** Process ID of the session holding the lock */
+  pid: number;
+  /** Hostname of the machine holding the lock */
+  hostname: string;
+  /** ISO timestamp when the lock was acquired */
+  locked_at: string;
+  /** ISO timestamp of the last heartbeat (updated periodically while active) */
+  last_heartbeat: string;
+  /** Optional worker ID for parallel/workspace mode */
+  worker_id?: number;
+  /** Optional repository name for workspace mode */
+  repo_name?: string;
+}
+
+/**
+ * Result of attempting to acquire a task lock
+ */
+export interface TaskLockResult {
+  /** Whether the lock was successfully acquired */
+  acquired: boolean;
+  /** The lock data if acquired, or existing lock info if not */
+  lock?: TaskLockData;
+  /** Reason for lock acquisition failure */
+  reason?: 'already_locked' | 'stale_lock' | 'error';
+  /** Error message if acquisition failed */
+  error?: string;
+}
+
+/**
+ * Options for acquiring a task lock
+ */
+export interface TaskLockOptions {
+  /** Force acquisition even if lock exists (will check staleness) */
+  forceClaim?: boolean;
+  /** Custom timeout in minutes (overrides config) */
+  timeoutMinutes?: number;
+  /** Worker ID for parallel mode */
+  workerId?: number;
+  /** Repository name for workspace mode */
+  repoName?: string;
+}
+
+/**
+ * Task lock status information for display
+ */
+export interface TaskLockInfo {
+  /** Issue number */
+  issueNumber: number;
+  /** Session ID holding the lock */
+  sessionId: string;
+  /** PID of the locking process */
+  pid: number;
+  /** Hostname of the locking machine */
+  hostname: string;
+  /** When the lock was acquired */
+  lockedAt: string;
+  /** Seconds since lock was acquired */
+  lockedSeconds: number;
+  /** Seconds since last heartbeat */
+  heartbeatAgeSeconds: number;
+  /** Whether this lock is considered stale */
+  isStale: boolean;
+  /** Worker ID if in parallel mode */
+  workerId?: number;
+  /** Repository name if in workspace mode */
+  repoName?: string;
+}
+
 /**
  * Version info for JSON output
  */

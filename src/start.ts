@@ -29,6 +29,7 @@ interface StartOptions {
   parallel?: number;
   interactive?: boolean;
   mask?: boolean;  // --no-mask flag sets this to false
+  forceClaim?: boolean;  // --force-claim flag to override stale locks
 }
 
 interface WorkerInfo {
@@ -65,6 +66,7 @@ export async function start(options: StartOptions = {}): Promise<void> {
   const debugMode = options.debug ?? false;
   const ignoreDeps = options.ignoreDeps ?? false;
   const interactiveMode = options.interactive ?? false;
+  const forceClaim = options.forceClaim ?? false;
 
   if (interactiveMode) {
     console.log('Starting ChadGI in INTERACTIVE mode...\n');
@@ -128,7 +130,8 @@ export async function start(options: StartOptions = {}): Promise<void> {
     DEBUG_MODE: debugMode ? 'true' : 'false',
     IGNORE_DEPS: ignoreDeps ? 'true' : 'false',
     INTERACTIVE_MODE: interactiveMode ? 'true' : 'false',
-    NO_MASK: noMask ? 'true' : 'false'
+    NO_MASK: noMask ? 'true' : 'false',
+    FORCE_CLAIM: forceClaim ? 'true' : 'false'
   };
 
   // Add timeout override if specified via CLI
@@ -177,6 +180,7 @@ function runRepoTask(
       IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
       INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
       NO_MASK: options.mask === false ? 'true' : 'false',
+      FORCE_CLAIM: options.forceClaim ? 'true' : 'false',
       WORKSPACE_MODE: 'true',
       WORKSPACE_SINGLE_TASK: 'true', // Process only one task then exit
     };
@@ -500,6 +504,7 @@ function runWorkerTask(
       IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
       INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
       NO_MASK: options.mask === false ? 'true' : 'false',
+      FORCE_CLAIM: options.forceClaim ? 'true' : 'false',
       WORKSPACE_MODE: 'true',
       WORKSPACE_SINGLE_TASK: 'true',
       PARALLEL_WORKER_ID: String(workerInfo.id),

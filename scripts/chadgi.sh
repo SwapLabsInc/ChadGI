@@ -36,6 +36,10 @@ DEBUG_MODE="${DEBUG_MODE:-false}"
 # Ignore dependencies - passed from CLI via environment variable
 IGNORE_DEPS="${IGNORE_DEPS:-false}"
 
+# Force claim - passed from CLI via environment variable
+# When enabled, overrides stale task locks when claiming tasks
+FORCE_CLAIM="${FORCE_CLAIM:-false}"
+
 # Interactive mode - passed from CLI via environment variable
 # When enabled, requires human approval at checkpoints before proceeding
 INTERACTIVE_MODE="${INTERACTIVE_MODE:-false}"
@@ -886,6 +890,10 @@ load_config() {
     CATEGORY_LABELS_CHORE=$(parse_category_mappings_merged "chore" "${MERGED_CONFIG_FILES[@]}")
     CATEGORY_LABELS_CHORE="${CATEGORY_LABELS_CHORE:-chore maintenance ci build}"
 
+    # Task lock settings - prevent concurrent processing of same issue
+    TASK_LOCK_TIMEOUT_MINUTES=$(parse_yaml_value_merged "task_lock_timeout_minutes" "${MERGED_CONFIG_FILES[@]}")
+    TASK_LOCK_TIMEOUT_MINUTES="${TASK_LOCK_TIMEOUT_MINUTES:-120}"
+
     # Task dependency settings - check dependencies before processing tasks
     DEPENDENCIES_ENABLED=$(parse_yaml_nested_merged "dependencies" "enabled" "${MERGED_CONFIG_FILES[@]}")
     DEPENDENCIES_ENABLED="${DEPENDENCIES_ENABLED:-true}"
@@ -1011,6 +1019,9 @@ set_defaults() {
     DEPENDENCY_PATTERNS="${DEPENDENCY_PATTERNS:-depends on blocked by requires}"
     DEPENDENCIES_CHECK_LINKED="${DEPENDENCIES_CHECK_LINKED:-true}"
     DEPENDENCY_CACHE_TIMEOUT="${DEPENDENCY_CACHE_TIMEOUT:-300}"
+    # Task lock defaults
+    TASK_LOCK_TIMEOUT_MINUTES="${TASK_LOCK_TIMEOUT_MINUTES:-120}"
+    FORCE_CLAIM="${FORCE_CLAIM:-false}"
 
     # Notification settings
     NOTIFICATIONS_ENABLED="${NOTIFICATIONS_ENABLED:-false}"
@@ -2710,6 +2721,192 @@ PROGRESS_EOF
 # Path to the pause lock file
 PAUSE_LOCK_FILE="$CHADGI_DIR/pause.lock"
 
+#------------------------------------------------------------------------------
+# Task Lock Support
+#------------------------------------------------------------------------------
+
+# Path to the task locks directory
+TASK_LOCKS_DIR="$CHADGI_DIR/locks"
+
+# Session ID for this instance
+SESSION_ID="${HOSTNAME:-$(hostname)}-$$-$(date +%s)-$(( RANDOM ))"
+
+# Generate a unique session ID for this ChadGI instance
+generate_session_id() {
+    echo "${HOSTNAME:-$(hostname)}-$$-$(date +%s)-$(( RANDOM % 1000000 ))"
+}
+
+# Get lock file path for an issue
+get_task_lock_path() {
+    local ISSUE_NUM=$1
+    echo "$TASK_LOCKS_DIR/issue-${ISSUE_NUM}.lock"
+}
+
+# Check if a task is locked by another session
+# Returns: 0 if not locked or locked by us, 1 if locked by another session
+is_task_locked() {
+    local ISSUE_NUM=$1
+    local LOCK_FILE=$(get_task_lock_path "$ISSUE_NUM")
+
+    if [ ! -f "$LOCK_FILE" ]; then
+        return 0  # Not locked
+    fi
+
+    # Read lock file
+    local LOCK_SESSION_ID=""
+    local LOCK_HOSTNAME=""
+    local LOCK_PID=""
+    local LOCK_HEARTBEAT=""
+
+    if command -v jq &>/dev/null; then
+        LOCK_SESSION_ID=$(jq -r '.session_id // empty' "$LOCK_FILE" 2>/dev/null)
+        LOCK_HOSTNAME=$(jq -r '.hostname // empty' "$LOCK_FILE" 2>/dev/null)
+        LOCK_PID=$(jq -r '.pid // empty' "$LOCK_FILE" 2>/dev/null)
+        LOCK_HEARTBEAT=$(jq -r '.last_heartbeat // empty' "$LOCK_FILE" 2>/dev/null)
+    fi
+
+    # If same session owns the lock, we're good
+    if [ "$LOCK_SESSION_ID" = "$SESSION_ID" ]; then
+        return 0
+    fi
+
+    # Check if lock is stale (older than TASK_LOCK_TIMEOUT_MINUTES)
+    if [ -n "$LOCK_HEARTBEAT" ]; then
+        local NOW_EPOCH=$(date +%s)
+        local HEARTBEAT_EPOCH=$(date -d "$LOCK_HEARTBEAT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LOCK_HEARTBEAT" +%s 2>/dev/null || echo "0")
+        local TIMEOUT_SECS=$((TASK_LOCK_TIMEOUT_MINUTES * 60))
+        local AGE=$((NOW_EPOCH - HEARTBEAT_EPOCH))
+
+        if [ "$AGE" -gt "$TIMEOUT_SECS" ]; then
+            log_debug "Lock for issue #$ISSUE_NUM is stale (age: ${AGE}s > ${TIMEOUT_SECS}s)"
+            return 0  # Stale lock - can be claimed
+        fi
+    fi
+
+    # Check if the locking process is dead (only works on same host)
+    if [ "$LOCK_HOSTNAME" = "${HOSTNAME:-$(hostname)}" ] && [ -n "$LOCK_PID" ]; then
+        if ! kill -0 "$LOCK_PID" 2>/dev/null; then
+            log_debug "Lock for issue #$ISSUE_NUM held by dead process (PID: $LOCK_PID)"
+            return 0  # Process is dead - can be claimed
+        fi
+    fi
+
+    # Lock is held by another active session
+    return 1
+}
+
+# Acquire a task lock
+# Returns: 0 on success, 1 on failure
+acquire_task_lock() {
+    local ISSUE_NUM=$1
+
+    # Ensure locks directory exists
+    mkdir -p "$TASK_LOCKS_DIR"
+
+    local LOCK_FILE=$(get_task_lock_path "$ISSUE_NUM")
+    local NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Check if already locked by another session
+    if [ -f "$LOCK_FILE" ]; then
+        if ! is_task_locked "$ISSUE_NUM"; then
+            # Stale lock or our own lock - can override
+            log_debug "Overriding stale/own lock for issue #$ISSUE_NUM"
+        elif [ "$FORCE_CLAIM" = "true" ]; then
+            log_warn "Force-claiming locked issue #$ISSUE_NUM"
+        else
+            return 1  # Locked by another active session
+        fi
+    fi
+
+    # Create/update lock file atomically
+    local TEMP_LOCK="${LOCK_FILE}.tmp.$$"
+    cat > "$TEMP_LOCK" << LOCK_EOF
+{
+  "issue_number": $ISSUE_NUM,
+  "session_id": "$SESSION_ID",
+  "pid": $$,
+  "hostname": "${HOSTNAME:-$(hostname)}",
+  "locked_at": "$NOW",
+  "last_heartbeat": "$NOW"
+}
+LOCK_EOF
+
+    mv "$TEMP_LOCK" "$LOCK_FILE"
+    return 0
+}
+
+# Release a task lock
+release_task_lock() {
+    local ISSUE_NUM=$1
+    local LOCK_FILE=$(get_task_lock_path "$ISSUE_NUM")
+
+    if [ -f "$LOCK_FILE" ]; then
+        # Verify we own the lock before releasing
+        local LOCK_SESSION_ID=""
+        if command -v jq &>/dev/null; then
+            LOCK_SESSION_ID=$(jq -r '.session_id // empty' "$LOCK_FILE" 2>/dev/null)
+        fi
+
+        if [ "$LOCK_SESSION_ID" = "$SESSION_ID" ] || [ -z "$LOCK_SESSION_ID" ]; then
+            rm -f "$LOCK_FILE"
+            log_debug "Released lock for issue #$ISSUE_NUM"
+        else
+            log_debug "Cannot release lock for issue #$ISSUE_NUM - owned by another session"
+        fi
+    fi
+}
+
+# Update heartbeat for a held lock
+update_task_lock_heartbeat() {
+    local ISSUE_NUM=$1
+    local LOCK_FILE=$(get_task_lock_path "$ISSUE_NUM")
+
+    if [ -f "$LOCK_FILE" ]; then
+        local NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        if command -v jq &>/dev/null; then
+            jq --arg ts "$NOW" '.last_heartbeat = $ts' "$LOCK_FILE" > "${LOCK_FILE}.tmp" && \
+                mv "${LOCK_FILE}.tmp" "$LOCK_FILE"
+        fi
+    fi
+}
+
+# Background heartbeat process for task locks
+HEARTBEAT_PID=""
+
+start_task_lock_heartbeat() {
+    local ISSUE_NUM=$1
+
+    # Start background heartbeat loop
+    (
+        while true; do
+            sleep 30
+            update_task_lock_heartbeat "$ISSUE_NUM"
+        done
+    ) &
+    HEARTBEAT_PID=$!
+    log_debug "Started heartbeat process (PID: $HEARTBEAT_PID) for issue #$ISSUE_NUM"
+}
+
+stop_task_lock_heartbeat() {
+    if [ -n "$HEARTBEAT_PID" ]; then
+        kill "$HEARTBEAT_PID" 2>/dev/null
+        wait "$HEARTBEAT_PID" 2>/dev/null
+        HEARTBEAT_PID=""
+        log_debug "Stopped heartbeat process"
+    fi
+}
+
+# Cleanup function for graceful shutdown
+cleanup_task_locks() {
+    # Stop heartbeat
+    stop_task_lock_heartbeat
+
+    # Release any locks we hold
+    if [ -n "$ISSUE_NUMBER" ]; then
+        release_task_lock "$ISSUE_NUMBER"
+    fi
+}
+
 # Check if pause lock exists and handle accordingly
 # Returns: 0 if should continue, 1 if paused (and will wait)
 check_pause_lock() {
@@ -3584,6 +3781,9 @@ function ctrl_c() {
     echo -e "${YELLOW}  ChadGI is shutting down gracefully...${NC}"
     echo -e "${YELLOW}-----------------------------------------------------------${NC}"
     save_progress "stopped" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+
+    # Clean up task locks
+    cleanup_task_locks
 
     # Display and save session statistics
     print_session_summary
@@ -5453,6 +5653,34 @@ while true; do
         log_info "Skipped $SKIPPED_COUNT task(s) with unresolved dependencies"
     fi
 
+    #---------------------------------------------------------------------------
+    # TASK LOCK: Attempt to acquire lock before claiming task
+    #---------------------------------------------------------------------------
+    log_step "Acquiring task lock for issue #$ISSUE_NUMBER..."
+
+    if ! acquire_task_lock "$ISSUE_NUMBER"; then
+        # Failed to acquire lock - issue is being processed by another session
+        local LOCK_FILE=$(get_task_lock_path "$ISSUE_NUMBER")
+        local LOCK_SESSION=""
+        local LOCK_HOST=""
+        if command -v jq &>/dev/null && [ -f "$LOCK_FILE" ]; then
+            LOCK_SESSION=$(jq -r '.session_id // "unknown"' "$LOCK_FILE" 2>/dev/null)
+            LOCK_HOST=$(jq -r '.hostname // "unknown"' "$LOCK_FILE" 2>/dev/null)
+        fi
+        log_warn "Issue #$ISSUE_NUMBER is locked by another session"
+        log_info "  Session: $LOCK_SESSION"
+        log_info "  Host: $LOCK_HOST"
+        log_info "Skipping to next task..."
+        log_info "Use --force-claim to override stale locks"
+        sleep 2
+        continue
+    fi
+
+    log_success "Task lock acquired"
+
+    # Start heartbeat to keep lock alive
+    start_task_lock_heartbeat "$ISSUE_NUMBER"
+
     log_header "MOVING ISSUE #$ISSUE_NUMBER TO $IN_PROGRESS_COLUMN"
 
     # Move to In Progress column
@@ -5729,6 +5957,10 @@ PROMPT_EOF
                 ;;
         esac
 
+        # Release task lock and stop heartbeat on failure
+        stop_task_lock_heartbeat
+        release_task_lock "$ISSUE_NUMBER"
+
         sleep 5
         continue
     fi
@@ -5766,6 +5998,10 @@ PROMPT_EOF
     # Reset GigaChad state for next task
     GIGACHAD_MERGED=false
     GIGACHAD_MERGED_PR=""
+
+    # Release task lock and stop heartbeat
+    stop_task_lock_heartbeat
+    release_task_lock "$ISSUE_NUMBER"
 
     # Save progress
     save_progress "idle" "" "" ""

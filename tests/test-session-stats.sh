@@ -140,7 +140,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 10: ctrl_c handler calls save_session_stats"
 
-if grep -A10 "^function ctrl_c()" "$PROJECT_ROOT/scripts/chadgi.sh" | grep -q 'save_session_stats'; then
+if grep -A15 "^function ctrl_c()" "$PROJECT_ROOT/scripts/chadgi.sh" | grep -q 'save_session_stats'; then
     pass "ctrl_c calls save_session_stats"
 else
     fail "ctrl_c should call save_session_stats"

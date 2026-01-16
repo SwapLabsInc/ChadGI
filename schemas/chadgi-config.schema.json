@@ -84,6 +84,12 @@
       "default": "depends on blocked by requires",
       "description": "Space-separated phrases that indicate task dependencies. ChadGI looks for these patterns followed by issue numbers in issue body."
     },
+    "task_lock_timeout_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 120,
+      "description": "Timeout in minutes for task locks. Locks older than this are considered stale and can be overridden. Default: 120 (2 hours)."
+    },
     "local_file": {
       "$ref": "#/$defs/LocalFileConfig"
     },

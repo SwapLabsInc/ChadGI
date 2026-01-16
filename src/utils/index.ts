@@ -123,6 +123,10 @@ export {
   loadJsonFile,
   fileExists,
   readTextFile,
+  loadTaskLock,
+  loadAllTaskLocks,
+  loadStaleLocks,
+  isTaskLockStale,
 } from './data.js';
 
 // Secrets
@@ -169,3 +173,28 @@ export {
   createSpinner,
   type ProgressBarOptions,
 } from './progress.js';
+
+// Locks (task lock utilities)
+export {
+  DEFAULT_LOCK_TIMEOUT_MINUTES,
+  HEARTBEAT_INTERVAL_MS,
+  LOCKS_DIRECTORY,
+  generateSessionId,
+  getLocksDir,
+  getLockFilePath,
+  ensureLocksDir,
+  readTaskLock,
+  isLockStale,
+  isProcessRunning,
+  acquireTaskLock,
+  releaseTaskLock,
+  forceReleaseTaskLock,
+  updateLockHeartbeat,
+  listTaskLocks,
+  findStaleLocks,
+  cleanupStaleLocks,
+  isIssueLocked,
+  isLockedByOther,
+  startHeartbeat,
+  releaseAllSessionLocks,
+} from './locks.js';
