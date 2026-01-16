@@ -151,3 +151,12 @@ export {
   type ConstraintName,
   type ValidationResult,
 } from './validation.js';
+
+// File Operations (atomic writes)
+export {
+  atomicWriteFile,
+  atomicWriteJson,
+  safeWriteFile,
+  safeWriteJson,
+  type SafeWriteOptions,
+} from './fileOps.js';
