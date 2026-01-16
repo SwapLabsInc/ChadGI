@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readdirSync, unlinkSync, readFileSync } from 'fs
 import { join } from 'path';
 import { hostname } from 'os';
 import { atomicWriteJson, safeParseJson } from './fileOps.js';
+import { TASK_LOCK_DATA_SCHEMA, validateSchema } from './data-schema.js';
 import type {
   TaskLockData,
   TaskLockResult,
@@ -69,11 +70,16 @@ export function ensureLocksDir(chadgiDir: string): void {
 }
 
 /**
- * Read a task lock file
+ * Read a task lock file with schema validation.
+ *
+ * The lock data is validated against TASK_LOCK_DATA_SCHEMA to ensure:
+ * - All required fields (issue_number, session_id, pid, etc.) are present
+ * - Numeric fields are positive integers
+ * - Timestamps are in valid ISO format
  *
  * @param chadgiDir - Path to the .chadgi directory
  * @param issueNumber - The issue number
- * @returns Lock data or null if no lock exists
+ * @returns Validated lock data or null if no lock exists or validation fails
  */
 export function readTaskLock(chadgiDir: string, issueNumber: number): TaskLockData | null {
   const lockPath = getLockFilePath(chadgiDir, issueNumber);
@@ -82,10 +88,20 @@ export function readTaskLock(chadgiDir: string, issueNumber: number): TaskLockDa
   }
 
   const content = readFileSync(lockPath, 'utf-8');
-  const result = safeParseJson<TaskLockData>(content, {
+  const parseResult = safeParseJson<TaskLockData>(content, {
     filePath: lockPath,
   });
-  return result.success ? result.data : null;
+
+  if (!parseResult.success) {
+    return null;
+  }
+
+  const validation = validateSchema<TaskLockData>(parseResult.data, TASK_LOCK_DATA_SCHEMA, {
+    recover: false, // Lock data is critical - don't recover with defaults
+    filePath: lockPath,
+  });
+
+  return validation.valid ? validation.data ?? null : null;
 }
 
 /**
@@ -297,11 +313,14 @@ export function updateLockHeartbeat(
 }
 
 /**
- * List all current task locks
+ * List all current task locks with schema validation.
+ *
+ * Each lock file is validated against TASK_LOCK_DATA_SCHEMA.
+ * Invalid locks are filtered out.
  *
  * @param chadgiDir - Path to the .chadgi directory
  * @param timeoutMinutes - Timeout for determining staleness
- * @returns Array of lock info objects
+ * @returns Array of validated lock info objects
  */
 export function listTaskLocks(
   chadgiDir: string,
@@ -325,12 +344,21 @@ export function listTaskLocks(
     for (const file of files) {
       const filePath = join(locksDir, file);
       const content = readFileSync(filePath, 'utf-8');
-      const result = safeParseJson<TaskLockData>(content, {
+      const parseResult = safeParseJson<TaskLockData>(content, {
         filePath,
       });
 
-      if (result.success) {
-        const lock = result.data;
+      if (!parseResult.success) {
+        continue;
+      }
+
+      const validation = validateSchema<TaskLockData>(parseResult.data, TASK_LOCK_DATA_SCHEMA, {
+        recover: false, // Lock data is critical - don't recover with defaults
+        filePath,
+      });
+
+      if (validation.valid && validation.data) {
+        const lock = validation.data;
         const lockedAt = new Date(lock.locked_at).getTime();
         const heartbeatAt = new Date(lock.last_heartbeat).getTime();
 

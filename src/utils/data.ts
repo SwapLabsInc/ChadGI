@@ -25,16 +25,33 @@ import {
   DEFAULT_LOCK_TIMEOUT_MINUTES,
 } from './locks.js';
 import { safeParseJson } from './fileOps.js';
+import {
+  SESSION_STATS_SCHEMA,
+  METRICS_DATA_SCHEMA,
+  TASK_METRICS_SCHEMA,
+  PROGRESS_DATA_SCHEMA,
+  PAUSE_LOCK_DATA_SCHEMA,
+  APPROVAL_LOCK_DATA_SCHEMA,
+  validateSchema,
+  validateArray,
+} from './data-schema.js';
 
 // ============================================================================
 // Session Stats
 // ============================================================================
 
 /**
- * Load session stats from chadgi-stats.json
+ * Load session stats from chadgi-stats.json with schema validation.
+ *
+ * The session stats are validated against SESSION_STATS_SCHEMA to ensure:
+ * - All required fields are present
+ * - Numeric fields are within reasonable bounds
+ * - Timestamps are in valid ISO format
+ *
+ * Invalid sessions are filtered out, and recoverable fields use defaults.
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns Array of session stats or empty array if file doesn't exist
+ * @returns Array of validated session stats or empty array if file doesn't exist
  */
 export function loadSessionStats(chadgiDir: string): SessionStats[] {
   const statsFile = join(chadgiDir, 'chadgi-stats.json');
@@ -43,10 +60,21 @@ export function loadSessionStats(chadgiDir: string): SessionStats[] {
   }
 
   const content = readFileSync(statsFile, 'utf-8');
-  const result = safeParseJson<SessionStats[]>(content, {
+  const parseResult = safeParseJson<unknown[]>(content, {
     filePath: statsFile,
   });
-  return result.success ? result.data : [];
+
+  if (!parseResult.success) {
+    return [];
+  }
+
+  // Validate each session against the schema
+  const validation = validateArray<SessionStats>(parseResult.data, SESSION_STATS_SCHEMA, {
+    recover: true,
+    filePath: statsFile,
+  });
+
+  return validation.data;
 }
 
 /**
@@ -67,10 +95,17 @@ export function getMostRecentSession(sessions: SessionStats[]): SessionStats | n
 // ============================================================================
 
 /**
- * Load task metrics from chadgi-metrics.json
+ * Load task metrics from chadgi-metrics.json with schema validation.
+ *
+ * The metrics are validated against TASK_METRICS_SCHEMA to ensure:
+ * - All required fields are present
+ * - Numeric fields (cost, duration, iterations) are within bounds
+ * - Status is a valid enum value
+ *
+ * Invalid metrics are filtered out, and recoverable fields use defaults.
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns Array of task metrics or empty array if file doesn't exist
+ * @returns Array of validated task metrics or empty array if file doesn't exist
  */
 export function loadTaskMetrics(chadgiDir: string): TaskMetrics[] {
   const metricsFile = join(chadgiDir, 'chadgi-metrics.json');
@@ -79,17 +114,42 @@ export function loadTaskMetrics(chadgiDir: string): TaskMetrics[] {
   }
 
   const content = readFileSync(metricsFile, 'utf-8');
-  const result = safeParseJson<MetricsData>(content, {
+  const parseResult = safeParseJson<MetricsData>(content, {
     filePath: metricsFile,
   });
-  return result.success ? (result.data.tasks || []) : [];
+
+  if (!parseResult.success) {
+    return [];
+  }
+
+  // Validate the container
+  const containerValidation = validateSchema<MetricsData>(parseResult.data, METRICS_DATA_SCHEMA, {
+    recover: true,
+    filePath: metricsFile,
+  });
+
+  if (!containerValidation.valid || !containerValidation.data) {
+    return [];
+  }
+
+  const tasks = containerValidation.data.tasks || [];
+
+  // Validate each task against the schema
+  const validation = validateArray<TaskMetrics>(tasks, TASK_METRICS_SCHEMA, {
+    recover: true,
+    filePath: metricsFile,
+  });
+
+  return validation.data;
 }
 
 /**
- * Load the full metrics data structure
+ * Load the full metrics data structure with schema validation.
+ *
+ * The metrics data container is validated against METRICS_DATA_SCHEMA.
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns The full metrics data or null
+ * @returns The validated metrics data or null
  */
 export function loadMetricsData(chadgiDir: string): MetricsData | null {
   const metricsFile = join(chadgiDir, 'chadgi-metrics.json');
@@ -98,10 +158,20 @@ export function loadMetricsData(chadgiDir: string): MetricsData | null {
   }
 
   const content = readFileSync(metricsFile, 'utf-8');
-  const result = safeParseJson<MetricsData>(content, {
+  const parseResult = safeParseJson<MetricsData>(content, {
     filePath: metricsFile,
   });
-  return result.success ? result.data : null;
+
+  if (!parseResult.success) {
+    return null;
+  }
+
+  const validation = validateSchema<MetricsData>(parseResult.data, METRICS_DATA_SCHEMA, {
+    recover: true,
+    filePath: metricsFile,
+  });
+
+  return validation.valid ? validation.data ?? null : null;
 }
 
 /**
@@ -129,10 +199,15 @@ export function getCompletedTaskMetrics(metrics: TaskMetrics[]): TaskMetrics[] {
 // ============================================================================
 
 /**
- * Load progress data from chadgi-progress.json
+ * Load progress data from chadgi-progress.json with schema validation.
+ *
+ * The progress data is validated against PROGRESS_DATA_SCHEMA to ensure:
+ * - Required fields like status and last_updated are present
+ * - Numeric fields in session/iteration are within bounds
+ * - Status is a valid enum value
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns Progress data or null if file doesn't exist
+ * @returns Validated progress data or null if file doesn't exist
  */
 export function loadProgressData(chadgiDir: string): ProgressData | null {
   const progressFile = join(chadgiDir, 'chadgi-progress.json');
@@ -141,10 +216,20 @@ export function loadProgressData(chadgiDir: string): ProgressData | null {
   }
 
   const content = readFileSync(progressFile, 'utf-8');
-  const result = safeParseJson<ProgressData>(content, {
+  const parseResult = safeParseJson<ProgressData>(content, {
     filePath: progressFile,
   });
-  return result.success ? result.data : null;
+
+  if (!parseResult.success) {
+    return null;
+  }
+
+  const validation = validateSchema<ProgressData>(parseResult.data, PROGRESS_DATA_SCHEMA, {
+    recover: true,
+    filePath: progressFile,
+  });
+
+  return validation.valid ? validation.data ?? null : null;
 }
 
 // ============================================================================
@@ -152,10 +237,14 @@ export function loadProgressData(chadgiDir: string): ProgressData | null {
 // ============================================================================
 
 /**
- * Load pause lock data
+ * Load pause lock data with schema validation.
+ *
+ * The pause lock is validated against PAUSE_LOCK_DATA_SCHEMA to ensure:
+ * - Required paused_at timestamp is present and valid
+ * - Optional resume_at is a valid timestamp if present
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns Pause lock data or null if not paused
+ * @returns Validated pause lock data or null if not paused
  */
 export function loadPauseLock(chadgiDir: string): PauseLockData | null {
   const pauseLockFile = join(chadgiDir, 'pause.lock');
@@ -164,10 +253,20 @@ export function loadPauseLock(chadgiDir: string): PauseLockData | null {
   }
 
   const content = readFileSync(pauseLockFile, 'utf-8');
-  const result = safeParseJson<PauseLockData>(content, {
+  const parseResult = safeParseJson<PauseLockData>(content, {
     filePath: pauseLockFile,
   });
-  return result.success ? result.data : null;
+
+  if (!parseResult.success) {
+    return null;
+  }
+
+  const validation = validateSchema<PauseLockData>(parseResult.data, PAUSE_LOCK_DATA_SCHEMA, {
+    recover: true,
+    filePath: pauseLockFile,
+  });
+
+  return validation.valid ? validation.data ?? null : null;
 }
 
 /**
@@ -182,10 +281,12 @@ export function isPaused(chadgiDir: string): boolean {
 }
 
 /**
- * Find pending approval lock files
+ * Find pending approval lock files with schema validation.
+ *
+ * Each approval lock is validated against APPROVAL_LOCK_DATA_SCHEMA.
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns First pending approval or null
+ * @returns First validated pending approval or null
  */
 export function findPendingApproval(chadgiDir: string): ApprovalLockData | null {
   try {
@@ -195,11 +296,18 @@ export function findPendingApproval(chadgiDir: string): ApprovalLockData | null 
     for (const file of files) {
       const filePath = join(chadgiDir, file);
       const content = readFileSync(filePath, 'utf-8');
-      const result = safeParseJson<ApprovalLockData>(content, {
+      const parseResult = safeParseJson<ApprovalLockData>(content, {
         filePath,
       });
-      if (result.success && result.data.status === 'pending') {
-        return result.data;
+      if (!parseResult.success) {
+        continue;
+      }
+      const validation = validateSchema<ApprovalLockData>(parseResult.data, APPROVAL_LOCK_DATA_SCHEMA, {
+        recover: true,
+        filePath,
+      });
+      if (validation.valid && validation.data?.status === 'pending') {
+        return validation.data;
       }
     }
   } catch {
@@ -209,10 +317,13 @@ export function findPendingApproval(chadgiDir: string): ApprovalLockData | null 
 }
 
 /**
- * List all approval lock files
+ * List all approval lock files with schema validation.
+ *
+ * Each approval lock is validated against APPROVAL_LOCK_DATA_SCHEMA.
+ * Invalid locks are filtered out.
  *
  * @param chadgiDir - Path to the .chadgi directory
- * @returns Array of approval lock data
+ * @returns Array of validated approval lock data
  */
 export function listApprovalLocks(chadgiDir: string): ApprovalLockData[] {
   const approvals: ApprovalLockData[] = [];
@@ -223,11 +334,18 @@ export function listApprovalLocks(chadgiDir: string): ApprovalLockData[] {
     for (const file of files) {
       const filePath = join(chadgiDir, file);
       const content = readFileSync(filePath, 'utf-8');
-      const result = safeParseJson<ApprovalLockData>(content, {
+      const parseResult = safeParseJson<ApprovalLockData>(content, {
         filePath,
       });
-      if (result.success) {
-        approvals.push(result.data);
+      if (!parseResult.success) {
+        continue;
+      }
+      const validation = validateSchema<ApprovalLockData>(parseResult.data, APPROVAL_LOCK_DATA_SCHEMA, {
+        recover: true,
+        filePath,
+      });
+      if (validation.valid && validation.data) {
+        approvals.push(validation.data);
       }
     }
   } catch {

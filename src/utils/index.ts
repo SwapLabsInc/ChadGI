@@ -168,12 +168,37 @@ export {
   safeWriteFile,
   safeWriteJson,
   safeParseJson,
+  safeParseAndValidate,
   type SafeWriteOptions,
   type SafeParseSuccess,
   type SafeParseFailure,
   type SafeParseResult,
   type SafeParseJsonOptions,
 } from './fileOps.js';
+
+// Data Schema (JSON validation and bounds checking)
+export {
+  // Types
+  type FieldType,
+  type FieldConstraint,
+  type DataSchema,
+  type ValidationError as SchemaValidationError,
+  type ValidationResult as SchemaValidationResult,
+  // Constants
+  DATA_BOUNDS,
+  // Schemas
+  SESSION_STATS_SCHEMA,
+  TASK_METRICS_SCHEMA,
+  METRICS_DATA_SCHEMA,
+  TASK_LOCK_DATA_SCHEMA,
+  PROGRESS_DATA_SCHEMA,
+  PAUSE_LOCK_DATA_SCHEMA,
+  APPROVAL_LOCK_DATA_SCHEMA,
+  // Functions
+  validateSchema,
+  validateArray,
+  getSchema,
+} from './data-schema.js';
 
 // Progress (progress bars and spinners)
 export {
