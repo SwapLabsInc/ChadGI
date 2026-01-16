@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SwapLabsInc/ChadGI/main/schemas/chadgi-config.schema.json
 # ChadGI Configuration
 # Autonomous task worker configuration
 

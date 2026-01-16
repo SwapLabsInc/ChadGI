@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SwapLabsInc/ChadGI/main/schemas/chadgi-config.schema.json",
+  "title": "ChadGI Configuration",
+  "description": "Configuration schema for ChadGI - Autonomous Task Worker powered by Claude Code",
+  "type": "object",
+  "properties": {
+    "extends": {
+      "type": "string",
+      "description": "Path to a base configuration file to inherit from. Local values override base config values. Supports chained inheritance (A extends B extends C)."
+    },
+    "base_config": {
+      "type": "string",
+      "description": "Alias for 'extends'. Path to a base configuration file to inherit from."
+    },
+    "task_source": {
+      "type": "string",
+      "enum": ["github-issues", "local-file", "manual"],
+      "default": "github-issues",
+      "description": "Source for tasks. 'github-issues' pulls from GitHub Project board, 'local-file' reads from a local file, 'manual' prompts for tasks."
+    },
+    "prompt_template": {
+      "type": "string",
+      "default": "./chadgi-task.md",
+      "description": "Path to the task prompt template file (relative to .chadgi directory)."
+    },
+    "generate_template": {
+      "type": "string",
+      "default": "./chadgi-generate-task.md",
+      "description": "Path to the task generation template file (relative to .chadgi directory)."
+    },
+    "progress_file": {
+      "type": "string",
+      "default": "./chadgi-progress.json",
+      "description": "Path to the progress tracking file (relative to .chadgi directory)."
+    },
+    "github": {
+      "$ref": "#/$defs/GitHubConfig"
+    },
+    "branch": {
+      "$ref": "#/$defs/BranchConfig"
+    },
+    "poll_interval": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10,
+      "description": "Seconds between task queue checks."
+    },
+    "consecutive_empty_threshold": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2,
+      "description": "Number of consecutive empty queue checks before triggering on_empty_queue action."
+    },
+    "on_empty_queue": {
+      "type": "string",
+      "enum": ["generate", "wait", "exit"],
+      "default": "generate",
+      "description": "Action to take when the task queue is empty. 'generate' creates new tasks, 'wait' keeps polling, 'exit' stops ChadGI."
+    },
+    "iteration": {
+      "$ref": "#/$defs/IterationConfig"
+    },
+    "output": {
+      "$ref": "#/$defs/OutputConfig"
+    },
+    "branding": {
+      "$ref": "#/$defs/BrandingConfig"
+    },
+    "priority": {
+      "$ref": "#/$defs/PriorityConfig"
+    },
+    "budget": {
+      "$ref": "#/$defs/BudgetConfig"
+    },
+    "category": {
+      "$ref": "#/$defs/CategoryConfig"
+    },
+    "dependencies": {
+      "$ref": "#/$defs/DependenciesConfig"
+    },
+    "dependency_patterns": {
+      "type": "string",
+      "default": "depends on blocked by requires",
+      "description": "Space-separated phrases that indicate task dependencies. ChadGI looks for these patterns followed by issue numbers in issue body."
+    },
+    "local_file": {
+      "$ref": "#/$defs/LocalFileConfig"
+    },
+    "manual": {
+      "$ref": "#/$defs/ManualConfig"
+    },
+    "notifications": {
+      "$ref": "#/$defs/NotificationsConfig"
+    },
+    "custom_template_variables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of custom template variable names that can be used in templates beyond the built-in variables."
+    }
+  },
+  "required": ["github", "branch", "iteration"],
+  "$defs": {
+    "GitHubConfig": {
+      "type": "object",
+      "description": "GitHub repository and project board configuration.",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$",
+          "description": "GitHub repository in 'owner/repo' format."
+        },
+        "project_number": {
+          "type": ["integer", "string"],
+          "minimum": 1,
+          "description": "GitHub Project v2 number (visible in project URL)."
+        },
+        "ready_column": {
+          "type": "string",
+          "default": "Ready",
+          "description": "Name of the project board column containing tasks ready to be worked on. Must match exactly (case-sensitive)."
+        },
+        "in_progress_column": {
+          "type": "string",
+          "default": "In progress",
+          "description": "Name of the project board column for tasks currently being worked on. Must match exactly (case-sensitive)."
+        },
+        "review_column": {
+          "type": "string",
+          "default": "In review",
+          "description": "Name of the project board column for tasks with PRs awaiting review. Must match exactly (case-sensitive)."
+        },
+        "done_column": {
+          "type": "string",
+          "default": "Done",
+          "description": "Name of the project board column for completed tasks. Used when gigachad_mode is enabled."
+        }
+      },
+      "required": ["repo", "project_number"]
+    },
+    "BranchConfig": {
+      "type": "object",
+      "description": "Git branch naming configuration.",
+      "properties": {
+        "base": {
+          "type": "string",
+          "default": "main",
+          "description": "Base branch for creating feature branches (e.g., 'main', 'master', 'develop')."
+        },
+        "prefix": {
+          "type": "string",
+          "default": "feature/issue-",
+          "description": "Prefix for feature branch names. Issue number is appended to this prefix."
+        }
+      },
+      "required": ["base", "prefix"]
+    },
+    "IterationConfig": {
+      "type": "object",
+      "description": "Task iteration and execution configuration. Controls the two-phase workflow: implementation then PR creation.",
+      "properties": {
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 5,
+          "description": "Maximum attempts per task before giving up. Each failed test/build triggers a retry."
+        },
+        "task_timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30,
+          "description": "Timeout per task in minutes. Set to 0 to disable timeout."
+        },
+        "completion_promise": {
+          "type": "string",
+          "default": "COMPLETE",
+          "description": "String Claude outputs after PR is created, signaling task completion."
+        },
+        "ready_promise": {
+          "type": "string",
+          "default": "READY_FOR_PR",
+          "description": "String Claude outputs when implementation is done (before PR creation). Triggers verification phase."
+        },
+        "test_command": {
+          "type": "string",
+          "description": "Command to run tests. Executed after implementation, before PR creation."
+        },
+        "build_command": {
+          "type": "string",
+          "description": "Command to build the project. Executed after implementation, before PR creation."
+        },
+        "on_max_iterations": {
+          "type": "string",
+          "enum": ["skip", "rollback", "retry-later", "fail"],
+          "default": "skip",
+          "description": "Action when max iterations reached. 'skip' moves to next task, 'rollback' resets branch, 'retry-later' moves back to ready column."
+        },
+        "gigachad_mode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable GigaChad Mode to auto-merge PRs without human review. Moves tickets directly to Done column. Use at your own risk!"
+        },
+        "gigachad_commit_prefix": {
+          "type": "string",
+          "default": "[GIGACHAD]",
+          "description": "Prefix added to commit messages when GigaChad auto-merges. Helps identify autonomous merges for potential rollbacks."
+        },
+        "retry_delay": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 5,
+          "description": "Initial delay in seconds between retries when tests fail."
+        },
+        "retry_backoff": {
+          "type": "string",
+          "enum": ["fixed", "linear", "exponential"],
+          "default": "exponential",
+          "description": "Retry delay strategy. 'fixed' uses constant delay, 'linear' adds retry_delay each attempt, 'exponential' doubles delay each attempt."
+        },
+        "retry_max_delay": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Maximum delay cap in seconds for exponential backoff."
+        },
+        "retry_jitter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Add +/-20% randomness to retry delays to prevent thundering herd problem."
+        },
+        "error_diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic capture of diagnostic artifacts (git diff, build output, system state) on failure. Saved to .chadgi/diagnostics/."
+        }
+      },
+      "required": ["max_iterations"]
+    },
+    "OutputConfig": {
+      "type": "object",
+      "description": "Output display and logging configuration.",
+      "properties": {
+        "show_tool_details": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show rich tool output including commands, files, and execution details."
+        },
+        "show_cost": {
+          "type": "boolean",
+          "default": true,
+          "description": "Display API cost at end of each task and session."
+        },
+        "truncate_length": {
+          "type": "integer",
+          "minimum": 10,
+          "default": 60,
+          "description": "Maximum character length for command/path display before truncation."
+        },
+        "log_level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARN", "ERROR"],
+          "default": "INFO",
+          "description": "Logging verbosity level. DEBUG shows all messages, ERROR shows only errors."
+        },
+        "log_file": {
+          "type": "string",
+          "default": "./chadgi.log",
+          "description": "Log file path (relative to .chadgi directory)."
+        },
+        "max_log_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Maximum log file size in megabytes before rotation."
+        },
+        "max_log_files": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Number of rotated log files to retain."
+        }
+      }
+    },
+    "BrandingConfig": {
+      "type": "object",
+      "description": "ChadGI branding configuration for issues and PRs.",
+      "properties": {
+        "issue_prefix": {
+          "type": "string",
+          "default": "[CHAD]",
+          "description": "Prefix added to issue/PR titles. Set to empty string to disable."
+        },
+        "label": {
+          "type": "string",
+          "default": "touched-by-chad",
+          "description": "GitHub label added to issues worked on by ChadGI. Set to empty string to disable."
+        },
+        "include_footer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include ASCII art Chad in generated issues/PRs."
+        },
+        "tagline": {
+          "type": "string",
+          "default": "Chad does what Chad wants.",
+          "description": "The ChadGI motto displayed in generated content."
+        }
+      }
+    },
+    "PriorityConfig": {
+      "type": "object",
+      "description": "Task queue ordering by priority labels.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable priority-based task ordering."
+        },
+        "labels": {
+          "type": "object",
+          "description": "Map priority levels to GitHub label names. Tasks are processed in order: critical -> high -> normal -> low.",
+          "properties": {
+            "critical": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["priority:critical", "P0", "urgent"],
+              "description": "Labels indicating critical priority (processed first)."
+            },
+            "high": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["priority:high", "P1"],
+              "description": "Labels indicating high priority."
+            },
+            "normal": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["priority:normal", "P2"],
+              "description": "Labels indicating normal priority (default for unlabeled tasks)."
+            },
+            "low": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["priority:low", "P3", "backlog"],
+              "description": "Labels indicating low priority (processed last)."
+            }
+          }
+        }
+      }
+    },
+    "BudgetConfig": {
+      "type": "object",
+      "description": "Cost budget limits to protect against runaway API expenses.",
+      "properties": {
+        "per_task_limit": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum cost in USD for a single task before action is taken. Leave empty to disable."
+        },
+        "per_session_limit": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum total cost in USD for the entire ChadGI session. Leave empty to disable."
+        },
+        "on_task_budget_exceeded": {
+          "type": "string",
+          "enum": ["skip", "fail", "warn"],
+          "default": "skip",
+          "description": "Action when per-task budget is exceeded. 'skip' moves to next task, 'fail' treats as failure, 'warn' logs warning but continues."
+        },
+        "on_session_budget_exceeded": {
+          "type": "string",
+          "enum": ["stop", "warn"],
+          "default": "stop",
+          "description": "Action when per-session budget is exceeded. 'stop' ends session gracefully, 'warn' logs warning but continues."
+        },
+        "warning_threshold": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 80,
+          "description": "Percentage of budget at which to emit a warning (0-100)."
+        }
+      }
+    },
+    "CategoryConfig": {
+      "type": "object",
+      "description": "Task categorization for enhanced insights and reporting.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable task categorization based on GitHub labels."
+        },
+        "mappings": {
+          "type": "object",
+          "description": "Map category names to GitHub label patterns. First matching label determines category.",
+          "properties": {
+            "bug": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["bug", "bugfix", "fix", "hotfix"],
+              "description": "Labels indicating bug fix tasks."
+            },
+            "feature": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["feature", "enhancement", "new-feature"],
+              "description": "Labels indicating new feature tasks."
+            },
+            "refactor": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["refactor", "refactoring", "cleanup", "tech-debt"],
+              "description": "Labels indicating refactoring tasks."
+            },
+            "docs": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["docs", "documentation"],
+              "description": "Labels indicating documentation tasks."
+            },
+            "test": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["test", "testing", "tests"],
+              "description": "Labels indicating test-related tasks."
+            },
+            "chore": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["chore", "maintenance", "ci", "build"],
+              "description": "Labels indicating maintenance/chore tasks."
+            }
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "DependenciesConfig": {
+      "type": "object",
+      "description": "Task dependency checking configuration.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable dependency checking. Tasks with unresolved dependencies are skipped."
+        },
+        "check_linked_issues": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check GitHub linked/referenced issues for blocking relationships."
+        },
+        "cache_timeout": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 300,
+          "description": "Cache timeout in seconds for dependency resolution to reduce API calls."
+        }
+      }
+    },
+    "LocalFileConfig": {
+      "type": "object",
+      "description": "Configuration for local file task source.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "default": "./chadgi-tasks.txt",
+          "description": "Path to the file containing task definitions."
+        },
+        "completed_path": {
+          "type": "string",
+          "default": "./chadgi-tasks-done.txt",
+          "description": "Path to the file where completed tasks are moved."
+        }
+      }
+    },
+    "ManualConfig": {
+      "type": "object",
+      "description": "Configuration for manual task source mode.",
+      "properties": {
+        "prompt_on_completion": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prompt for next task when current task is completed."
+        }
+      }
+    },
+    "NotificationsConfig": {
+      "type": "object",
+      "description": "Webhook notification configuration for Slack, Discord, and custom endpoints.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Master switch to enable/disable all notifications."
+        },
+        "rate_limit": {
+          "$ref": "#/$defs/RateLimitConfig"
+        },
+        "slack": {
+          "$ref": "#/$defs/WebhookProviderConfig",
+          "description": "Slack webhook configuration."
+        },
+        "discord": {
+          "$ref": "#/$defs/WebhookProviderConfig",
+          "description": "Discord webhook configuration."
+        },
+        "generic": {
+          "$ref": "#/$defs/GenericWebhookConfig",
+          "description": "Generic/custom webhook configuration."
+        }
+      }
+    },
+    "RateLimitConfig": {
+      "type": "object",
+      "description": "Rate limiting configuration to prevent webhook spam.",
+      "properties": {
+        "min_interval": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 10,
+          "description": "Minimum seconds between notifications."
+        },
+        "burst_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Maximum notifications allowed in burst window."
+        },
+        "burst_window": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Burst window duration in seconds."
+        }
+      }
+    },
+    "WebhookProviderConfig": {
+      "type": "object",
+      "description": "Configuration for a webhook notification provider.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable notifications to this provider."
+        },
+        "webhook_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Webhook URL for the notification provider."
+        },
+        "events": {
+          "$ref": "#/$defs/NotificationEvents"
+        }
+      }
+    },
+    "GenericWebhookConfig": {
+      "type": "object",
+      "description": "Configuration for a generic/custom webhook endpoint.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable notifications to this endpoint."
+        },
+        "webhook_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Custom webhook endpoint URL."
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Custom HTTP headers to include in webhook requests (e.g., Authorization, X-Custom-Header)."
+        },
+        "events": {
+          "$ref": "#/$defs/NotificationEvents"
+        }
+      }
+    },
+    "NotificationEvents": {
+      "type": "object",
+      "description": "Events that trigger notifications.",
+      "properties": {
+        "task_started": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when a task begins processing."
+        },
+        "task_completed": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when a task completes successfully."
+        },
+        "task_failed": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when a task fails after all retries."
+        },
+        "gigachad_merge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when GigaChad Mode auto-merges a PR."
+        },
+        "session_ended": {
+          "type": "boolean",
+          "default": true,
+          "description": "Notify when the ChadGI session ends."
+        }
+      }
+    }
+  }
+}
