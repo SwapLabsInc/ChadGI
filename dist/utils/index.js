@@ -10,7 +10,7 @@ export { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, res
 // Errors
 export { ChadGIError, ConfigError, ConfigNotFoundError, NotInitializedError, GitHubError, GitHubAuthError, ProjectNotFoundError, GitError, ValidationError, FileError, BudgetExceededError, TaskTimeoutError, MaxIterationsError, isChadGIError, getErrorCode, getErrorMessage, } from './errors.js';
 // Formatting
-export { formatDuration, formatDurationMs, formatDate, formatShortDate, formatRelativeTime, formatCost, formatBytes, formatPercent, formatNumber, truncate, pad, parseSince, horizontalLine, } from './formatting.js';
+export { formatDuration, formatDurationMs, formatDate, formatShortDate, formatRelativeTime, formatCost, formatBytes, formatPercent, formatNumber, truncate, pad, parseSince, horizontalLine, toISOString, parseDuration, } from './formatting.js';
 // GitHub
 export { 
 // Retry configuration

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
+import { toISOString, parseDuration } from './utils/formatting.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -9,31 +10,6 @@ import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/in
 interface PauseOptions extends BaseCommandOptions {
   for?: string;
   reason?: string;
-}
-
-/**
- * Parse duration string (e.g., "30m", "2h", "1h30m") to milliseconds
- */
-function parseDuration(duration: string): number | null {
-  const hourMatch = duration.match(/(\d+)h/);
-  const minMatch = duration.match(/(\d+)m/);
-
-  let ms = 0;
-  if (hourMatch) {
-    ms += parseInt(hourMatch[1], 10) * 60 * 60 * 1000;
-  }
-  if (minMatch) {
-    ms += parseInt(minMatch[1], 10) * 60 * 1000;
-  }
-
-  return ms > 0 ? ms : null;
-}
-
-/**
- * Format a Date as ISO string
- */
-function toISOString(date: Date): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 export async function pause(options: PauseOptions = {}): Promise<void> {

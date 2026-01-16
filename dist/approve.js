@@ -3,12 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
-/**
- * Format a Date as ISO string without milliseconds
- */
-function toISOString(date) {
-    return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
+import { toISOString } from './utils/formatting.js';
 /**
  * Get the current username for audit purposes
  */

@@ -2,27 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
-/**
- * Parse duration string (e.g., "30m", "2h", "1h30m") to milliseconds
- */
-function parseDuration(duration) {
-    const hourMatch = duration.match(/(\d+)h/);
-    const minMatch = duration.match(/(\d+)m/);
-    let ms = 0;
-    if (hourMatch) {
-        ms += parseInt(hourMatch[1], 10) * 60 * 60 * 1000;
-    }
-    if (minMatch) {
-        ms += parseInt(minMatch[1], 10) * 60 * 1000;
-    }
-    return ms > 0 ? ms : null;
-}
-/**
- * Format a Date as ISO string
- */
-function toISOString(date) {
-    return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
-}
+import { toISOString, parseDuration } from './utils/formatting.js';
 export async function pause(options = {}) {
     const cwd = process.cwd();
     const chadgiDir = options.config
