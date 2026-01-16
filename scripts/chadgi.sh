@@ -5470,6 +5470,16 @@ GEN_PROMPT_EOF
 }
 
 #------------------------------------------------------------------------------
+# Source-only mode for testing
+# Usage: source ./scripts/chadgi.sh --source-only
+#   or:  CHADGI_SOURCE_ONLY=true source ./scripts/chadgi.sh
+# When sourced with --source-only, functions are loaded but main execution is skipped
+#------------------------------------------------------------------------------
+if [[ "${1:-}" == "--source-only" ]] || [[ "${CHADGI_SOURCE_ONLY:-}" == "true" ]]; then
+    return 0 2>/dev/null || exit 0
+fi
+
+#------------------------------------------------------------------------------
 # Main Script
 #------------------------------------------------------------------------------
 
