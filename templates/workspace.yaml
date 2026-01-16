@@ -53,6 +53,11 @@ settings:
   # When enabled, workspace-level stats are tracked in addition to per-repo stats
   aggregate_stats: true
 
+  # Maximum number of tasks to process in parallel (default: 1, sequential)
+  # Each parallel task uses its own git worktree for isolation
+  # Use --parallel <n> CLI flag to override at runtime
+  max_parallel_tasks: 1
+
 # Timestamps (auto-managed by ChadGI)
 created_at: ""
 updated_at: ""

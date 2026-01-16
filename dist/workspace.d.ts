@@ -20,6 +20,7 @@ export interface WorkspaceConfig {
         auto_clone?: boolean;
         parallel_validation?: boolean;
         aggregate_stats?: boolean;
+        max_parallel_tasks?: number;
     };
     created_at: string;
     updated_at: string;

@@ -3,6 +3,8 @@ import { join, dirname, resolve, basename } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
+import { createProgressBar } from './utils/progress.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // Read version from package.json
@@ -12,33 +14,6 @@ const CHADGI_VERSION = packageJson.version;
 // Default workspace config filename
 export const WORKSPACE_CONFIG_FILENAME = 'workspace.yaml';
 export const WORKSPACE_DIR = '.chadgi';
-// Colors for console output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    magenta: '\x1b[35m',
-    blue: '\x1b[34m',
-};
-// Helper to parse simple YAML values
-function parseYamlValue(content, key) {
-    const regex = new RegExp(`^${key}:\\s*(.*)$`, 'm');
-    const match = content.match(regex);
-    if (match) {
-        let value = match[1].trim();
-        // Remove quotes if present
-        if ((value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))) {
-            value = value.slice(1, -1);
-        }
-        return value || undefined;
-    }
-    return undefined;
-}
 // Parse YAML to object (simplified parser for workspace config)
 function parseYamlToObject(content) {
     const result = {};
@@ -651,9 +626,14 @@ export async function workspaceStatus(options = {}) {
         process.exit(1);
     }
     const repos = Object.entries(config.repos).filter(([, repoConfig]) => repoConfig.enabled !== false);
-    // Gather tasks from all repos
+    // Gather tasks from all repos with progress
     const allTasks = [];
+    // Create progress bar for fetching tasks from repos
+    const progress = createProgressBar(repos.length, { label: 'Fetching tasks' }, options.json);
+    let progressCount = 0;
     for (const [repoName, repoConfig] of repos) {
+        progressCount++;
+        progress?.update(progressCount, repoName);
         const validation = validateRepoPath(repoConfig.path);
         if (!validation.valid)
             continue;
@@ -665,6 +645,8 @@ export async function workspaceStatus(options = {}) {
             });
         }
     }
+    // Complete the progress bar
+    progress?.complete();
     // Sort by priority
     const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
     allTasks.sort((a, b) => {

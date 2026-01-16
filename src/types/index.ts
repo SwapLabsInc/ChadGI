@@ -182,6 +182,31 @@ export interface RecentTool {
 }
 
 /**
+ * Parallel worker task information
+ */
+export interface ParallelWorkerTask {
+  worker_id: number;
+  repo_name: string;
+  repo_path: string;
+  task?: CurrentTask;
+  status: 'idle' | 'in_progress' | 'completed' | 'failed';
+  phase?: string;
+  iteration?: IterationProgress;
+  cost_usd?: number;
+  started_at?: string;
+  error?: string;
+}
+
+/**
+ * Parallel workspace session information
+ */
+export interface ParallelSessionProgress extends SessionProgress {
+  active_workers: number;
+  max_workers: number;
+  aggregate_cost_usd: number;
+}
+
+/**
  * Progress file data structure (chadgi-progress.json)
  */
 export interface ProgressData {
@@ -195,6 +220,10 @@ export interface ProgressData {
   recent_tools?: RecentTool[];
   // Approval history (used by approve.ts)
   approval_history?: ApprovalHistoryEntry[];
+  // Parallel workspace mode fields
+  parallel_mode?: boolean;
+  parallel_workers?: ParallelWorkerTask[];
+  parallel_session?: ParallelSessionProgress;
 }
 
 /**

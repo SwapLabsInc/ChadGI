@@ -1,7 +1,7 @@
-import { existsSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
+import { join, dirname, resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess, execSync } from 'child_process';
 import { validate } from './validate.js';
 import {
   getWorkspaceConfigPath,
@@ -12,6 +12,8 @@ import {
 } from './workspace.js';
 import { setMaskingDisabled } from './utils/secrets.js';
 import { colors } from './utils/colors.js';
+import { atomicWriteJson } from './utils/fileOps.js';
+import type { ProgressData, ParallelWorkerTask, ParallelSessionProgress } from './types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,8 +26,21 @@ interface StartOptions {
   ignoreDeps?: boolean;
   workspace?: boolean;
   repo?: string;
+  parallel?: number;
   interactive?: boolean;
   mask?: boolean;  // --no-mask flag sets this to false
+}
+
+interface WorkerInfo {
+  id: number;
+  repoName: string;
+  repoPath: string;
+  worktreePath: string;
+  process: ChildProcess | null;
+  status: 'idle' | 'in_progress' | 'completed' | 'failed';
+  costUsd: number;
+  tasksCompleted: number;
+  startedAt?: string;
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
@@ -271,6 +286,24 @@ async function startWorkspace(options: StartOptions): Promise<void> {
     console.log(`  Tasks will be read but not processed\n`);
   }
 
+  // Determine parallel processing
+  const maxParallel = options.parallel ?? workspaceConfig.settings?.max_parallel_tasks ?? 1;
+
+  if (maxParallel > 1) {
+    // Parallel mode
+    await startWorkspaceParallel(options, workspaceConfig, validRepos, maxParallel, cwd);
+  } else {
+    // Sequential mode (existing behavior)
+    await startWorkspaceSequential(options, workspaceConfig, validRepos);
+  }
+}
+
+// Sequential workspace processing (existing behavior)
+async function startWorkspaceSequential(
+  options: StartOptions,
+  workspaceConfig: WorkspaceConfig,
+  validRepos: Array<[string, WorkspaceRepoConfig]>
+): Promise<void> {
   // Process loop
   console.log(`\n${colors.bold}Starting workspace task processing...${colors.reset}\n`);
   console.log(`Press ${colors.dim}Ctrl+C${colors.reset} to stop gracefully.\n`);
@@ -361,6 +394,436 @@ async function startWorkspace(options: StartOptions): Promise<void> {
 
   if (!running) {
     console.log(`\n${colors.yellow}Session interrupted by user.${colors.reset}`);
+  } else {
+    console.log(`\n${colors.green}Session complete.${colors.reset}`);
+  }
+}
+
+// Create a git worktree for isolated parallel execution
+function createWorktree(repoPath: string, workerId: number): string {
+  const worktreeDir = join(dirname(repoPath), `.chadgi-worktrees`);
+  const worktreePath = join(worktreeDir, `worker-${workerId}-${basename(repoPath)}`);
+
+  // Create worktrees directory if needed
+  if (!existsSync(worktreeDir)) {
+    mkdirSync(worktreeDir, { recursive: true });
+  }
+
+  // Remove existing worktree if present
+  if (existsSync(worktreePath)) {
+    try {
+      execSync(`git worktree remove "${worktreePath}" --force`, {
+        cwd: repoPath,
+        stdio: 'pipe'
+      });
+    } catch {
+      // Force remove directory if worktree command fails
+      try {
+        rmSync(worktreePath, { recursive: true, force: true });
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  // Get current branch/commit
+  let ref = 'HEAD';
+  try {
+    ref = execSync('git rev-parse HEAD', { cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch {
+    // Fall back to HEAD
+  }
+
+  // Create new worktree
+  try {
+    execSync(`git worktree add "${worktreePath}" ${ref} --detach`, {
+      cwd: repoPath,
+      stdio: 'pipe'
+    });
+  } catch (err) {
+    throw new Error(`Failed to create worktree for worker ${workerId}: ${(err as Error).message}`);
+  }
+
+  // Copy .chadgi directory to worktree
+  const srcChadgiDir = join(repoPath, '.chadgi');
+  const dstChadgiDir = join(worktreePath, '.chadgi');
+  if (existsSync(srcChadgiDir)) {
+    mkdirSync(dstChadgiDir, { recursive: true });
+    // Copy config files but not progress/stats
+    const filesToCopy = ['chadgi-config.yaml', 'chadgi-task.md', 'chadgi-generate-task.md'];
+    for (const file of filesToCopy) {
+      const srcFile = join(srcChadgiDir, file);
+      const dstFile = join(dstChadgiDir, file);
+      if (existsSync(srcFile)) {
+        writeFileSync(dstFile, readFileSync(srcFile));
+      }
+    }
+  }
+
+  return worktreePath;
+}
+
+// Clean up worktree after use
+function cleanupWorktree(repoPath: string, worktreePath: string): void {
+  try {
+    execSync(`git worktree remove "${worktreePath}" --force`, {
+      cwd: repoPath,
+      stdio: 'pipe'
+    });
+  } catch {
+    // Try to force remove directory
+    try {
+      rmSync(worktreePath, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup failures
+    }
+  }
+}
+
+// Run a task in a worker using a worktree
+function runWorkerTask(
+  workerInfo: WorkerInfo,
+  configPath: string,
+  options: StartOptions,
+  onProgress: (workerId: number, update: Partial<ParallelWorkerTask>) => void
+): Promise<{ exitCode: number; cost: number }> {
+  return new Promise((resolve) => {
+    const scriptPath = join(__dirname, '..', 'scripts', 'chadgi.sh');
+    const chadgiDir = dirname(configPath);
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      CHADGI_DIR: chadgiDir,
+      CONFIG_FILE: configPath,
+      DRY_RUN: options.dryRun ? 'true' : 'false',
+      DEBUG_MODE: options.debug ? 'true' : 'false',
+      IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
+      INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
+      NO_MASK: options.mask === false ? 'true' : 'false',
+      WORKSPACE_MODE: 'true',
+      WORKSPACE_SINGLE_TASK: 'true',
+      PARALLEL_WORKER_ID: String(workerInfo.id),
+    };
+
+    if (options.timeout !== undefined) {
+      env.TASK_TIMEOUT = String(options.timeout);
+    }
+
+    // Track cost from stdout/stderr
+    let taskCost = 0;
+    let stdoutBuffer = '';
+
+    const child = spawn('bash', [scriptPath], {
+      env,
+      cwd: workerInfo.worktreePath,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    workerInfo.process = child;
+
+    child.stdout?.on('data', (data: Buffer) => {
+      const text = data.toString();
+      stdoutBuffer += text;
+
+      // Parse cost from output (look for total_cost_usd in JSON)
+      const costMatch = text.match(/"total_cost_usd":\s*([\d.]+)/);
+      if (costMatch) {
+        taskCost = parseFloat(costMatch[1]);
+      }
+
+      // Parse task info for progress updates
+      const issueMatch = text.match(/Found issue #(\d+)/);
+      if (issueMatch) {
+        onProgress(workerInfo.id, {
+          task: {
+            id: issueMatch[1],
+            title: '',
+            branch: '',
+            started_at: new Date().toISOString()
+          },
+          status: 'in_progress'
+        });
+      }
+
+      // Output to console with worker prefix
+      const lines = text.split('\n').filter((l: string) => l.trim());
+      for (const line of lines) {
+        console.log(`${colors.dim}[W${workerInfo.id}]${colors.reset} ${line}`);
+      }
+    });
+
+    child.stderr?.on('data', (data: Buffer) => {
+      const text = data.toString();
+      const lines = text.split('\n').filter((l: string) => l.trim());
+      for (const line of lines) {
+        console.log(`${colors.dim}[W${workerInfo.id}]${colors.reset} ${colors.red}${line}${colors.reset}`);
+      }
+    });
+
+    child.on('close', (code) => {
+      workerInfo.process = null;
+      resolve({ exitCode: code ?? 0, cost: taskCost });
+    });
+
+    child.on('error', () => {
+      workerInfo.process = null;
+      resolve({ exitCode: 1, cost: taskCost });
+    });
+  });
+}
+
+// Update progress file for parallel mode
+function updateParallelProgress(
+  chadgiDir: string,
+  workers: WorkerInfo[],
+  sessionInfo: { startedAt: string; totalCost: number; tasksCompleted: number },
+  maxWorkers: number
+): void {
+  const progressFile = join(chadgiDir, 'chadgi-progress.json');
+
+  const activeWorkers = workers.filter(w => w.status === 'in_progress').length;
+
+  const parallelWorkers: ParallelWorkerTask[] = workers.map(w => ({
+    worker_id: w.id,
+    repo_name: w.repoName,
+    repo_path: w.repoPath,
+    status: w.status,
+    cost_usd: w.costUsd,
+    started_at: w.startedAt
+  }));
+
+  const parallelSession: ParallelSessionProgress = {
+    started_at: sessionInfo.startedAt,
+    tasks_completed: sessionInfo.tasksCompleted,
+    total_cost_usd: sessionInfo.totalCost,
+    active_workers: activeWorkers,
+    max_workers: maxWorkers,
+    aggregate_cost_usd: workers.reduce((sum, w) => sum + w.costUsd, 0)
+  };
+
+  const progressData: ProgressData = {
+    status: activeWorkers > 0 ? 'in_progress' : 'idle',
+    last_updated: new Date().toISOString(),
+    parallel_mode: true,
+    parallel_workers: parallelWorkers,
+    parallel_session: parallelSession
+  };
+
+  try {
+    atomicWriteJson(progressFile, progressData);
+  } catch {
+    // Ignore progress file errors
+  }
+}
+
+// Parallel workspace processing
+async function startWorkspaceParallel(
+  options: StartOptions,
+  workspaceConfig: WorkspaceConfig,
+  validRepos: Array<[string, WorkspaceRepoConfig]>,
+  maxParallel: number,
+  cwd: string
+): Promise<void> {
+  console.log(`\n${colors.bold}${colors.cyan}PARALLEL MODE${colors.reset}: Up to ${maxParallel} concurrent workers`);
+  console.log(`\n${colors.bold}Starting parallel workspace task processing...${colors.reset}\n`);
+  console.log(`Press ${colors.dim}Ctrl+C${colors.reset} to stop gracefully (waits for in-progress tasks).\n`);
+  console.log('─'.repeat(60));
+
+  // Session tracking
+  const sessionStartedAt = new Date().toISOString();
+  let totalTasksProcessed = 0;
+  let totalCostUsd = 0;
+  let consecutiveEmptyRounds = 0;
+  const maxEmptyRounds = 3;
+  let running = true;
+  let shuttingDown = false;
+
+  // Worker management
+  const workers: WorkerInfo[] = [];
+  const repoQueue: Array<[string, WorkspaceRepoConfig]> = [...validRepos];
+  let currentRepoIndex = 0;
+
+  // Progress file location
+  const workspaceDir = dirname(getWorkspaceConfigPath({ config: options.config }));
+
+  // Progress update callback
+  const updateWorkerProgress = (workerId: number, update: Partial<ParallelWorkerTask>) => {
+    const worker = workers.find(w => w.id === workerId);
+    if (worker && update.task) {
+      // Update tracked task info
+    }
+    updateParallelProgress(workspaceDir, workers, {
+      startedAt: sessionStartedAt,
+      totalCost: totalCostUsd,
+      tasksCompleted: totalTasksProcessed
+    }, maxParallel);
+  };
+
+  // Get next repo based on strategy
+  const getNextRepo = (): [string, WorkspaceRepoConfig] | null => {
+    if (validRepos.length === 0) return null;
+
+    // Round-robin through repos
+    const repo = validRepos[currentRepoIndex];
+    currentRepoIndex = (currentRepoIndex + 1) % validRepos.length;
+    return repo;
+  };
+
+  // Start a worker for a repo
+  const startWorker = async (workerId: number): Promise<void> => {
+    const repo = getNextRepo();
+    if (!repo) return;
+
+    const [repoName, repoConfig] = repo;
+
+    // Create worktree for isolation
+    let worktreePath: string;
+    try {
+      worktreePath = createWorktree(repoConfig.path, workerId);
+    } catch (err) {
+      console.log(`${colors.red}[W${workerId}] Failed to create worktree:${colors.reset} ${(err as Error).message}`);
+      return;
+    }
+
+    const configPath = join(worktreePath, '.chadgi', 'chadgi-config.yaml');
+
+    const workerInfo: WorkerInfo = {
+      id: workerId,
+      repoName,
+      repoPath: repoConfig.path,
+      worktreePath,
+      process: null,
+      status: 'in_progress',
+      costUsd: 0,
+      tasksCompleted: 0,
+      startedAt: new Date().toISOString()
+    };
+
+    workers.push(workerInfo);
+
+    console.log(`\n${colors.cyan}[W${workerId}] Starting:${colors.reset} ${repoName}`);
+
+    updateParallelProgress(workspaceDir, workers, {
+      startedAt: sessionStartedAt,
+      totalCost: totalCostUsd,
+      tasksCompleted: totalTasksProcessed
+    }, maxParallel);
+
+    // Run task
+    const result = await runWorkerTask(workerInfo, configPath, options, updateWorkerProgress);
+
+    // Update worker status
+    workerInfo.costUsd += result.cost;
+    totalCostUsd += result.cost;
+
+    if (result.exitCode === 0) {
+      workerInfo.status = 'completed';
+      workerInfo.tasksCompleted++;
+      totalTasksProcessed++;
+      consecutiveEmptyRounds = 0;
+      console.log(`${colors.green}[W${workerId}] Task completed${colors.reset} in ${repoName} (cost: $${result.cost.toFixed(4)})`);
+    } else if (result.exitCode === 2) {
+      workerInfo.status = 'idle';
+      console.log(`${colors.dim}[W${workerId}] No tasks available${colors.reset} in ${repoName}`);
+    } else {
+      workerInfo.status = 'failed';
+      console.log(`${colors.yellow}[W${workerId}] Task failed${colors.reset} in ${repoName} (exit code: ${result.exitCode})`);
+    }
+
+    // Clean up worktree
+    cleanupWorktree(repoConfig.path, worktreePath);
+
+    // Remove worker from list
+    const idx = workers.indexOf(workerInfo);
+    if (idx !== -1) {
+      workers.splice(idx, 1);
+    }
+
+    updateParallelProgress(workspaceDir, workers, {
+      startedAt: sessionStartedAt,
+      totalCost: totalCostUsd,
+      tasksCompleted: totalTasksProcessed
+    }, maxParallel);
+  };
+
+  // Handle graceful shutdown
+  const handleShutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    running = false;
+
+    console.log(`\n\n${colors.yellow}Shutting down workspace mode...${colors.reset}`);
+
+    if (workers.length > 0) {
+      console.log(`${colors.yellow}Waiting for ${workers.length} in-progress task(s) to complete...${colors.reset}`);
+
+      // Send SIGINT to all running processes
+      for (const worker of workers) {
+        if (worker.process) {
+          worker.process.kill('SIGINT');
+        }
+      }
+    }
+  };
+
+  process.on('SIGINT', handleShutdown);
+  process.on('SIGTERM', handleShutdown);
+
+  // Main processing loop
+  let nextWorkerId = 1;
+
+  while (running || workers.length > 0) {
+    // Start new workers if capacity available and not shutting down
+    while (!shuttingDown && running && workers.length < maxParallel) {
+      // Check if all repos have been processed this round
+      if (currentRepoIndex === 0 && workers.length === 0) {
+        // Full round complete, check for consecutive empty
+        const allEmpty = workers.every(w => w.status === 'idle');
+        if (allEmpty && totalTasksProcessed === 0) {
+          consecutiveEmptyRounds++;
+        }
+      }
+
+      if (consecutiveEmptyRounds >= maxEmptyRounds) {
+        running = false;
+        break;
+      }
+
+      // Start a new worker
+      startWorker(nextWorkerId++);
+
+      // Small delay between starting workers to avoid race conditions
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Wait a bit before checking again
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Check if all workers have finished
+    if (shuttingDown && workers.length === 0) {
+      break;
+    }
+  }
+
+  // Summary
+  console.log('\n' + '─'.repeat(60));
+  console.log(`\n${colors.bold}Workspace Session Summary${colors.reset}`);
+  console.log(`  Mode: ${colors.cyan}Parallel (${maxParallel} workers)${colors.reset}`);
+  console.log(`  Tasks processed: ${totalTasksProcessed}`);
+  console.log(`  Total cost: $${totalCostUsd.toFixed(4)}`);
+  console.log(`  Repositories: ${validRepos.length}`);
+
+  // Update final progress
+  updateParallelProgress(workspaceDir, [], {
+    startedAt: sessionStartedAt,
+    totalCost: totalCostUsd,
+    tasksCompleted: totalTasksProcessed
+  }, maxParallel);
+
+  if (shuttingDown) {
+    console.log(`\n${colors.yellow}Session interrupted by user.${colors.reset}`);
+  } else if (consecutiveEmptyRounds >= maxEmptyRounds) {
+    console.log(`\n${colors.dim}No tasks found in any repository after ${maxEmptyRounds} rounds.${colors.reset}`);
   } else {
     console.log(`\n${colors.green}Session complete.${colors.reset}`);
   }

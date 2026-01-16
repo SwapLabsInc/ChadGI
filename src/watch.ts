@@ -3,11 +3,20 @@ import { join, dirname, resolve } from 'path';
 import { colors } from './utils/colors.js';
 
 // Import shared types
-import type { BaseCommandOptions, ProgressData, RecentTool } from './types/index.js';
+import type { BaseCommandOptions, ProgressData, RecentTool, ParallelWorkerTask, ParallelSessionProgress } from './types/index.js';
 
 interface WatchOptions extends BaseCommandOptions {
   once?: boolean;
   interval?: number;
+}
+
+interface ParallelWorkerStatus {
+  id: number;
+  repoName: string;
+  status: string;
+  taskId?: string;
+  costUsd: number;
+  elapsedSeconds?: number;
 }
 
 interface WatchStatus {
@@ -34,6 +43,16 @@ interface WatchStatus {
   };
   recentTools?: RecentTool[];
   lastUpdated?: string;
+  // Parallel mode fields
+  parallelMode?: boolean;
+  parallelWorkers?: ParallelWorkerStatus[];
+  parallelSession?: {
+    activeWorkers: number;
+    maxWorkers: number;
+    aggregateCostUsd: number;
+    tasksCompleted: number;
+    elapsedSeconds: number;
+  };
 }
 
 // ANSI escape codes for cursor control
@@ -234,6 +253,42 @@ function buildWatchStatus(progress: ProgressData | null, progressFile: string): 
     watchStatus.recentTools = progress.recent_tools.slice(-5); // Last 5 tools
   }
 
+  // Parallel mode
+  if (progress.parallel_mode) {
+    watchStatus.parallelMode = true;
+
+    // Convert parallel workers
+    if (progress.parallel_workers && progress.parallel_workers.length > 0) {
+      watchStatus.parallelWorkers = progress.parallel_workers.map(w => {
+        const workerStatus: ParallelWorkerStatus = {
+          id: w.worker_id,
+          repoName: w.repo_name,
+          status: w.status,
+          taskId: w.task?.id,
+          costUsd: w.cost_usd ?? 0,
+        };
+        if (w.started_at) {
+          const startedAt = new Date(w.started_at);
+          workerStatus.elapsedSeconds = Math.floor((Date.now() - startedAt.getTime()) / 1000);
+        }
+        return workerStatus;
+      });
+    }
+
+    // Convert parallel session
+    if (progress.parallel_session) {
+      const ps = progress.parallel_session;
+      const sessionStart = new Date(ps.started_at);
+      watchStatus.parallelSession = {
+        activeWorkers: ps.active_workers,
+        maxWorkers: ps.max_workers,
+        aggregateCostUsd: ps.aggregate_cost_usd,
+        tasksCompleted: ps.tasks_completed,
+        elapsedSeconds: Math.floor((Date.now() - sessionStart.getTime()) / 1000),
+      };
+    }
+  }
+
   return watchStatus;
 }
 
@@ -243,14 +298,21 @@ function renderDashboard(status: WatchStatus, tick: number): void {
   // Header
   lines.push(`${colors.purple}${colors.bold}`);
   lines.push('==========================================================');
-  lines.push('                  CHADGI WATCH                            ');
+  if (status.parallelMode) {
+    lines.push('              CHADGI WATCH (PARALLEL MODE)                ');
+  } else {
+    lines.push('                  CHADGI WATCH                            ');
+  }
   lines.push('==========================================================');
   lines.push(`${colors.reset}`);
 
   // Status indicator
   const stateColor = getStateColor(status.state);
   const spinner = status.active ? ` ${getSpinner(tick)}` : '';
-  lines.push(`${colors.cyan}Status:${colors.reset} ${stateColor}${colors.bold}${status.state.toUpperCase()}${spinner}${colors.reset}`);
+  const modeLabel = status.parallelMode && status.parallelSession
+    ? ` ${colors.cyan}[${status.parallelSession.activeWorkers}/${status.parallelSession.maxWorkers} workers]${colors.reset}`
+    : '';
+  lines.push(`${colors.cyan}Status:${colors.reset} ${stateColor}${colors.bold}${status.state.toUpperCase()}${spinner}${colors.reset}${modeLabel}`);
 
   if (!status.active && status.state !== 'running') {
     lines.push('');
@@ -325,8 +387,31 @@ function renderDashboard(status: WatchStatus, tick: number): void {
       lines.push('');
     }
 
-    // Session stats
-    if (status.session) {
+    // Parallel workers display
+    if (status.parallelMode && status.parallelWorkers && status.parallelWorkers.length > 0) {
+      lines.push(`${colors.cyan}${colors.bold}ACTIVE WORKERS${colors.reset}`);
+      for (const worker of status.parallelWorkers) {
+        const workerColor = worker.status === 'in_progress' ? colors.green :
+                           worker.status === 'failed' ? colors.red :
+                           worker.status === 'completed' ? colors.cyan : colors.dim;
+        const elapsed = worker.elapsedSeconds ? ` (${formatDuration(worker.elapsedSeconds)})` : '';
+        const taskInfo = worker.taskId ? ` - #${worker.taskId}` : '';
+        const cost = worker.costUsd > 0 ? ` $${worker.costUsd.toFixed(4)}` : '';
+        lines.push(`  ${colors.dim}[W${worker.id}]${colors.reset} ${workerColor}${worker.status.toUpperCase()}${colors.reset} ${truncate(worker.repoName, 30)}${taskInfo}${elapsed}${cost}`);
+      }
+      lines.push('');
+    }
+
+    // Session stats (parallel mode)
+    if (status.parallelMode && status.parallelSession) {
+      lines.push(`${colors.cyan}${colors.bold}PARALLEL SESSION STATS${colors.reset}`);
+      lines.push(`  Duration:  ${formatDuration(status.parallelSession.elapsedSeconds)}`);
+      lines.push(`  Workers:   ${status.parallelSession.activeWorkers}/${status.parallelSession.maxWorkers} active`);
+      lines.push(`  Completed: ${status.parallelSession.tasksCompleted} task(s)`);
+      lines.push(`  Cost:      $${status.parallelSession.aggregateCostUsd.toFixed(4)}`);
+    }
+    // Session stats (sequential mode)
+    else if (status.session) {
       lines.push(`${colors.cyan}${colors.bold}SESSION STATS${colors.reset}`);
       lines.push(`  Duration:  ${formatDuration(status.session.elapsedSeconds)}`);
       lines.push(`  Completed: ${status.session.tasksCompleted} task(s)`);
