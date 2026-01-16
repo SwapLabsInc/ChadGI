@@ -87,8 +87,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 5: Doctor command has --json option"
 
+# Check either inline option definition or centralized addStandardOptions with 'json'
 if grep -A5 "command('doctor')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-json"; then
     pass "--json option exists for doctor command"
+elif grep -A5 "command('doctor')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'json'"; then
+    pass "--json option exists via addStandardOptions"
 else
     fail "doctor command should have --json option"
 fi
@@ -98,8 +101,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 6: Doctor command has --config option"
 
-if grep -A3 "command('doctor')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-config"; then
+# Check either inline option definition or centralized addStandardOptions with 'config'
+if grep -A5 "command('doctor')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-config"; then
     pass "--config option exists for doctor command"
+elif grep -A5 "command('doctor')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'config'"; then
+    pass "--config option exists via addStandardOptions"
 else
     fail "doctor command should have --config option"
 fi

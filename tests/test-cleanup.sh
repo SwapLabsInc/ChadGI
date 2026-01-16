@@ -118,8 +118,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 8: Cleanup command has --dry-run option"
 
+# Check either inline option definition or centralized addStandardOptions with 'dryRun'
 if grep -A15 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-dry-run"; then
     pass "--dry-run option exists for cleanup command"
+elif grep -A5 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'dryRun'"; then
+    pass "--dry-run option exists via addStandardOptions"
 else
     fail "cleanup command should have --dry-run option"
 fi
@@ -129,8 +132,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 9: Cleanup command has --yes option"
 
+# Check either inline option definition or centralized addStandardOptions with 'yes'
 if grep -A15 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-yes"; then
     pass "--yes option exists for cleanup command"
+elif grep -A5 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'yes'"; then
+    pass "--yes option exists via addStandardOptions"
 else
     fail "cleanup command should have --yes option"
 fi
@@ -140,8 +146,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 10: Cleanup command has --days option"
 
+# Check either inline option definition or centralized addStandardOptions with 'days'
 if grep -A15 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-days"; then
     pass "--days option exists for cleanup command"
+elif grep -A5 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'days'"; then
+    pass "--days option exists via addStandardOptions"
 else
     fail "cleanup command should have --days option"
 fi
@@ -151,8 +160,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 11: Cleanup command has --json option"
 
+# Check either inline option definition or centralized addStandardOptions with 'json'
 if grep -A15 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-json"; then
     pass "--json option exists for cleanup command"
+elif grep -A5 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'json'"; then
+    pass "--json option exists via addStandardOptions"
 else
     fail "cleanup command should have --json option"
 fi
@@ -162,8 +174,11 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 12: Cleanup command has --config option"
 
+# Check either inline option definition or centralized addStandardOptions with 'config'
 if grep -A15 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "\-\-config"; then
     pass "--config option exists for cleanup command"
+elif grep -A5 "command('cleanup')" "$PROJECT_ROOT/src/cli.ts" | grep -q "'config'"; then
+    pass "--config option exists via addStandardOptions"
 else
     fail "cleanup command should have --config option"
 fi
