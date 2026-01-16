@@ -3,7 +3,13 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { maskSecrets, setMaskingDisabled } from './utils/secrets.js';
-import { parseYamlValue, parseYamlNested } from './utils/config.js';
+import {
+  parseYamlValue,
+  parseYamlNested,
+  parseEnvOverrides,
+  DEFAULT_ENV_PREFIX,
+  formatEnvVarHelp,
+} from './utils/config.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,6 +22,8 @@ interface ValidateOptions {
   strict?: boolean;
   showMerged?: boolean;
   mask?: boolean;  // --no-mask flag sets this to false
+  verbose?: boolean;  // Show env var sources
+  envPrefix?: string;  // Custom env var prefix (default: CHADGI_)
 }
 
 interface ValidationResult {
@@ -646,6 +654,47 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
         console.log('    custom_template_variables:');
         console.log('      - MY_CUSTOM_VAR');
       }
+    }
+
+    // Check environment variable overrides (verbose mode)
+    const envPrefix = options.envPrefix || DEFAULT_ENV_PREFIX;
+    const envOverrides = parseEnvOverrides(envPrefix);
+
+    if (envOverrides.length > 0) {
+      if (!quiet) {
+        console.log('');
+        console.log('Checking environment variable overrides:\n');
+      }
+
+      results.push({
+        name: 'env overrides',
+        status: 'ok',
+        message: `${envOverrides.length} override(s) active`
+      });
+
+      if (!quiet) {
+        console.log(`\x1b[32m+\x1b[0m Environment prefix: ${envPrefix}`);
+        console.log(`\x1b[32m+\x1b[0m Active overrides: ${envOverrides.length}`);
+
+        if (options.verbose) {
+          for (const override of envOverrides) {
+            // Mask sensitive values like tokens
+            const isSensitive = override.configPath.includes('token') ||
+                               override.configPath.includes('secret') ||
+                               override.configPath.includes('password') ||
+                               override.configPath.includes('key');
+            const displayValue = isSensitive ? maskSecrets(override.rawValue) : override.rawValue;
+            console.log(`    ${override.envVar} -> ${override.configPath} = ${displayValue}`);
+          }
+        }
+      }
+    } else if (options.verbose && !quiet) {
+      console.log('');
+      console.log('Checking environment variable overrides:\n');
+      console.log(`\x1b[33m!\x1b[0m No ${envPrefix}* environment variables detected`);
+      console.log('    Tip: Use environment variables to override config values:');
+      console.log(`    ${envPrefix}GITHUB__REPO=owner/repo`);
+      console.log(`    ${envPrefix}ITERATION__MAX_ITERATIONS=10`);
     }
 
   } else {

@@ -3,7 +3,7 @@
  *
  * Provides functions for parsing YAML configuration files and loading config values.
  */
-import type { GitHubConfig, BranchConfig } from '../types/index.js';
+import type { GitHubConfig, BranchConfig, EnvVarOverride, ConfigWithSources, LoadConfigEnvOptions } from '../types/index.js';
 /**
  * Parse a simple YAML value (top-level key: value extraction)
  *
@@ -125,4 +125,112 @@ export declare function getRepoName(repo: string): string;
 export declare function resolveChadgiDir(options?: {
     config?: string;
 }, cwd?: string): string;
+/**
+ * Default prefix for ChadGI environment variables
+ */
+export declare const DEFAULT_ENV_PREFIX = "CHADGI_";
+/**
+ * Separator for nested config paths in environment variable names.
+ * Uses double underscore as per Docker convention.
+ */
+export declare const ENV_PATH_SEPARATOR = "__";
+/**
+ * Parse a string value into its appropriate type (boolean, number, or string).
+ *
+ * @param value - The string value to parse
+ * @returns The parsed value as boolean, number, or string
+ */
+export declare function parseEnvValue(value: string): string | number | boolean;
+/**
+ * Convert an environment variable name to a config path.
+ *
+ * @param envVar - The full environment variable name (e.g., CHADGI_GITHUB__REPO)
+ * @param prefix - The prefix to strip (e.g., CHADGI_)
+ * @returns The config path (e.g., github.repo)
+ */
+export declare function envVarToConfigPath(envVar: string, prefix: string): string;
+/**
+ * Convert a config path to an environment variable name.
+ *
+ * @param configPath - The config path (e.g., github.repo)
+ * @param prefix - The prefix to use (e.g., CHADGI_)
+ * @returns The environment variable name (e.g., CHADGI_GITHUB__REPO)
+ */
+export declare function configPathToEnvVar(configPath: string, prefix: string): string;
+/**
+ * Set a value at a nested path in an object.
+ *
+ * @param obj - The object to modify
+ * @param path - Dot-separated path (e.g., "github.repo")
+ * @param value - The value to set
+ */
+export declare function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void;
+/**
+ * Get a value at a nested path in an object.
+ *
+ * @param obj - The object to read from
+ * @param path - Dot-separated path (e.g., "github.repo")
+ * @returns The value at the path, or undefined if not found
+ */
+export declare function getNestedValue(obj: Record<string, unknown>, path: string): unknown;
+/**
+ * Find all environment variables that match the given prefix.
+ *
+ * @param prefix - The prefix to match (e.g., CHADGI_)
+ * @param env - Environment object to scan (defaults to process.env)
+ * @returns Array of matching environment variable names
+ */
+export declare function findEnvVarsWithPrefix(prefix: string, env?: Record<string, string | undefined>): string[];
+/**
+ * Parse environment variables with the given prefix into override objects.
+ *
+ * @param prefix - The prefix to match (e.g., CHADGI_)
+ * @param env - Environment object to scan (defaults to process.env)
+ * @returns Array of parsed environment variable overrides
+ */
+export declare function parseEnvOverrides(prefix: string, env?: Record<string, string | undefined>): EnvVarOverride[];
+/**
+ * Apply environment variable overrides to a configuration object.
+ *
+ * @param config - The base configuration object (will be mutated)
+ * @param overrides - Array of environment variable overrides to apply
+ */
+export declare function applyEnvOverrides(config: Record<string, unknown>, overrides: EnvVarOverride[]): void;
+/**
+ * Load configuration with environment variable overrides.
+ *
+ * This function loads the YAML config file and applies any environment
+ * variable overrides. Environment variables take precedence over file values.
+ *
+ * Environment variables should be named with the prefix (default: CHADGI_)
+ * followed by the config path in uppercase with dots replaced by double
+ * underscores. For example:
+ * - CHADGI_GITHUB__REPO -> github.repo
+ * - CHADGI_ITERATION__MAX_ITERATIONS -> iteration.max_iterations
+ * - CHADGI_BUDGET__PER_TASK_LIMIT -> budget.per_task_limit
+ *
+ * @param configPath - Path to the YAML config file
+ * @param options - Options including custom env prefix and env object
+ * @returns Configuration with source tracking information
+ */
+export declare function loadConfigWithEnv(configPath: string, options?: LoadConfigEnvOptions): ConfigWithSources;
+/**
+ * List of all supported environment variable config paths.
+ * Used for documentation and validation.
+ */
+export declare const SUPPORTED_ENV_CONFIG_PATHS: readonly ["github.repo", "github.project_number", "github.ready_column", "github.in_progress_column", "github.review_column", "github.done_column", "branch.base", "branch.prefix", "task_source", "prompt_template", "generate_template", "progress_file", "poll_interval", "consecutive_empty_threshold", "on_empty_queue", "iteration.max_iterations", "iteration.completion_promise", "iteration.ready_promise", "iteration.test_command", "iteration.build_command", "iteration.on_max_iterations", "iteration.gigachad_mode", "iteration.gigachad_commit_prefix", "budget.per_task_limit", "budget.per_session_limit", "budget.on_task_budget_exceeded", "budget.on_session_budget_exceeded", "budget.warning_threshold", "output.show_tool_details", "output.show_cost", "output.truncate_length"];
+/**
+ * Get all supported environment variable names for a given prefix.
+ *
+ * @param prefix - The prefix to use (default: CHADGI_)
+ * @returns Array of environment variable names
+ */
+export declare function getSupportedEnvVars(prefix?: string): string[];
+/**
+ * Format environment variable documentation for help output.
+ *
+ * @param prefix - The prefix to use (default: CHADGI_)
+ * @returns Formatted string with environment variable documentation
+ */
+export declare function formatEnvVarHelp(prefix?: string): string;
 //# sourceMappingURL=config.d.ts.map

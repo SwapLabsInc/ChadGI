@@ -11,7 +11,7 @@ jest.unstable_mockModule('fs', () => ({
     readFileSync: jest.fn((path, encoding) => vol.readFileSync(path, encoding)),
 }));
 // Import after mocking
-const { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, resolveConfigPath, resolveChadgiDir, getRepoOwner, getRepoName, ensureChadgiDirExists, } = await import('../../utils/config.js');
+const { parseYamlValue, parseYamlNested, parseYamlBoolean, parseYamlNumber, resolveConfigPath, resolveChadgiDir, getRepoOwner, getRepoName, ensureChadgiDirExists, parseEnvValue, envVarToConfigPath, configPathToEnvVar, setNestedValue, getNestedValue, findEnvVarsWithPrefix, parseEnvOverrides, applyEnvOverrides, loadConfigWithEnv, getSupportedEnvVars, formatEnvVarHelp, DEFAULT_ENV_PREFIX, SUPPORTED_ENV_CONFIG_PATHS, } = await import('../../utils/config.js');
 import { validConfig, minimalConfig, configWithPriority, configWithDependencies, } from '../fixtures/configs.js';
 describe('parseYamlValue', () => {
     it('should parse top-level string values', () => {
@@ -257,6 +257,281 @@ describe('ensureChadgiDirExists', () => {
         expect(mockExit).toHaveBeenCalledWith(1);
         expect(mockConsoleError).toHaveBeenCalled();
         expect(mockConsoleLog).not.toHaveBeenCalled();
+    });
+});
+// ============================================================================
+// Environment Variable Configuration Tests
+// ============================================================================
+describe('parseEnvValue', () => {
+    it('should parse boolean true (case-insensitive)', () => {
+        expect(parseEnvValue('true')).toBe(true);
+        expect(parseEnvValue('TRUE')).toBe(true);
+        expect(parseEnvValue('True')).toBe(true);
+    });
+    it('should parse boolean false (case-insensitive)', () => {
+        expect(parseEnvValue('false')).toBe(false);
+        expect(parseEnvValue('FALSE')).toBe(false);
+        expect(parseEnvValue('False')).toBe(false);
+    });
+    it('should parse integer values', () => {
+        expect(parseEnvValue('42')).toBe(42);
+        expect(parseEnvValue('0')).toBe(0);
+        expect(parseEnvValue('-10')).toBe(-10);
+    });
+    it('should parse float values', () => {
+        expect(parseEnvValue('3.14')).toBe(3.14);
+        expect(parseEnvValue('2.00')).toBe(2);
+        expect(parseEnvValue('-0.5')).toBe(-0.5);
+    });
+    it('should preserve string values', () => {
+        expect(parseEnvValue('hello')).toBe('hello');
+        expect(parseEnvValue('owner/repo')).toBe('owner/repo');
+        expect(parseEnvValue('')).toBe('');
+    });
+    it('should not parse invalid numbers as numbers', () => {
+        expect(parseEnvValue('12abc')).toBe('12abc');
+        expect(parseEnvValue('1.2.3')).toBe('1.2.3');
+        expect(parseEnvValue('NaN')).toBe('NaN');
+    });
+});
+describe('envVarToConfigPath', () => {
+    it('should convert simple env var to config path', () => {
+        expect(envVarToConfigPath('CHADGI_POLL_INTERVAL', 'CHADGI_')).toBe('poll_interval');
+        expect(envVarToConfigPath('CHADGI_TASK_SOURCE', 'CHADGI_')).toBe('task_source');
+    });
+    it('should convert nested env var to config path', () => {
+        expect(envVarToConfigPath('CHADGI_GITHUB__REPO', 'CHADGI_')).toBe('github.repo');
+        expect(envVarToConfigPath('CHADGI_ITERATION__MAX_ITERATIONS', 'CHADGI_')).toBe('iteration.max_iterations');
+        expect(envVarToConfigPath('CHADGI_BUDGET__PER_TASK_LIMIT', 'CHADGI_')).toBe('budget.per_task_limit');
+    });
+    it('should work with custom prefix', () => {
+        expect(envVarToConfigPath('MYAPP_GITHUB__REPO', 'MYAPP_')).toBe('github.repo');
+        expect(envVarToConfigPath('CUSTOM_PREFIX_VALUE', 'CUSTOM_')).toBe('prefix_value');
+    });
+});
+describe('configPathToEnvVar', () => {
+    it('should convert simple config path to env var', () => {
+        expect(configPathToEnvVar('poll_interval', 'CHADGI_')).toBe('CHADGI_POLL_INTERVAL');
+        expect(configPathToEnvVar('task_source', 'CHADGI_')).toBe('CHADGI_TASK_SOURCE');
+    });
+    it('should convert nested config path to env var', () => {
+        expect(configPathToEnvVar('github.repo', 'CHADGI_')).toBe('CHADGI_GITHUB__REPO');
+        expect(configPathToEnvVar('iteration.max_iterations', 'CHADGI_')).toBe('CHADGI_ITERATION__MAX_ITERATIONS');
+        expect(configPathToEnvVar('budget.per_task_limit', 'CHADGI_')).toBe('CHADGI_BUDGET__PER_TASK_LIMIT');
+    });
+    it('should work with custom prefix', () => {
+        expect(configPathToEnvVar('github.repo', 'MYAPP_')).toBe('MYAPP_GITHUB__REPO');
+    });
+});
+describe('setNestedValue', () => {
+    it('should set top-level values', () => {
+        const obj = {};
+        setNestedValue(obj, 'key', 'value');
+        expect(obj).toEqual({ key: 'value' });
+    });
+    it('should set nested values', () => {
+        const obj = {};
+        setNestedValue(obj, 'github.repo', 'owner/repo');
+        expect(obj).toEqual({ github: { repo: 'owner/repo' } });
+    });
+    it('should create intermediate objects', () => {
+        const obj = {};
+        setNestedValue(obj, 'a.b.c.d', 'deep');
+        expect(obj).toEqual({ a: { b: { c: { d: 'deep' } } } });
+    });
+    it('should overwrite existing values', () => {
+        const obj = { github: { repo: 'old' } };
+        setNestedValue(obj, 'github.repo', 'new');
+        expect(obj).toEqual({ github: { repo: 'new' } });
+    });
+    it('should replace non-object intermediate values', () => {
+        const obj = { github: 'not an object' };
+        setNestedValue(obj, 'github.repo', 'owner/repo');
+        expect(obj).toEqual({ github: { repo: 'owner/repo' } });
+    });
+});
+describe('getNestedValue', () => {
+    it('should get top-level values', () => {
+        const obj = { key: 'value' };
+        expect(getNestedValue(obj, 'key')).toBe('value');
+    });
+    it('should get nested values', () => {
+        const obj = { github: { repo: 'owner/repo' } };
+        expect(getNestedValue(obj, 'github.repo')).toBe('owner/repo');
+    });
+    it('should return undefined for non-existent paths', () => {
+        const obj = { github: { repo: 'owner/repo' } };
+        expect(getNestedValue(obj, 'nonexistent')).toBeUndefined();
+        expect(getNestedValue(obj, 'github.nonexistent')).toBeUndefined();
+        expect(getNestedValue(obj, 'a.b.c')).toBeUndefined();
+    });
+    it('should handle null values in path', () => {
+        const obj = { github: null };
+        expect(getNestedValue(obj, 'github.repo')).toBeUndefined();
+    });
+});
+describe('findEnvVarsWithPrefix', () => {
+    it('should find matching env vars', () => {
+        const env = {
+            CHADGI_GITHUB__REPO: 'owner/repo',
+            CHADGI_POLL_INTERVAL: '10',
+            OTHER_VAR: 'value',
+            PATH: '/usr/bin',
+        };
+        const result = findEnvVarsWithPrefix('CHADGI_', env);
+        expect(result).toContain('CHADGI_GITHUB__REPO');
+        expect(result).toContain('CHADGI_POLL_INTERVAL');
+        expect(result).not.toContain('OTHER_VAR');
+        expect(result).not.toContain('PATH');
+    });
+    it('should return empty array when no matches', () => {
+        const env = { OTHER_VAR: 'value' };
+        const result = findEnvVarsWithPrefix('CHADGI_', env);
+        expect(result).toEqual([]);
+    });
+    it('should ignore undefined values', () => {
+        const env = {
+            CHADGI_DEFINED: 'value',
+            CHADGI_UNDEFINED: undefined,
+        };
+        const result = findEnvVarsWithPrefix('CHADGI_', env);
+        expect(result).toContain('CHADGI_DEFINED');
+        expect(result).not.toContain('CHADGI_UNDEFINED');
+    });
+});
+describe('parseEnvOverrides', () => {
+    it('should parse env vars into override objects', () => {
+        const env = {
+            CHADGI_GITHUB__REPO: 'owner/repo',
+            CHADGI_ITERATION__MAX_ITERATIONS: '10',
+            CHADGI_ITERATION__GIGACHAD_MODE: 'true',
+        };
+        const overrides = parseEnvOverrides('CHADGI_', env);
+        expect(overrides).toHaveLength(3);
+        const repoOverride = overrides.find(o => o.envVar === 'CHADGI_GITHUB__REPO');
+        expect(repoOverride).toEqual({
+            envVar: 'CHADGI_GITHUB__REPO',
+            configPath: 'github.repo',
+            value: 'owner/repo',
+            rawValue: 'owner/repo',
+        });
+        const iterOverride = overrides.find(o => o.envVar === 'CHADGI_ITERATION__MAX_ITERATIONS');
+        expect(iterOverride?.value).toBe(10);
+        const gigachadOverride = overrides.find(o => o.envVar === 'CHADGI_ITERATION__GIGACHAD_MODE');
+        expect(gigachadOverride?.value).toBe(true);
+    });
+    it('should return empty array when no matching env vars', () => {
+        const env = { OTHER_VAR: 'value' };
+        const overrides = parseEnvOverrides('CHADGI_', env);
+        expect(overrides).toEqual([]);
+    });
+});
+describe('applyEnvOverrides', () => {
+    it('should apply overrides to config object', () => {
+        const config = {
+            github: { repo: 'original/repo' },
+            poll_interval: 5,
+        };
+        const overrides = [
+            { envVar: 'CHADGI_GITHUB__REPO', configPath: 'github.repo', value: 'new/repo', rawValue: 'new/repo' },
+            { envVar: 'CHADGI_POLL_INTERVAL', configPath: 'poll_interval', value: 20, rawValue: '20' },
+        ];
+        applyEnvOverrides(config, overrides);
+        expect(config.github).toEqual({ repo: 'new/repo' });
+        expect(config.poll_interval).toBe(20);
+    });
+    it('should create nested structures if needed', () => {
+        const config = {};
+        const overrides = [
+            { envVar: 'CHADGI_BUDGET__PER_TASK_LIMIT', configPath: 'budget.per_task_limit', value: 5.0, rawValue: '5.0' },
+        ];
+        applyEnvOverrides(config, overrides);
+        expect(config.budget).toEqual({ per_task_limit: 5.0 });
+    });
+});
+describe('loadConfigWithEnv', () => {
+    beforeEach(() => {
+        vol.reset();
+    });
+    it('should load config and apply env overrides', () => {
+        vol.fromJSON({
+            '/project/.chadgi/chadgi-config.yaml': validConfig,
+        });
+        const env = {
+            CHADGI_GITHUB__REPO: 'override/repo',
+            CHADGI_ITERATION__MAX_ITERATIONS: '15',
+        };
+        const result = loadConfigWithEnv('/project/.chadgi/chadgi-config.yaml', { env });
+        expect(result.config.github.repo).toBe('override/repo');
+        expect(result.envOverrides).toHaveLength(2);
+        expect(result.envPrefix).toBe('CHADGI_');
+    });
+    it('should work with custom prefix', () => {
+        vol.fromJSON({
+            '/project/.chadgi/chadgi-config.yaml': minimalConfig,
+        });
+        const env = {
+            MYAPP_GITHUB__REPO: 'custom/repo',
+        };
+        const result = loadConfigWithEnv('/project/.chadgi/chadgi-config.yaml', {
+            envPrefix: 'MYAPP_',
+            env,
+        });
+        expect(result.config.github.repo).toBe('custom/repo');
+        expect(result.envPrefix).toBe('MYAPP_');
+    });
+    it('should return empty overrides when no env vars match', () => {
+        vol.fromJSON({
+            '/project/.chadgi/chadgi-config.yaml': validConfig,
+        });
+        const result = loadConfigWithEnv('/project/.chadgi/chadgi-config.yaml', { env: {} });
+        expect(result.envOverrides).toHaveLength(0);
+        expect(result.config.github.repo).toBe('SwapLabsInc/ChadGI');
+    });
+    it('should handle missing config file gracefully', () => {
+        vol.reset();
+        const env = {
+            CHADGI_GITHUB__REPO: 'env/repo',
+            CHADGI_GITHUB__PROJECT_NUMBER: '99',
+        };
+        const result = loadConfigWithEnv('/project/.chadgi/chadgi-config.yaml', { env });
+        // Should still apply env overrides even without file
+        expect(result.config.github.repo).toBe('env/repo');
+        expect(result.envOverrides).toHaveLength(2);
+    });
+});
+describe('getSupportedEnvVars', () => {
+    it('should return all supported env var names with default prefix', () => {
+        const envVars = getSupportedEnvVars();
+        expect(envVars).toContain('CHADGI_GITHUB__REPO');
+        expect(envVars).toContain('CHADGI_GITHUB__PROJECT_NUMBER');
+        expect(envVars).toContain('CHADGI_ITERATION__MAX_ITERATIONS');
+        expect(envVars).toContain('CHADGI_BUDGET__PER_TASK_LIMIT');
+        expect(envVars.length).toBe(SUPPORTED_ENV_CONFIG_PATHS.length);
+    });
+    it('should use custom prefix when provided', () => {
+        const envVars = getSupportedEnvVars('MYAPP_');
+        expect(envVars).toContain('MYAPP_GITHUB__REPO');
+        expect(envVars).not.toContain('CHADGI_GITHUB__REPO');
+    });
+});
+describe('formatEnvVarHelp', () => {
+    it('should return formatted help text', () => {
+        const help = formatEnvVarHelp();
+        expect(help).toContain('Supported Environment Variables:');
+        expect(help).toContain('CHADGI_');
+        expect(help).toContain('CHADGI_GITHUB__REPO');
+        expect(help).toContain('double underscore');
+    });
+    it('should use custom prefix in help text', () => {
+        const help = formatEnvVarHelp('MYAPP_');
+        expect(help).toContain('MYAPP_');
+        expect(help).toContain('MYAPP_GITHUB__REPO');
+    });
+});
+describe('DEFAULT_ENV_PREFIX', () => {
+    it('should be CHADGI_', () => {
+        expect(DEFAULT_ENV_PREFIX).toBe('CHADGI_');
     });
 });
 //# sourceMappingURL=config.test.js.map

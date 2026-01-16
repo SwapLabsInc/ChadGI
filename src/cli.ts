@@ -114,6 +114,8 @@ program
   .option('--strict', 'Treat unknown template variables as errors (exit with non-zero status)')
   .option('--show-merged', 'Display final merged config when using config inheritance')
   .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
+  .option('-v, --verbose', 'Show detailed information including env var sources')
+  .option('--env-prefix <prefix>', 'Custom environment variable prefix (default: CHADGI_)')
   .action(
     wrapCommand(async (options) => {
       const isValid = await validate(options);

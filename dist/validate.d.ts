@@ -5,6 +5,8 @@ interface ValidateOptions {
     strict?: boolean;
     showMerged?: boolean;
     mask?: boolean;
+    verbose?: boolean;
+    envPrefix?: string;
 }
 interface TemplateVariableMatch {
     variable: string;
