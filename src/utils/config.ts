@@ -653,3 +653,236 @@ export function formatEnvVarHelp(prefix: string = DEFAULT_ENV_PREFIX): string {
 
   return lines.join('\n');
 }
+
+// ============================================================================
+// Configuration Cross-Field Validation
+// ============================================================================
+
+/**
+ * Validation error indicating a logical constraint violation
+ */
+export interface ConfigValidationError {
+  /** The config field(s) that caused the error */
+  fields: string[];
+  /** Human-readable error message */
+  message: string;
+  /** Error severity: 'error' means invalid config, 'warning' is informational */
+  severity: 'error' | 'warning';
+}
+
+/**
+ * Result of configuration logic validation
+ */
+export interface ConfigValidationResult {
+  /** Whether the configuration is valid (no errors) */
+  valid: boolean;
+  /** List of validation errors found */
+  errors: ConfigValidationError[];
+  /** List of validation warnings found */
+  warnings: ConfigValidationError[];
+}
+
+/**
+ * Validates cross-field logical constraints in the configuration.
+ *
+ * This function runs after schema validation to catch logically invalid
+ * configurations that are technically valid YAML but would cause runtime
+ * errors or unexpected behavior.
+ *
+ * Validates:
+ * - Budget constraints (per_task_limit <= per_session_limit, warning_threshold 0-100, no negatives)
+ * - Column name uniqueness (ready, in_progress, review, done must be different)
+ * - Iteration constraints (max_iterations >= 1, poll_interval >= 100)
+ * - Branch prefix doesn't conflict with base branch
+ *
+ * @param config - The configuration object to validate
+ * @returns Validation result with errors and warnings
+ */
+export function validateConfigLogic(config: ChadGIConfig): ConfigValidationResult {
+  const errors: ConfigValidationError[] = [];
+  const warnings: ConfigValidationError[] = [];
+
+  // -------------------------------------------------------------------------
+  // Budget Constraints
+  // -------------------------------------------------------------------------
+
+  if (config.budget) {
+    const { per_task_limit, per_session_limit, warning_threshold } = config.budget;
+
+    // Check for negative budget values
+    if (per_task_limit !== undefined && per_task_limit < 0) {
+      errors.push({
+        fields: ['budget.per_task_limit'],
+        message: `per_task_limit cannot be negative (got ${per_task_limit})`,
+        severity: 'error',
+      });
+    }
+
+    if (per_session_limit !== undefined && per_session_limit < 0) {
+      errors.push({
+        fields: ['budget.per_session_limit'],
+        message: `per_session_limit cannot be negative (got ${per_session_limit})`,
+        severity: 'error',
+      });
+    }
+
+    // Check that per_task_limit <= per_session_limit when both are set
+    if (
+      per_task_limit !== undefined &&
+      per_session_limit !== undefined &&
+      per_task_limit > per_session_limit
+    ) {
+      errors.push({
+        fields: ['budget.per_task_limit', 'budget.per_session_limit'],
+        message: `per_task_limit (${per_task_limit}) cannot exceed per_session_limit (${per_session_limit})`,
+        severity: 'error',
+      });
+    }
+
+    // Check warning_threshold is between 0 and 100
+    if (warning_threshold !== undefined) {
+      if (warning_threshold < 0) {
+        errors.push({
+          fields: ['budget.warning_threshold'],
+          message: `warning_threshold cannot be negative (got ${warning_threshold})`,
+          severity: 'error',
+        });
+      } else if (warning_threshold > 100) {
+        errors.push({
+          fields: ['budget.warning_threshold'],
+          message: `warning_threshold cannot exceed 100% (got ${warning_threshold})`,
+          severity: 'error',
+        });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Column Name Uniqueness
+  // -------------------------------------------------------------------------
+
+  if (config.github) {
+    const { ready_column, in_progress_column, review_column, done_column } = config.github;
+
+    // Collect all defined column names with their field names
+    const columns: Array<{ name: string; field: string }> = [];
+
+    if (ready_column) {
+      columns.push({ name: ready_column.toLowerCase(), field: 'github.ready_column' });
+    }
+    if (in_progress_column) {
+      columns.push({ name: in_progress_column.toLowerCase(), field: 'github.in_progress_column' });
+    }
+    if (review_column) {
+      columns.push({ name: review_column.toLowerCase(), field: 'github.review_column' });
+    }
+    if (done_column) {
+      columns.push({ name: done_column.toLowerCase(), field: 'github.done_column' });
+    }
+
+    // Check for duplicates
+    const seen = new Map<string, string[]>();
+    for (const col of columns) {
+      const existing = seen.get(col.name);
+      if (existing) {
+        existing.push(col.field);
+      } else {
+        seen.set(col.name, [col.field]);
+      }
+    }
+
+    // Report duplicates
+    for (const [name, fields] of seen) {
+      if (fields.length > 1) {
+        errors.push({
+          fields,
+          message: `Duplicate column name "${name}" used for ${fields.join(' and ')}`,
+          severity: 'error',
+        });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Iteration Constraints
+  // -------------------------------------------------------------------------
+
+  if (config.iteration) {
+    const { max_iterations } = config.iteration;
+
+    // Check max_iterations >= 1
+    if (max_iterations !== undefined && max_iterations < 1) {
+      errors.push({
+        fields: ['iteration.max_iterations'],
+        message: `max_iterations must be at least 1 (got ${max_iterations})`,
+        severity: 'error',
+      });
+    }
+  }
+
+  // Check poll_interval >= 1 (top-level field, value is in seconds)
+  // Minimum of 1 second to prevent tight loops and excessive API calls
+  if (config.poll_interval !== undefined && config.poll_interval < 1) {
+    errors.push({
+      fields: ['poll_interval'],
+      message: `poll_interval must be at least 1 second to prevent tight loops (got ${config.poll_interval})`,
+      severity: 'error',
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Branch Prefix Conflict
+  // -------------------------------------------------------------------------
+
+  if (config.branch) {
+    const { base, prefix } = config.branch;
+
+    // Check that branch prefix doesn't start with the base branch name
+    // This would cause issues when ChadGI tries to create branches
+    if (base && prefix && prefix.startsWith(base)) {
+      warnings.push({
+        fields: ['branch.base', 'branch.prefix'],
+        message: `Branch prefix "${prefix}" starts with base branch name "${base}", which may cause confusion`,
+        severity: 'warning',
+      });
+    }
+
+    // Check that base branch isn't named like a feature branch prefix
+    // e.g., base: "feature/issue-" would be problematic
+    if (base && prefix && base.includes(prefix)) {
+      errors.push({
+        fields: ['branch.base', 'branch.prefix'],
+        message: `Base branch "${base}" contains branch prefix "${prefix}", which would conflict with feature branches`,
+        severity: 'error',
+      });
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * Formats validation errors for display.
+ *
+ * @param result - The validation result to format
+ * @returns Array of formatted error strings
+ */
+export function formatConfigValidationErrors(result: ConfigValidationResult): string[] {
+  const lines: string[] = [];
+
+  for (const error of result.errors) {
+    const fieldList = error.fields.join(', ');
+    lines.push(`[ERROR] ${error.message} (fields: ${fieldList})`);
+  }
+
+  for (const warning of result.warnings) {
+    const fieldList = warning.fields.join(', ');
+    lines.push(`[WARNING] ${warning.message} (fields: ${fieldList})`);
+  }
+
+  return lines;
+}
