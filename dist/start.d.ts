@@ -6,6 +6,7 @@ interface StartOptions {
     ignoreDeps?: boolean;
     workspace?: boolean;
     repo?: string;
+    interactive?: boolean;
 }
 export declare function start(options?: StartOptions): Promise<void>;
 export {};

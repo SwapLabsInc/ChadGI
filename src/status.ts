@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 
 interface StatusOptions {
@@ -28,8 +28,20 @@ interface PauseLockData {
   resume_at?: string;
 }
 
+interface ApprovalLockData {
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  issue_number: number;
+  issue_title?: string;
+  branch?: string;
+  phase: 'pre_task' | 'phase1' | 'phase2';
+  files_changed?: number;
+  insertions?: number;
+  deletions?: number;
+}
+
 interface StatusInfo {
-  state: 'running' | 'paused' | 'stopped' | 'idle' | 'error' | 'unknown';
+  state: 'running' | 'paused' | 'stopped' | 'idle' | 'error' | 'awaiting_approval' | 'unknown';
   currentTask?: {
     id: string;
     title: string;
@@ -52,6 +64,16 @@ interface StatusInfo {
   blockedTasks?: {
     count: number;
     issues: string[];
+  };
+  pendingApproval?: {
+    phase: string;
+    issueNumber: number;
+    issueTitle?: string;
+    createdAt: string;
+    filesChanged?: number;
+    insertions?: number;
+    deletions?: number;
+    waitingSeconds: number;
   };
   lastUpdated?: string;
 }
@@ -93,6 +115,8 @@ function getStateColor(state: string): string {
       return colors.green;
     case 'paused':
       return colors.yellow;
+    case 'awaiting_approval':
+      return colors.purple;
     case 'stopped':
     case 'idle':
       return colors.blue;
@@ -109,6 +133,8 @@ function getStateEmoji(state: string): string {
       return '>';
     case 'paused':
       return '||';
+    case 'awaiting_approval':
+      return '?!';
     case 'stopped':
     case 'idle':
       return '[]';
@@ -117,6 +143,44 @@ function getStateEmoji(state: string): string {
     default:
       return '?';
   }
+}
+
+/**
+ * Format phase name for display
+ */
+function formatPhaseName(phase: string): string {
+  switch (phase) {
+    case 'pre_task':
+      return 'Pre-Task Review';
+    case 'phase1':
+      return 'Post-Implementation Review';
+    case 'phase2':
+      return 'Pre-PR Creation Review';
+    default:
+      return phase;
+  }
+}
+
+/**
+ * Find pending approval lock files and return the first one
+ */
+function findPendingApproval(chadgiDir: string): ApprovalLockData | null {
+  try {
+    const files = readdirSync(chadgiDir).filter(f => f.startsWith('approval-') && f.endsWith('.lock'));
+    for (const file of files) {
+      try {
+        const data = JSON.parse(readFileSync(join(chadgiDir, file), 'utf-8')) as ApprovalLockData;
+        if (data.status === 'pending') {
+          return data;
+        }
+      } catch {
+        // Skip invalid files
+      }
+    }
+  } catch {
+    // Directory read error
+  }
+  return null;
 }
 
 export async function status(options: StatusOptions = {}): Promise<void> {
@@ -171,6 +235,8 @@ export async function status(options: StatusOptions = {}): Promise<void> {
       // Determine state
       if (pauseInfo) {
         statusInfo.state = 'paused';
+      } else if (parsed.status === 'awaiting_approval') {
+        statusInfo.state = 'awaiting_approval';
       } else if (parsed.status === 'in_progress') {
         statusInfo.state = 'running';
       } else if (parsed.status === 'paused') {
@@ -217,6 +283,23 @@ export async function status(options: StatusOptions = {}): Promise<void> {
     statusInfo.state = pauseInfo ? 'paused' : 'stopped';
   }
 
+  // Check for pending approval lock files
+  const pendingApproval = findPendingApproval(chadgiDir);
+  if (pendingApproval) {
+    statusInfo.state = 'awaiting_approval';
+    const createdAt = new Date(pendingApproval.created_at);
+    statusInfo.pendingApproval = {
+      phase: pendingApproval.phase,
+      issueNumber: pendingApproval.issue_number,
+      issueTitle: pendingApproval.issue_title,
+      createdAt: pendingApproval.created_at,
+      filesChanged: pendingApproval.files_changed,
+      insertions: pendingApproval.insertions,
+      deletions: pendingApproval.deletions,
+      waitingSeconds: Math.floor((Date.now() - createdAt.getTime()) / 1000),
+    };
+  }
+
   // Output as JSON if requested
   if (options.json) {
     console.log(JSON.stringify(statusInfo, null, 2));
@@ -258,6 +341,28 @@ export async function status(options: StatusOptions = {}): Promise<void> {
     console.log('');
   }
 
+  // Pending approval info
+  if (statusInfo.pendingApproval) {
+    const phaseName = formatPhaseName(statusInfo.pendingApproval.phase);
+    console.log(`${colors.purple}${colors.bold}PENDING APPROVAL${colors.reset}`);
+    console.log(`  Issue:         #${statusInfo.pendingApproval.issueNumber}`);
+    if (statusInfo.pendingApproval.issueTitle) {
+      console.log(`  Title:         ${statusInfo.pendingApproval.issueTitle}`);
+    }
+    console.log(`  Phase:         ${phaseName}`);
+    console.log(`  Waiting:       ${formatDuration(statusInfo.pendingApproval.waitingSeconds)}`);
+    if (statusInfo.pendingApproval.filesChanged !== undefined) {
+      const ins = statusInfo.pendingApproval.insertions ?? 0;
+      const del = statusInfo.pendingApproval.deletions ?? 0;
+      console.log(`  Changes:       ${statusInfo.pendingApproval.filesChanged} files (+${ins}/-${del})`);
+    }
+    console.log('');
+    console.log(`  ${colors.green}chadgi approve${colors.reset}    - Approve and continue`);
+    console.log(`  ${colors.red}chadgi reject${colors.reset}     - Reject with feedback`);
+    console.log(`  ${colors.cyan}chadgi diff${colors.reset}       - View changes`);
+    console.log('');
+  }
+
   // Current task info
   if (statusInfo.currentTask) {
     console.log(`${colors.cyan}${colors.bold}CURRENT TASK${colors.reset}`);
@@ -290,7 +395,9 @@ export async function status(options: StatusOptions = {}): Promise<void> {
 
   // Actions
   console.log('');
-  if (statusInfo.state === 'paused') {
+  if (statusInfo.state === 'awaiting_approval') {
+    console.log(`${colors.purple}Awaiting human approval. Use 'chadgi approve' or 'chadgi reject'.${colors.reset}`);
+  } else if (statusInfo.state === 'paused') {
     console.log(`${colors.green}Run 'chadgi resume' to continue processing.${colors.reset}`);
   } else if (statusInfo.state === 'stopped' || statusInfo.state === 'idle') {
     console.log(`${colors.green}Run 'chadgi start' to begin processing tasks.${colors.reset}`);
