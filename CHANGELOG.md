@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.2...v1.1.3) (2026-01-16)
+
+
+### Bug Fixes
+
+* remove registry-url and clear auth for OIDC publishing ([cb81fcd](https://github.com/SwapLabsInc/ChadGI/commit/cb81fcd50a7d94076aa52fbd17a857436c42cc6a))
+
 ## [1.1.2](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.1...v1.1.2) (2026-01-16)
 
 
