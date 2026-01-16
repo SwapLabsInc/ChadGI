@@ -36,6 +36,10 @@ DEBUG_MODE="${DEBUG_MODE:-false}"
 # Ignore dependencies - passed from CLI via environment variable
 IGNORE_DEPS="${IGNORE_DEPS:-false}"
 
+# Interactive mode - passed from CLI via environment variable
+# When enabled, requires human approval at checkpoints before proceeding
+INTERACTIVE_MODE="${INTERACTIVE_MODE:-false}"
+
 # Task timeout override - passed from CLI via environment variable (in minutes)
 # Empty means use config value, otherwise override
 CLI_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
@@ -848,6 +852,26 @@ load_config() {
     BUDGET_ON_SESSION_EXCEEDED="${BUDGET_ON_SESSION_EXCEEDED:-stop}"
     BUDGET_WARNING_THRESHOLD=$(parse_yaml_nested_merged "budget" "warning_threshold" "${MERGED_CONFIG_FILES[@]}")
     BUDGET_WARNING_THRESHOLD="${BUDGET_WARNING_THRESHOLD:-80}"
+
+    # Interactive approval settings - human-in-the-loop mode
+    # Note: Can be enabled via --interactive CLI flag or config file
+    INTERACTIVE_ENABLED=$(parse_yaml_nested_merged "interactive" "enabled" "${MERGED_CONFIG_FILES[@]}")
+    INTERACTIVE_ENABLED="${INTERACTIVE_ENABLED:-false}"
+    INTERACTIVE_APPROVE_PRE_TASK=$(parse_yaml_nested_merged "interactive" "approve_pre_task" "${MERGED_CONFIG_FILES[@]}")
+    INTERACTIVE_APPROVE_PRE_TASK="${INTERACTIVE_APPROVE_PRE_TASK:-false}"
+    INTERACTIVE_APPROVE_PHASE1=$(parse_yaml_nested_merged "interactive" "approve_phase1" "${MERGED_CONFIG_FILES[@]}")
+    INTERACTIVE_APPROVE_PHASE1="${INTERACTIVE_APPROVE_PHASE1:-true}"
+    INTERACTIVE_APPROVE_PHASE2=$(parse_yaml_nested_merged "interactive" "approve_phase2" "${MERGED_CONFIG_FILES[@]}")
+    INTERACTIVE_APPROVE_PHASE2="${INTERACTIVE_APPROVE_PHASE2:-true}"
+    INTERACTIVE_SHOW_DIFF=$(parse_yaml_nested_merged "interactive" "show_diff" "${MERGED_CONFIG_FILES[@]}")
+    INTERACTIVE_SHOW_DIFF="${INTERACTIVE_SHOW_DIFF:-true}"
+    INTERACTIVE_TIMEOUT=$(parse_yaml_nested_merged "interactive" "timeout" "${MERGED_CONFIG_FILES[@]}")
+    INTERACTIVE_TIMEOUT="${INTERACTIVE_TIMEOUT:-0}"
+
+    # CLI flag takes precedence over config for enabling interactive mode
+    if [ "$INTERACTIVE_MODE" = "true" ]; then
+        INTERACTIVE_ENABLED="true"
+    fi
 
     # Resolve relative paths to CHADGI_DIR
     [[ "$PROMPT_TEMPLATE" != /* ]] && PROMPT_TEMPLATE="$CHADGI_DIR/$PROMPT_TEMPLATE"
@@ -2295,6 +2319,283 @@ check_pause_lock() {
 }
 
 #------------------------------------------------------------------------------
+# Interactive Approval Mode
+#------------------------------------------------------------------------------
+
+# Create an approval lock file for a checkpoint
+# Args: $1 = phase (pre_task, phase1, phase2), $2 = issue_number, $3 = issue_title, $4 = branch
+create_approval_lock() {
+    local PHASE=$1
+    local ISSUE_NUM=$2
+    local ISSUE_TITLE_ARG=$3
+    local BRANCH_ARG=$4
+
+    local LOCK_FILE="$CHADGI_DIR/approval-${PHASE}-${ISSUE_NUM}.lock"
+    local TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Get diff stats if available and in phase1 or phase2
+    local FILES_CHANGED=""
+    local INSERTIONS=""
+    local DELETIONS=""
+
+    if [ "$PHASE" != "pre_task" ]; then
+        local DIFF_STAT=$(git diff --stat "$BASE_BRANCH"...HEAD 2>/dev/null | tail -1)
+        if [ -n "$DIFF_STAT" ]; then
+            FILES_CHANGED=$(echo "$DIFF_STAT" | grep -oE '[0-9]+ file' | grep -oE '[0-9]+' || echo "")
+            INSERTIONS=$(echo "$DIFF_STAT" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo "")
+            DELETIONS=$(echo "$DIFF_STAT" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo "")
+        fi
+    fi
+
+    # Build JSON lock file
+    cat > "$LOCK_FILE" << EOF
+{
+  "status": "pending",
+  "created_at": "$TIMESTAMP",
+  "issue_number": $ISSUE_NUM,
+  "issue_title": "$ISSUE_TITLE_ARG",
+  "branch": "$BRANCH_ARG",
+  "phase": "$PHASE"${FILES_CHANGED:+,
+  "files_changed": $FILES_CHANGED}${INSERTIONS:+,
+  "insertions": $INSERTIONS}${DELETIONS:+,
+  "deletions": $DELETIONS}
+}
+EOF
+
+    echo "$LOCK_FILE"
+}
+
+# Remove an approval lock file
+remove_approval_lock() {
+    local PHASE=$1
+    local ISSUE_NUM=$2
+
+    local LOCK_FILE="$CHADGI_DIR/approval-${PHASE}-${ISSUE_NUM}.lock"
+    rm -f "$LOCK_FILE"
+}
+
+# Get the approval status from a lock file
+# Returns: pending, approved, rejected, or empty if file doesn't exist
+get_approval_status() {
+    local LOCK_FILE=$1
+
+    if [ ! -f "$LOCK_FILE" ]; then
+        echo ""
+        return
+    fi
+
+    jq -r '.status // empty' "$LOCK_FILE" 2>/dev/null || echo ""
+}
+
+# Get feedback from a rejected approval
+get_rejection_feedback() {
+    local LOCK_FILE=$1
+
+    if [ ! -f "$LOCK_FILE" ]; then
+        echo ""
+        return
+    fi
+
+    jq -r '.feedback // empty' "$LOCK_FILE" 2>/dev/null || echo ""
+}
+
+# Display diff summary for approval checkpoint
+display_diff_summary() {
+    local BASE=$1
+
+    echo ""
+    echo -e "${CYAN}${BOLD}Changes Summary${NC}"
+    echo -e "${DIM}─────────────────────────────────────────────────────${NC}"
+
+    # Get diff stats
+    local DIFF_OUTPUT=$(git diff --stat "$BASE"...HEAD 2>/dev/null)
+    if [ -n "$DIFF_OUTPUT" ]; then
+        echo "$DIFF_OUTPUT" | head -20
+        local LINE_COUNT=$(echo "$DIFF_OUTPUT" | wc -l)
+        if [ "$LINE_COUNT" -gt 20 ]; then
+            echo -e "${DIM}  ... and $((LINE_COUNT - 20)) more files${NC}"
+        fi
+    else
+        echo -e "${DIM}  No changes detected${NC}"
+    fi
+
+    echo -e "${DIM}─────────────────────────────────────────────────────${NC}"
+    echo ""
+}
+
+# Display interactive approval prompt with keyboard shortcuts
+display_approval_prompt() {
+    local PHASE=$1
+    local ISSUE_NUM=$2
+    local ISSUE_TITLE_ARG=$3
+
+    local PHASE_NAME=""
+    case "$PHASE" in
+        "pre_task") PHASE_NAME="Pre-Task Review" ;;
+        "phase1")   PHASE_NAME="Post-Implementation Review" ;;
+        "phase2")   PHASE_NAME="Pre-PR Creation Review" ;;
+        *)          PHASE_NAME="$PHASE" ;;
+    esac
+
+    echo ""
+    echo -e "${PURPLE}${BOLD}=========================================================="
+    echo "                APPROVAL REQUIRED                         "
+    echo "==========================================================${NC}"
+    echo ""
+    echo -e "${CYAN}Issue:${NC}  #${ISSUE_NUM}"
+    echo -e "${CYAN}Title:${NC}  ${ISSUE_TITLE_ARG}"
+    echo -e "${CYAN}Phase:${NC}  ${PHASE_NAME}"
+    echo ""
+
+    # Show diff if enabled
+    if [ "$INTERACTIVE_SHOW_DIFF" = "true" ] && [ "$PHASE" != "pre_task" ]; then
+        display_diff_summary "$BASE_BRANCH"
+    fi
+
+    echo -e "${YELLOW}${BOLD}Keyboard Shortcuts:${NC}"
+    echo -e "  ${GREEN}y${NC} - Approve and continue"
+    echo -e "  ${RED}n${NC} - Reject and provide feedback"
+    echo -e "  ${CYAN}d${NC} - View full diff (chadgi diff)"
+    echo -e "  ${YELLOW}s${NC} - Skip task (move back to Ready)"
+    echo ""
+    echo -e "Or run in another terminal:"
+    echo -e "  ${GREEN}chadgi approve${NC} - Approve this checkpoint"
+    echo -e "  ${RED}chadgi reject -m \"feedback\"${NC} - Reject with feedback"
+    echo ""
+}
+
+# Wait for approval at a checkpoint
+# Returns: 0 = approved, 1 = rejected (iterate), 2 = skip task
+wait_for_approval() {
+    local PHASE=$1
+    local ISSUE_NUM=$2
+    local ISSUE_TITLE_ARG=$3
+    local BRANCH_ARG=$4
+
+    if [ "$INTERACTIVE_ENABLED" != "true" ]; then
+        return 0
+    fi
+
+    # Check which approvals are required based on config
+    case "$PHASE" in
+        "pre_task")
+            if [ "$INTERACTIVE_APPROVE_PRE_TASK" != "true" ]; then
+                return 0
+            fi
+            ;;
+        "phase1")
+            if [ "$INTERACTIVE_APPROVE_PHASE1" != "true" ]; then
+                return 0
+            fi
+            ;;
+        "phase2")
+            if [ "$INTERACTIVE_APPROVE_PHASE2" != "true" ]; then
+                return 0
+            fi
+            ;;
+    esac
+
+    # Create the approval lock file
+    local LOCK_FILE=$(create_approval_lock "$PHASE" "$ISSUE_NUM" "$ISSUE_TITLE_ARG" "$BRANCH_ARG")
+
+    # Update progress to show awaiting approval
+    save_progress "awaiting_approval" "$ISSUE_NUM" "$ISSUE_TITLE_ARG" "$BRANCH_ARG"
+
+    # Display the approval prompt
+    display_approval_prompt "$PHASE" "$ISSUE_NUM" "$ISSUE_TITLE_ARG"
+
+    # Calculate timeout
+    local TIMEOUT_SECS=0
+    if [ "$INTERACTIVE_TIMEOUT" -gt 0 ]; then
+        TIMEOUT_SECS=$((INTERACTIVE_TIMEOUT))
+    fi
+    local START_TIME=$(date +%s)
+
+    # Wait loop - check for keyboard input and lock file changes
+    local RESULT=0
+    while true; do
+        # Check for keyboard input (non-blocking read with 1 second timeout)
+        local KEY=""
+        read -t 1 -n 1 KEY 2>/dev/null || true
+
+        case "$KEY" in
+            y|Y)
+                log_success "Approved via keyboard"
+                # Update lock file status
+                jq '.status = "approved" | .approved_at = "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'" | .approver = "'"$(whoami)"'"' "$LOCK_FILE" > "${LOCK_FILE}.tmp" && mv "${LOCK_FILE}.tmp" "$LOCK_FILE"
+                RESULT=0
+                break
+                ;;
+            n|N)
+                echo ""
+                echo -e "${YELLOW}Enter feedback for Claude (press Enter when done):${NC}"
+                local FEEDBACK=""
+                read -r FEEDBACK
+                log_warn "Rejected via keyboard"
+                # Update lock file status with feedback
+                jq '.status = "rejected" | .rejected_at = "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'" | .approver = "'"$(whoami)"'" | .feedback = "'"$FEEDBACK"'"' "$LOCK_FILE" > "${LOCK_FILE}.tmp" && mv "${LOCK_FILE}.tmp" "$LOCK_FILE"
+                APPROVAL_FEEDBACK="$FEEDBACK"
+                RESULT=1
+                break
+                ;;
+            d|D)
+                echo ""
+                echo -e "${CYAN}Showing full diff...${NC}"
+                echo ""
+                git diff "$BASE_BRANCH"...HEAD 2>/dev/null | head -100
+                echo ""
+                echo -e "${DIM}(Showing first 100 lines. Run 'chadgi diff' for full output)${NC}"
+                echo ""
+                display_approval_prompt "$PHASE" "$ISSUE_NUM" "$ISSUE_TITLE_ARG"
+                ;;
+            s|S)
+                log_warn "Task skipped via keyboard"
+                # Update lock file status
+                jq '.status = "rejected" | .rejected_at = "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'" | .approver = "'"$(whoami)"'" | .feedback = "Task skipped by user"' "$LOCK_FILE" > "${LOCK_FILE}.tmp" && mv "${LOCK_FILE}.tmp" "$LOCK_FILE"
+                RESULT=2
+                break
+                ;;
+        esac
+
+        # Check if lock file was updated externally (via chadgi approve/reject)
+        local STATUS=$(get_approval_status "$LOCK_FILE")
+        if [ "$STATUS" = "approved" ]; then
+            log_success "Approved via 'chadgi approve' command"
+            RESULT=0
+            break
+        elif [ "$STATUS" = "rejected" ]; then
+            log_warn "Rejected via 'chadgi reject' command"
+            APPROVAL_FEEDBACK=$(get_rejection_feedback "$LOCK_FILE")
+            RESULT=1
+            break
+        fi
+
+        # Check for timeout
+        if [ "$TIMEOUT_SECS" -gt 0 ]; then
+            local ELAPSED=$(($(date +%s) - START_TIME))
+            if [ "$ELAPSED" -ge "$TIMEOUT_SECS" ]; then
+                log_warn "Approval timeout reached ($INTERACTIVE_TIMEOUT seconds). Auto-approving."
+                # Update lock file status
+                jq '.status = "approved" | .approved_at = "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'" | .approver = "auto-timeout"' "$LOCK_FILE" > "${LOCK_FILE}.tmp" && mv "${LOCK_FILE}.tmp" "$LOCK_FILE"
+                RESULT=0
+                break
+            fi
+        fi
+    done
+
+    # Update progress back to in_progress
+    save_progress "in_progress" "$ISSUE_NUM" "$ISSUE_TITLE_ARG" "$BRANCH_ARG"
+
+    # Clean up lock file
+    rm -f "$LOCK_FILE"
+
+    return $RESULT
+}
+
+# Global variable to store rejection feedback
+APPROVAL_FEEDBACK=""
+
+#------------------------------------------------------------------------------
 # Session Statistics
 #------------------------------------------------------------------------------
 
@@ -3586,6 +3887,77 @@ If you're still implementing features, continue working. Don't signal until ALL 
     TASK_PHASE1_END=$(date +%s)
 
     #---------------------------------------------------------------------------
+    # INTERACTIVE: Phase 1 Approval Checkpoint
+    # Requires human approval before proceeding to PR creation
+    #---------------------------------------------------------------------------
+    if [ "$INTERACTIVE_ENABLED" = "true" ]; then
+        log_header "AWAITING APPROVAL: POST-IMPLEMENTATION REVIEW"
+        local APPROVAL_RESULT
+        wait_for_approval "phase1" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+        APPROVAL_RESULT=$?
+
+        if [ $APPROVAL_RESULT -eq 2 ]; then
+            # Skip task
+            log_warn "Task skipped by human reviewer"
+            stop_task_timeout
+            rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
+            return 127  # Custom exit code for skipped task
+        elif [ $APPROVAL_RESULT -eq 1 ]; then
+            # Rejected with feedback - loop back to Phase 1
+            log_warn "Changes rejected. Iterating with feedback..."
+            IMPL_COMPLETE=false
+            ITERATION=$((ITERATION + 1))
+
+            if [ $ITERATION -le $MAX_ITERATIONS ]; then
+                # Continue to next iteration with feedback
+                local REJECT_FEEDBACK="${APPROVAL_FEEDBACK:-Please review and improve the implementation.}"
+
+                local CONTINUE_PROMPT="## HUMAN REVIEW FEEDBACK
+
+Your implementation was reviewed and the reviewer has requested changes:
+
+**Feedback:** $REJECT_FEEDBACK
+
+Please address this feedback and make the necessary improvements. After making changes:
+1. Run the tests to verify your changes work
+2. Commit your changes
+3. Output: <promise>${READY_PROMISE}</promise>
+
+Do NOT create a PR yet - that comes after the review is approved."
+
+                # Clear output file
+                > "$OUTPUT_FILE"
+
+                # Continue the session with feedback
+                claude --continue --dangerously-skip-permissions --print --verbose --output-format stream-json "$CONTINUE_PROMPT" 2>&1 | tee -a "$OUTPUT_FILE.raw" | \
+                    while IFS= read -r line; do
+                        [ -z "$line" ] && continue
+                        local TYPE=$(echo "$line" | jq -r '.type // empty' 2>/dev/null)
+                        if [ "$TYPE" = "assistant" ]; then
+                            local TEXT=$(echo "$line" | jq -r '.message.content[]? | select(.type == "text") | .text // empty' 2>/dev/null)
+                            [ -n "$TEXT" ] && echo -e "$TEXT"
+                            [ -n "$TEXT" ] && echo "$TEXT" >> "$OUTPUT_FILE"
+                        fi
+                    done
+
+                # Re-run verification and loop
+                if run_tests_with_output "$TEST_RESULTS"; then
+                    IMPL_COMPLETE=true
+                fi
+            fi
+
+            # If still not complete or max iterations reached, handle accordingly
+            if [ "$IMPL_COMPLETE" = "false" ]; then
+                log_error "Unable to satisfy review feedback within iteration limit"
+                stop_task_timeout
+                rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
+                return 1
+            fi
+        fi
+        # If approved (APPROVAL_RESULT=0), continue to Phase 2
+    fi
+
+    #---------------------------------------------------------------------------
     # PHASE 2: PR Creation
     # Tests have passed - now ask Claude to create the PR
     #---------------------------------------------------------------------------
@@ -3596,6 +3968,44 @@ If you're still implementing features, continue working. Don't signal until ALL 
     TASK_PHASE2_START=$(date +%s)
 
     > "$OUTPUT_FILE"
+
+    #---------------------------------------------------------------------------
+    # INTERACTIVE: Phase 2 Approval Checkpoint
+    # Requires human approval before creating the PR
+    #---------------------------------------------------------------------------
+    if [ "$INTERACTIVE_ENABLED" = "true" ]; then
+        log_header "AWAITING APPROVAL: PRE-PR CREATION REVIEW"
+        local APPROVAL_RESULT
+        wait_for_approval "phase2" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+        APPROVAL_RESULT=$?
+
+        if [ $APPROVAL_RESULT -eq 2 ]; then
+            # Skip task
+            log_warn "PR creation skipped by human reviewer"
+            stop_task_timeout
+            rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
+            return 127  # Custom exit code for skipped task
+        elif [ $APPROVAL_RESULT -eq 1 ]; then
+            # Rejected with feedback - this shouldn't normally happen at phase2
+            # but handle it by going back to fix issues
+            log_warn "PR creation rejected. Reviewer feedback: ${APPROVAL_FEEDBACK:-No feedback provided}"
+            log_info "Please address the feedback and run 'chadgi approve' when ready to proceed."
+
+            # For phase2 rejection, we'll just wait for approval again rather than iterating
+            # because the implementation is already complete
+            wait_for_approval "phase2" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+            APPROVAL_RESULT=$?
+
+            if [ $APPROVAL_RESULT -ne 0 ]; then
+                log_error "PR creation not approved. Stopping task."
+                stop_task_timeout
+                rm -f "$OUTPUT_FILE" "$OUTPUT_FILE.raw" "$TEST_RESULTS"
+                return 127
+            fi
+        fi
+        # If approved (APPROVAL_RESULT=0), continue to create PR
+        log_success "PR creation approved!"
+    fi
 
     # Generate PR footer using branding config
     local PR_FOOTER=""
@@ -4620,6 +5030,47 @@ while true; do
 
     # Save progress
     save_progress "in_progress" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+
+    #---------------------------------------------------------------------------
+    # INTERACTIVE: Pre-Task Approval Checkpoint (optional)
+    # Allows human review of task details before Claude starts working
+    #---------------------------------------------------------------------------
+    if [ "$INTERACTIVE_ENABLED" = "true" ] && [ "$INTERACTIVE_APPROVE_PRE_TASK" = "true" ]; then
+        log_header "AWAITING APPROVAL: PRE-TASK REVIEW"
+        echo -e "${CYAN}Issue URL:${NC}  ${ISSUE_URL}"
+        echo ""
+        echo -e "${CYAN}Issue Description:${NC}"
+        echo "$ISSUE_BODY" | head -30
+        if [ $(echo "$ISSUE_BODY" | wc -l) -gt 30 ]; then
+            echo -e "${DIM}... (truncated, see full issue at URL above)${NC}"
+        fi
+        echo ""
+
+        local APPROVAL_RESULT
+        wait_for_approval "pre_task" "$ISSUE_NUMBER" "$ISSUE_TITLE" "$BRANCH_NAME"
+        APPROVAL_RESULT=$?
+
+        if [ $APPROVAL_RESULT -eq 2 ]; then
+            # Skip task - move back to Ready
+            log_warn "Task skipped by human reviewer"
+            # Move issue back to Ready column
+            if [ "$DRY_RUN" != "true" ]; then
+                move_to_column "$ISSUE_NUMBER" "$READY_COLUMN"
+            fi
+            save_progress "idle" "" "" ""
+            continue  # Continue to next task in queue
+        elif [ $APPROVAL_RESULT -eq 1 ]; then
+            # Rejected - skip this task
+            log_warn "Task rejected by human reviewer: ${APPROVAL_FEEDBACK:-No feedback provided}"
+            # Move issue back to Ready column
+            if [ "$DRY_RUN" != "true" ]; then
+                move_to_column "$ISSUE_NUMBER" "$READY_COLUMN"
+            fi
+            save_progress "idle" "" "" ""
+            continue  # Continue to next task in queue
+        fi
+        log_success "Task approved! Starting implementation..."
+    fi
 
     # Process the prompt template (use cached content to avoid branch switching issues)
     PROMPT_FILE=$(mktemp)

@@ -35,6 +35,7 @@ interface StartOptions {
   ignoreDeps?: boolean;
   workspace?: boolean;
   repo?: string;
+  interactive?: boolean;
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
@@ -51,8 +52,14 @@ export async function start(options: StartOptions = {}): Promise<void> {
   const timeout = options.timeout;
   const debugMode = options.debug ?? false;
   const ignoreDeps = options.ignoreDeps ?? false;
+  const interactiveMode = options.interactive ?? false;
 
-  if (dryRun) {
+  if (interactiveMode) {
+    console.log('Starting ChadGI in INTERACTIVE mode...\n');
+    console.log('  [INTERACTIVE] Human-in-the-loop approval enabled');
+    console.log('  [INTERACTIVE] Will pause for approval before PR creation');
+    console.log('  [INTERACTIVE] Use Ctrl+C or keyboard shortcuts to respond\n');
+  } else if (dryRun) {
     console.log('Starting ChadGI in DRY-RUN mode...\n');
     console.log('  [DRY-RUN] No changes will be made to GitHub or git');
     console.log('  [DRY-RUN] Tasks will be read but not moved');
@@ -107,7 +114,8 @@ export async function start(options: StartOptions = {}): Promise<void> {
     CONFIG_FILE: configPath,
     DRY_RUN: dryRun ? 'true' : 'false',
     DEBUG_MODE: debugMode ? 'true' : 'false',
-    IGNORE_DEPS: ignoreDeps ? 'true' : 'false'
+    IGNORE_DEPS: ignoreDeps ? 'true' : 'false',
+    INTERACTIVE_MODE: interactiveMode ? 'true' : 'false'
   };
 
   // Add timeout override if specified via CLI
@@ -154,6 +162,7 @@ function runRepoTask(
       DRY_RUN: options.dryRun ? 'true' : 'false',
       DEBUG_MODE: options.debug ? 'true' : 'false',
       IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
+      INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
       WORKSPACE_MODE: 'true',
       WORKSPACE_SINGLE_TASK: 'true', // Process only one task then exit
     };

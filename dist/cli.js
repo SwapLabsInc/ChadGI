@@ -20,6 +20,7 @@ import { configExport, configImport } from './config-export-import.js';
 import { completion, getInstallationInstructions } from './completion.js';
 import { replay, replayLast, replayAllFailed } from './replay.js';
 import { diff } from './diff.js';
+import { approve, reject } from './approve.js';
 import { workspaceInit, workspaceAdd, workspaceRemove, workspaceList, workspaceStatus, } from './workspace.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -72,6 +73,7 @@ program
     .option('--ignore-deps', 'Process tasks regardless of dependency status')
     .option('-w, --workspace', 'Process tasks across all workspace repositories')
     .option('-r, --repo <name>', 'Process only a specific repository in workspace mode')
+    .option('-i, --interactive', 'Enable human-in-the-loop approval mode for reviewing changes')
     .action(async (options) => {
     try {
         await start(options);
@@ -481,6 +483,49 @@ program
             // No arguments - show diff for current branch
             await diff(undefined, options);
         }
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+// Approve command for interactive approval mode
+program
+    .command('approve [issue-number]')
+    .description('Approve a pending task in interactive mode')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-m, --message <message>', 'Add an approval comment or feedback')
+    .option('-j, --json', 'Output result as JSON')
+    .action(async (issueNumberArg, options) => {
+    try {
+        const issueNumber = issueNumberArg ? parseInt(issueNumberArg, 10) : undefined;
+        if (issueNumberArg && isNaN(issueNumber)) {
+            console.error('Error: Issue number must be a valid number');
+            process.exit(1);
+        }
+        await approve({ ...options, issueNumber });
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+// Reject command for interactive approval mode
+program
+    .command('reject [issue-number]')
+    .description('Reject a pending task in interactive mode')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-m, --message <message>', 'Add a rejection reason or feedback for Claude')
+    .option('-j, --json', 'Output result as JSON')
+    .option('--skip', 'Move task back to Ready column instead of keeping in progress')
+    .action(async (issueNumberArg, options) => {
+    try {
+        const issueNumber = issueNumberArg ? parseInt(issueNumberArg, 10) : undefined;
+        if (issueNumberArg && isNaN(issueNumber)) {
+            console.error('Error: Issue number must be a valid number');
+            process.exit(1);
+        }
+        await reject({ ...options, issueNumber });
     }
     catch (error) {
         console.error('Error:', error.message);

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 // Color codes for terminal output
 const colors = {
@@ -35,6 +35,8 @@ function getStateColor(state) {
             return colors.green;
         case 'paused':
             return colors.yellow;
+        case 'awaiting_approval':
+            return colors.purple;
         case 'stopped':
         case 'idle':
             return colors.blue;
@@ -50,6 +52,8 @@ function getStateEmoji(state) {
             return '>';
         case 'paused':
             return '||';
+        case 'awaiting_approval':
+            return '?!';
         case 'stopped':
         case 'idle':
             return '[]';
@@ -58,6 +62,44 @@ function getStateEmoji(state) {
         default:
             return '?';
     }
+}
+/**
+ * Format phase name for display
+ */
+function formatPhaseName(phase) {
+    switch (phase) {
+        case 'pre_task':
+            return 'Pre-Task Review';
+        case 'phase1':
+            return 'Post-Implementation Review';
+        case 'phase2':
+            return 'Pre-PR Creation Review';
+        default:
+            return phase;
+    }
+}
+/**
+ * Find pending approval lock files and return the first one
+ */
+function findPendingApproval(chadgiDir) {
+    try {
+        const files = readdirSync(chadgiDir).filter(f => f.startsWith('approval-') && f.endsWith('.lock'));
+        for (const file of files) {
+            try {
+                const data = JSON.parse(readFileSync(join(chadgiDir, file), 'utf-8'));
+                if (data.status === 'pending') {
+                    return data;
+                }
+            }
+            catch {
+                // Skip invalid files
+            }
+        }
+    }
+    catch {
+        // Directory read error
+    }
+    return null;
 }
 export async function status(options = {}) {
     const cwd = process.cwd();
@@ -107,6 +149,9 @@ export async function status(options = {}) {
             // Determine state
             if (pauseInfo) {
                 statusInfo.state = 'paused';
+            }
+            else if (parsed.status === 'awaiting_approval') {
+                statusInfo.state = 'awaiting_approval';
             }
             else if (parsed.status === 'in_progress') {
                 statusInfo.state = 'running';
@@ -158,6 +203,22 @@ export async function status(options = {}) {
     else {
         statusInfo.state = pauseInfo ? 'paused' : 'stopped';
     }
+    // Check for pending approval lock files
+    const pendingApproval = findPendingApproval(chadgiDir);
+    if (pendingApproval) {
+        statusInfo.state = 'awaiting_approval';
+        const createdAt = new Date(pendingApproval.created_at);
+        statusInfo.pendingApproval = {
+            phase: pendingApproval.phase,
+            issueNumber: pendingApproval.issue_number,
+            issueTitle: pendingApproval.issue_title,
+            createdAt: pendingApproval.created_at,
+            filesChanged: pendingApproval.files_changed,
+            insertions: pendingApproval.insertions,
+            deletions: pendingApproval.deletions,
+            waitingSeconds: Math.floor((Date.now() - createdAt.getTime()) / 1000),
+        };
+    }
     // Output as JSON if requested
     if (options.json) {
         console.log(JSON.stringify(statusInfo, null, 2));
@@ -196,6 +257,27 @@ export async function status(options = {}) {
         }
         console.log('');
     }
+    // Pending approval info
+    if (statusInfo.pendingApproval) {
+        const phaseName = formatPhaseName(statusInfo.pendingApproval.phase);
+        console.log(`${colors.purple}${colors.bold}PENDING APPROVAL${colors.reset}`);
+        console.log(`  Issue:         #${statusInfo.pendingApproval.issueNumber}`);
+        if (statusInfo.pendingApproval.issueTitle) {
+            console.log(`  Title:         ${statusInfo.pendingApproval.issueTitle}`);
+        }
+        console.log(`  Phase:         ${phaseName}`);
+        console.log(`  Waiting:       ${formatDuration(statusInfo.pendingApproval.waitingSeconds)}`);
+        if (statusInfo.pendingApproval.filesChanged !== undefined) {
+            const ins = statusInfo.pendingApproval.insertions ?? 0;
+            const del = statusInfo.pendingApproval.deletions ?? 0;
+            console.log(`  Changes:       ${statusInfo.pendingApproval.filesChanged} files (+${ins}/-${del})`);
+        }
+        console.log('');
+        console.log(`  ${colors.green}chadgi approve${colors.reset}    - Approve and continue`);
+        console.log(`  ${colors.red}chadgi reject${colors.reset}     - Reject with feedback`);
+        console.log(`  ${colors.cyan}chadgi diff${colors.reset}       - View changes`);
+        console.log('');
+    }
     // Current task info
     if (statusInfo.currentTask) {
         console.log(`${colors.cyan}${colors.bold}CURRENT TASK${colors.reset}`);
@@ -226,7 +308,10 @@ export async function status(options = {}) {
     }
     // Actions
     console.log('');
-    if (statusInfo.state === 'paused') {
+    if (statusInfo.state === 'awaiting_approval') {
+        console.log(`${colors.purple}Awaiting human approval. Use 'chadgi approve' or 'chadgi reject'.${colors.reset}`);
+    }
+    else if (statusInfo.state === 'paused') {
         console.log(`${colors.green}Run 'chadgi resume' to continue processing.${colors.reset}`);
     }
     else if (statusInfo.state === 'stopped' || statusInfo.state === 'idle') {
