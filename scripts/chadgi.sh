@@ -30,6 +30,9 @@ CONFIG_FILE="${CONFIG_FILE:-$CHADGI_DIR/chadgi-config.yaml}"
 # Dry-run mode - passed from CLI via environment variable
 DRY_RUN="${DRY_RUN:-false}"
 
+# Debug mode - passed from CLI via environment variable (overrides config log_level)
+DEBUG_MODE="${DEBUG_MODE:-false}"
+
 # Task timeout override - passed from CLI via environment variable (in minutes)
 # Empty means use config value, otherwise override
 CLI_TASK_TIMEOUT="${TASK_TIMEOUT:-}"
@@ -48,6 +51,171 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m' # No Color
+
+#------------------------------------------------------------------------------
+# Structured Logging System
+#------------------------------------------------------------------------------
+
+# Log level constants (higher = more verbose)
+LOG_LEVEL_ERROR=0
+LOG_LEVEL_WARN=1
+LOG_LEVEL_INFO=2
+LOG_LEVEL_DEBUG=3
+
+# Current log level (default: INFO, can be overridden by config or --debug flag)
+CURRENT_LOG_LEVEL=$LOG_LEVEL_INFO
+
+# Log file settings (will be set from config)
+LOG_FILE=""
+LOG_FILE_MAX_SIZE_MB=10
+LOG_FILE_MAX_COUNT=5
+LOG_FILE_INITIALIZED=false
+
+# Convert log level string to numeric value
+parse_log_level() {
+    local LEVEL="${1:-INFO}"
+    case "$(echo "$LEVEL" | tr '[:lower:]' '[:upper:]')" in
+        "DEBUG") echo $LOG_LEVEL_DEBUG ;;
+        "INFO")  echo $LOG_LEVEL_INFO ;;
+        "WARN"|"WARNING") echo $LOG_LEVEL_WARN ;;
+        "ERROR") echo $LOG_LEVEL_ERROR ;;
+        *)       echo $LOG_LEVEL_INFO ;;
+    esac
+}
+
+# Get log level name from numeric value
+get_log_level_name() {
+    local LEVEL=$1
+    case $LEVEL in
+        $LOG_LEVEL_DEBUG) echo "DEBUG" ;;
+        $LOG_LEVEL_INFO)  echo "INFO" ;;
+        $LOG_LEVEL_WARN)  echo "WARN" ;;
+        $LOG_LEVEL_ERROR) echo "ERROR" ;;
+        *)                echo "INFO" ;;
+    esac
+}
+
+# Format ISO timestamp for log entries
+get_log_timestamp() {
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+# Strip ANSI color codes from text for log file output
+strip_colors() {
+    echo -e "$1" | sed 's/\x1b\[[0-9;]*m//g'
+}
+
+# Get log file size in bytes
+get_log_file_size() {
+    if [ -f "$LOG_FILE" ]; then
+        stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null || echo "0"
+    else
+        echo "0"
+    fi
+}
+
+# Rotate log files when size exceeds limit
+# Uses numbered rotation: chadgi.log -> chadgi.log.1 -> chadgi.log.2 etc.
+rotate_logs() {
+    if [ -z "$LOG_FILE" ] || [ ! -f "$LOG_FILE" ]; then
+        return
+    fi
+
+    local SIZE_BYTES=$(get_log_file_size)
+    local MAX_BYTES=$((LOG_FILE_MAX_SIZE_MB * 1024 * 1024))
+
+    if [ "$SIZE_BYTES" -lt "$MAX_BYTES" ]; then
+        return
+    fi
+
+    # Perform rotation
+    local i=$((LOG_FILE_MAX_COUNT - 1))
+    while [ $i -gt 0 ]; do
+        local PREV=$((i - 1))
+        if [ $PREV -eq 0 ]; then
+            [ -f "${LOG_FILE}" ] && mv "${LOG_FILE}" "${LOG_FILE}.1"
+        else
+            [ -f "${LOG_FILE}.${PREV}" ] && mv "${LOG_FILE}.${PREV}" "${LOG_FILE}.${i}"
+        fi
+        i=$((i - 1))
+    done
+
+    # Remove oldest if exceeds count
+    local OLDEST="${LOG_FILE}.${LOG_FILE_MAX_COUNT}"
+    [ -f "$OLDEST" ] && rm -f "$OLDEST"
+}
+
+# Initialize log file
+init_log_file() {
+    if [ -z "$LOG_FILE" ] || [ "$LOG_FILE_INITIALIZED" = "true" ]; then
+        return
+    fi
+
+    # Create parent directory if needed
+    local LOG_DIR=$(dirname "$LOG_FILE")
+    mkdir -p "$LOG_DIR" 2>/dev/null
+
+    # Check for rotation before starting
+    rotate_logs
+
+    # Write session header to log file
+    local TIMESTAMP=$(get_log_timestamp)
+    {
+        echo "============================================================"
+        echo "ChadGI Session Started: $TIMESTAMP"
+        echo "Log Level: $(get_log_level_name $CURRENT_LOG_LEVEL)"
+        echo "============================================================"
+    } >> "$LOG_FILE" 2>/dev/null
+
+    LOG_FILE_INITIALIZED=true
+}
+
+# Write to log file (plain text without colors)
+write_to_log_file() {
+    local LEVEL=$1
+    local MESSAGE=$2
+
+    if [ -z "$LOG_FILE" ]; then
+        return
+    fi
+
+    # Check if we should log this level
+    if [ $LEVEL -gt $CURRENT_LOG_LEVEL ]; then
+        return
+    fi
+
+    # Ensure log file is initialized
+    if [ "$LOG_FILE_INITIALIZED" != "true" ]; then
+        init_log_file
+    fi
+
+    # Check for rotation
+    rotate_logs
+
+    # Format and write log entry
+    local TIMESTAMP=$(get_log_timestamp)
+    local LEVEL_NAME=$(get_log_level_name $LEVEL)
+    local PLAIN_MESSAGE=$(strip_colors "$MESSAGE")
+
+    printf "[%s] [%-5s] %s\n" "$TIMESTAMP" "$LEVEL_NAME" "$PLAIN_MESSAGE" >> "$LOG_FILE" 2>/dev/null
+}
+
+# Core structured logging function
+# Usage: _log <level> <color> <prefix> <message>
+_log() {
+    local LEVEL=$1
+    local COLOR=$2
+    local PREFIX=$3
+    local MESSAGE=$4
+
+    # Check if we should output to terminal
+    if [ $LEVEL -le $CURRENT_LOG_LEVEL ]; then
+        echo -e "${COLOR}${PREFIX} ${MESSAGE}${NC}"
+    fi
+
+    # Always write to log file (the write function checks level)
+    write_to_log_file $LEVEL "$MESSAGE"
+}
 
 #------------------------------------------------------------------------------
 # Configuration Loading
@@ -213,6 +381,30 @@ load_config() {
     TRUNCATE_LENGTH=$(parse_yaml_nested "output" "truncate_length" "$CONFIG_FILE")
     TRUNCATE_LENGTH="${TRUNCATE_LENGTH:-60}"
 
+    # Logging settings
+    local CONFIG_LOG_LEVEL=$(parse_yaml_nested "output" "log_level" "$CONFIG_FILE")
+    CONFIG_LOG_LEVEL="${CONFIG_LOG_LEVEL:-INFO}"
+    local CONFIG_LOG_FILE=$(parse_yaml_nested "output" "log_file" "$CONFIG_FILE")
+    CONFIG_LOG_FILE="${CONFIG_LOG_FILE:-./chadgi.log}"
+    LOG_FILE_MAX_SIZE_MB=$(parse_yaml_nested "output" "max_log_size_mb" "$CONFIG_FILE")
+    LOG_FILE_MAX_SIZE_MB="${LOG_FILE_MAX_SIZE_MB:-10}"
+    LOG_FILE_MAX_COUNT=$(parse_yaml_nested "output" "max_log_files" "$CONFIG_FILE")
+    LOG_FILE_MAX_COUNT="${LOG_FILE_MAX_COUNT:-5}"
+
+    # Set log level (DEBUG_MODE from CLI overrides config)
+    if [ "$DEBUG_MODE" = "true" ]; then
+        CURRENT_LOG_LEVEL=$LOG_LEVEL_DEBUG
+    else
+        CURRENT_LOG_LEVEL=$(parse_log_level "$CONFIG_LOG_LEVEL")
+    fi
+
+    # Resolve log file path (relative to CHADGI_DIR)
+    if [[ "$CONFIG_LOG_FILE" != /* ]]; then
+        LOG_FILE="$CHADGI_DIR/$CONFIG_LOG_FILE"
+    else
+        LOG_FILE="$CONFIG_LOG_FILE"
+    fi
+
     # Branding settings - Chad does what Chad wants
     ISSUE_PREFIX=$(parse_yaml_nested "branding" "issue_prefix" "$CONFIG_FILE")
     ISSUE_PREFIX="${ISSUE_PREFIX:-[CHAD]}"
@@ -367,6 +559,16 @@ set_defaults() {
     SHOW_TOOL_DETAILS="true"
     SHOW_COST="true"
     TRUNCATE_LENGTH="60"
+    # Logging defaults
+    LOG_FILE="$CHADGI_DIR/chadgi.log"
+    LOG_FILE_MAX_SIZE_MB="${LOG_FILE_MAX_SIZE_MB:-10}"
+    LOG_FILE_MAX_COUNT="${LOG_FILE_MAX_COUNT:-5}"
+    # Apply DEBUG_MODE override if set
+    if [ "$DEBUG_MODE" = "true" ]; then
+        CURRENT_LOG_LEVEL=$LOG_LEVEL_DEBUG
+    else
+        CURRENT_LOG_LEVEL=$LOG_LEVEL_INFO
+    fi
     # Branding defaults - Chad does what Chad wants
     ISSUE_PREFIX="${ISSUE_PREFIX:-[CHAD]}"
     CHAD_LABEL="${CHAD_LABEL:-touched-by-chad}"
@@ -2054,33 +2256,46 @@ function ctrl_c() {
 }
 
 function log_header() {
+    # Headers are always shown (INFO level) and logged
     echo -e "\n${PURPLE}-----------------------------------------------------------${NC}"
     echo -e "${PURPLE}  $1${NC}"
     echo -e "${PURPLE}-----------------------------------------------------------${NC}"
+    write_to_log_file $LOG_LEVEL_INFO "------- $1 -------"
 }
 
 function log_step() {
-    echo -e "${CYAN}> $1${NC}"
+    # Steps are DEBUG level (detailed process info)
+    _log $LOG_LEVEL_DEBUG "$CYAN" ">" "$1"
 }
 
 function log_success() {
-    echo -e "${GREEN}+ $1${NC}"
+    # Success is INFO level
+    _log $LOG_LEVEL_INFO "$GREEN" "+" "$1"
 }
 
 function log_info() {
-    echo -e "${BLUE}i $1${NC}"
+    # Info is INFO level
+    _log $LOG_LEVEL_INFO "$BLUE" "i" "$1"
 }
 
 function log_warn() {
-    echo -e "${YELLOW}! $1${NC}"
+    # Warnings are WARN level
+    _log $LOG_LEVEL_WARN "$YELLOW" "!" "$1"
 }
 
 function log_error() {
-    echo -e "${RED}x $1${NC}"
+    # Errors are ERROR level
+    _log $LOG_LEVEL_ERROR "$RED" "x" "$1"
 }
 
 function log_dry_run() {
-    echo -e "${YELLOW}[DRY-RUN]${NC} $1"
+    # Dry-run messages are INFO level
+    _log $LOG_LEVEL_INFO "$YELLOW" "[DRY-RUN]" "$1"
+}
+
+function log_debug() {
+    # Debug messages are DEBUG level
+    _log $LOG_LEVEL_DEBUG "$DIM" "D" "$1"
 }
 
 #------------------------------------------------------------------------------
@@ -3295,8 +3510,13 @@ else
 fi
 [ -n "$TEST_COMMAND" ] && log_info "Test Command: $TEST_COMMAND"
 [ -n "$BUILD_COMMAND" ] && log_info "Build Command: $BUILD_COMMAND"
+log_info "Log Level: $(get_log_level_name $CURRENT_LOG_LEVEL)"
+log_info "Log File: $LOG_FILE"
 
 echo -e "${YELLOW}Press Ctrl+C at any time to stop${NC}\n"
+
+# Initialize log file for the session
+init_log_file
 
 # Initialize project board connection
 init_project_board
