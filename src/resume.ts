@@ -2,6 +2,7 @@ import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
 
 // Import shared types
 import type { BaseCommandOptions, ProgressData, PauseLockData } from './types/index.js';
@@ -12,17 +13,6 @@ const __dirname = dirname(__filename);
 interface ResumeOptions extends BaseCommandOptions {
   restart?: boolean;
 }
-
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  yellow: '\x1b[33m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  purple: '\x1b[35m',
-};
 
 export async function resume(options: ResumeOptions = {}): Promise<void> {
   const cwd = process.cwd();

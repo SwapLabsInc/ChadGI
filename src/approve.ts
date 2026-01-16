@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
+import { colors } from './utils/colors.js';
 
 // Import shared types
 import type {
@@ -9,19 +10,6 @@ import type {
   ApprovalLockData,
   ApprovalHistoryEntry,
 } from './types/index.js';
-
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  yellow: '\x1b[33m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  purple: '\x1b[35m',
-  blue: '\x1b[34m',
-};
 
 interface ApproveOptions extends BaseCommandOptions {
   issueNumber?: number;

@@ -426,7 +426,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 36: queue.ts has color constants"
 
-if grep -q "colors = {" "$PROJECT_ROOT/src/queue.ts"; then
+if grep -q "colors = {\|from './utils/colors.js'" "$PROJECT_ROOT/src/queue.ts"; then
     pass "Color constants exist"
 else
     fail "queue should have color constants for output"

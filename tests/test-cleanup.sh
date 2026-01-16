@@ -327,7 +327,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 27: cleanup.ts uses colored output"
 
-if grep -q "colors\s*=\|\\\\x1b\[" "$PROJECT_ROOT/src/cleanup.ts"; then
+if grep -q "colors\s*=\|\\\\x1b\[\|from './utils/colors.js'" "$PROJECT_ROOT/src/cleanup.ts"; then
     pass "cleanup.ts uses colored output"
 else
     fail "cleanup.ts should use colored output"

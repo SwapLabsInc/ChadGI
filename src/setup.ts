@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,17 +30,6 @@ interface ConfigValues {
   slackWebhookUrl: string;
   discordWebhookUrl: string;
 }
-
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  yellow: '\x1b[33m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  magenta: '\x1b[35m',
-};
 
 function execCommandSilent(command: string): string | null {
   try {

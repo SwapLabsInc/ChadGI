@@ -239,7 +239,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 19: doctor.ts uses colored output"
 
-if grep -q "colors\s*=\|\\\\x1b\[" "$PROJECT_ROOT/src/doctor.ts"; then
+if grep -q "colors\s*=\|\\\\x1b\[\|from './utils/colors.js'" "$PROJECT_ROOT/src/doctor.ts"; then
     pass "doctor.ts uses colored output"
 else
     fail "doctor.ts should use colored output"

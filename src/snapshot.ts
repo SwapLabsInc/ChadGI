@@ -3,6 +3,7 @@ import { join, dirname, resolve, basename } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,19 +12,6 @@ const __dirname = dirname(__filename);
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
 const CHADGI_VERSION = packageJson.version;
-
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  purple: '\x1b[35m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-};
 
 // Snapshot metadata
 interface SnapshotMetadata {

@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { maskSecrets, maskObject } from './utils/secrets.js';
+import { colors } from './utils/colors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,16 +38,6 @@ interface ExportBundle {
   templates: Record<string, string>;
 }
 
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  yellow: '\x1b[33m',
-  green: '\x1b[32m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  magenta: '\x1b[35m',
-};
 
 // Patterns for detecting secrets/sensitive data in config
 const SECRET_PATTERNS = [

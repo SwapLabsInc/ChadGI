@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { validateTemplateVariables, TemplateValidationResult } from './validate.js';
 import { maskSecrets, maskObject, setMaskingDisabled } from './utils/secrets.js';
+import { colors } from './utils/colors.js';
 
 // Import shared types
 import type {
@@ -17,19 +18,6 @@ interface DoctorOptions extends BaseCommandOptions {
   fix?: boolean;
   mask?: boolean;  // --no-mask flag sets this to false
 }
-
-// Color codes for terminal output
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  dim: '\x1b[2m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  cyan: '\x1b[36m',
-  purple: '\x1b[35m',
-  blue: '\x1b[34m',
-};
 
 // Parse YAML value (simple key: value extraction)
 function parseYamlValue(content: string, key: string): string | null {
@@ -841,7 +829,7 @@ function printReport(report: HealthReport): void {
   console.log(`${colors.reset}`);
 
   // Health score with color coding
-  let scoreColor = colors.green;
+  let scoreColor: string = colors.green;
   if (report.healthScore < 70) {
     scoreColor = colors.red;
   } else if (report.healthScore < 85) {
