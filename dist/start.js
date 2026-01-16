@@ -8,6 +8,8 @@ import { getWorkspaceConfigPath, loadWorkspaceConfig, validateRepoPath, } from '
 import { setMaskingDisabled } from './utils/secrets.js';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
+import { initTelemetry, isTelemetryEnabled, } from './utils/telemetry.js';
+import { loadConfig } from './utils/config.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 export async function start(options = {}) {
@@ -78,6 +80,41 @@ export async function start(options = {}) {
         process.exit(1);
     }
     console.log('Configuration valid!\n');
+    // Initialize telemetry with config file settings
+    try {
+        const config = loadConfig(configPath);
+        if (config.exists && config.content) {
+            // Parse telemetry config from YAML content
+            const telemetryEnabled = config.content.match(/telemetry:\s*\n\s+enabled:\s*true/);
+            if (telemetryEnabled) {
+                const traceExporterMatch = config.content.match(/telemetry:[\s\S]*?trace_exporter:\s*(\w+)/);
+                const metricsExporterMatch = config.content.match(/telemetry:[\s\S]*?metrics_exporter:\s*(\w+)/);
+                const otlpEndpointMatch = config.content.match(/telemetry:[\s\S]*?otlp_endpoint:\s*["']?([^"'\n]+)/);
+                const prometheusPortMatch = config.content.match(/telemetry:[\s\S]*?prometheus_port:\s*(\d+)/);
+                const serviceNameMatch = config.content.match(/telemetry:[\s\S]*?service_name:\s*["']?([^"'\n]+)/);
+                const logCorrelationMatch = config.content.match(/telemetry:[\s\S]*?log_correlation:\s*true/);
+                const samplingRatioMatch = config.content.match(/telemetry:[\s\S]*?sampling_ratio:\s*([\d.]+)/);
+                const telemetryConfig = {
+                    enabled: true,
+                    trace_exporter: (traceExporterMatch?.[1] || 'none'),
+                    metrics_exporter: (metricsExporterMatch?.[1] || 'none'),
+                    otlp_endpoint: otlpEndpointMatch?.[1]?.trim(),
+                    prometheus_port: prometheusPortMatch ? parseInt(prometheusPortMatch[1], 10) : undefined,
+                    service_name: serviceNameMatch?.[1]?.trim(),
+                    log_correlation: !!logCorrelationMatch,
+                    sampling_ratio: samplingRatioMatch ? parseFloat(samplingRatioMatch[1]) : undefined,
+                };
+                const telemetryInitialized = initTelemetry(telemetryConfig);
+                if (telemetryInitialized && isTelemetryEnabled()) {
+                    console.log(`${colors.dim}Telemetry: ENABLED (${telemetryConfig.trace_exporter} traces, ${telemetryConfig.metrics_exporter} metrics)${colors.reset}\n`);
+                }
+            }
+        }
+    }
+    catch (e) {
+        // Non-fatal: telemetry initialization failure shouldn't stop the session
+        console.error(`${colors.yellow}Warning: Failed to initialize telemetry: ${e.message}${colors.reset}\n`);
+    }
     // Determine the chadgi directory from config path
     const chadgiDir = dirname(configPath);
     // Find the bash script

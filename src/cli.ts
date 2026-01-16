@@ -58,6 +58,7 @@ import {
   isTrace,
 } from './utils/debug.js';
 import { addStandardOptions, validateOptionConflicts } from './utils/cli-options.js';
+import { initTelemetry, shutdownTelemetry } from './utils/telemetry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -94,6 +95,24 @@ const program = new Command();
 
 // Initialize debug settings from environment variables first
 initDebugFromEnv();
+
+// Initialize telemetry from environment variables
+// Note: Full initialization with config happens in the start command
+// This early init allows CHADGI_TELEMETRY_* env vars to take effect
+initTelemetry();
+
+// Ensure telemetry is properly shutdown on process exit
+process.on('beforeExit', async () => {
+  await shutdownTelemetry();
+});
+process.on('SIGINT', async () => {
+  await shutdownTelemetry();
+  process.exit(130);
+});
+process.on('SIGTERM', async () => {
+  await shutdownTelemetry();
+  process.exit(143);
+});
 
 program
   .name('chadgi')
