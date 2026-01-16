@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.3.1...v1.4.0) (2026-01-16)
+
+
+### Features
+
+* add terminal hyperlink support for clickable URLs in CLI output ([#149](https://github.com/SwapLabsInc/ChadGI/issues/149)) ([51ed8ab](https://github.com/SwapLabsInc/ChadGI/commit/51ed8ab7eeabc744d47464ba33d4dc63530c3f2d)), closes [#140](https://github.com/SwapLabsInc/ChadGI/issues/140)
+
 ## [1.3.1](https://github.com/SwapLabsInc/ChadGI/compare/v1.3.0...v1.3.1) (2026-01-16)
 
 
