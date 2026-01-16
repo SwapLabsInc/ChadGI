@@ -23,6 +23,7 @@ import { replay, replayLast, replayAllFailed } from './replay.js';
 import { diff } from './diff.js';
 import { approve, reject } from './approve.js';
 import { benchmark } from './benchmark.js';
+import { logs, logsList, logsClear } from './logs.js';
 import {
   workspaceInit,
   workspaceAdd,
@@ -294,6 +295,61 @@ program
   .action(async (options) => {
     try {
       await estimate(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+// Logs command with subcommands
+const logsCommand = program
+  .command('logs')
+  .description('View and manage ChadGI execution logs');
+
+logsCommand
+  .command('view', { isDefault: true })
+  .description('View execution logs (default)')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-l, --limit <n>', 'Number of entries to show (default: 100)', createNumericParser('limit', 'limit'))
+  .option('-s, --since <time>', 'Show logs since (e.g., 1h, 7d, 2w, 2024-01-01)')
+  .option('-f, --follow', 'Follow log file in real-time (like tail -f)')
+  .option('--level <level>', 'Filter by log level (debug, info, warn, error)')
+  .option('-t, --task <n>', 'Filter logs for specific task/issue number', createNumericParser('task', 'issueNumber'))
+  .option('-g, --grep <pattern>', 'Filter lines by regex pattern')
+  .option('-j, --json', 'Output logs as JSON')
+  .action(async (options) => {
+    try {
+      await logs(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+logsCommand
+  .command('list')
+  .description('List available log files')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output as JSON')
+  .action(async (options) => {
+    try {
+      await logsList(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+logsCommand
+  .command('clear')
+  .description('Remove old log files')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output as JSON')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .option('-k, --keep-last <n>', 'Keep N most recent log files (default: 1)', createNumericParser('keep-last', 'limit'))
+  .action(async (options) => {
+    try {
+      await logsClear(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
