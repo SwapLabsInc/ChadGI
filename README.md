@@ -278,6 +278,54 @@ Supported time formats for `--since`:
 - Relative: `7d` (days), `2w` (weeks), `1m` (months), `24h` (hours)
 - Absolute: `2024-01-01` (ISO date format)
 
+### `chadgi diff`
+
+Preview pending PR changes for a task. Useful for reviewing changes before PR creation or checking on in-progress work.
+
+```bash
+chadgi diff                              # Show diff of current in-progress task
+chadgi diff 42                           # Show diff for issue #42's branch
+chadgi diff --stat                       # Condensed file statistics view
+chadgi diff --files                      # List only modified files
+chadgi diff --pr 123                     # Show diff from an existing PR
+chadgi diff --output changes.diff        # Save diff to a file
+chadgi diff --json                       # Machine-readable output
+```
+
+Example output (--stat):
+```
+==========================================================
+                    CHADGI DIFF
+==========================================================
+
+Issue:   #42
+Branch:  feature/issue-42-add-user-authentication
+Base:    main
+
+Commits (3)
+  abc1234 Add authentication middleware
+  def5678 Implement login endpoint
+  ghi9012 Add tests for auth flow
+
+Summary
+  5 files changed
+  +142 insertions
+  -12 deletions
+
+Changes
+  + src/middleware/auth.ts                           +45 -0
+  M src/routes/index.ts                              +23 -5
+  + src/routes/login.ts                              +38 -0
+  M src/config.ts                                    +8 -2
+  + tests/auth.test.ts                               +28 -5
+```
+
+**Features:**
+- Syntax highlighting for terminal output (supports delta, diff-so-fancy if installed)
+- Shows commit messages alongside changes
+- Parses branch naming convention to find task branches
+- Integrates with gh CLI for PR diffs
+
 ### `chadgi config export`
 
 Export your ChadGI configuration to a portable format for sharing with teammates or backing up.

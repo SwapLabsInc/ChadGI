@@ -20,6 +20,7 @@ import { queue, queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
 import { completion, getInstallationInstructions } from './completion.js';
 import { replay, replayLast, replayAllFailed } from './replay.js';
+import { diff } from './diff.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -449,6 +450,38 @@ program
       } else {
         // No arguments - show list of failed tasks
         await replay(undefined, options);
+      }
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+// Diff command for previewing pending PR changes
+program
+  .command('diff [issue-number]')
+  .description('Preview pending PR changes for a task')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-j, --json', 'Output diff data as JSON')
+  .option('-s, --stat', 'Show condensed file statistics view')
+  .option('-f, --files', 'List only the modified files')
+  .option('-p, --pr <number>', 'Show diff from an existing PR', parseInt)
+  .option('-o, --output <file>', 'Save diff to a file')
+  .action(async (issueNumberArg: string | undefined, options) => {
+    try {
+      if (options.pr !== undefined) {
+        // --pr flag takes precedence
+        await diff(undefined, options);
+      } else if (issueNumberArg) {
+        const num = parseInt(issueNumberArg, 10);
+        if (isNaN(num)) {
+          console.error('Error: Issue number must be a valid number');
+          process.exit(1);
+        }
+        await diff(num, options);
+      } else {
+        // No arguments - show diff for current branch
+        await diff(undefined, options);
       }
     } catch (error) {
       console.error('Error:', (error as Error).message);
