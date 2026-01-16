@@ -111,6 +111,9 @@
     "telemetry": {
       "$ref": "#/$defs/TelemetryConfig"
     },
+    "models": {
+      "$ref": "#/$defs/ModelsConfig"
+    },
     "custom_template_variables": {
       "type": "array",
       "items": {
@@ -756,6 +759,55 @@
           "maximum": 1,
           "default": 1.0,
           "description": "Trace sampling ratio (0.0 to 1.0). 1.0 samples all traces, 0.5 samples 50%, etc. Lower values reduce overhead but lose trace data."
+        }
+      }
+    },
+    "ModelsConfig": {
+      "type": "object",
+      "description": "Claude model selection configuration. Allows per-category model selection to optimize cost and quality.",
+      "properties": {
+        "default": {
+          "type": "string",
+          "pattern": "^claude-",
+          "default": "claude-sonnet-4-20250514",
+          "description": "Default Claude model to use when no category-specific model is configured. Examples: claude-sonnet-4-20250514, claude-3-opus-20240229, claude-3-haiku-20240307"
+        },
+        "by_category": {
+          "type": "object",
+          "description": "Map task categories to specific Claude models. Unspecified categories fall back to the default model.",
+          "properties": {
+            "bug": {
+              "type": "string",
+              "pattern": "^claude-",
+              "description": "Model for bug fixes. Haiku is often sufficient for simple fixes."
+            },
+            "feature": {
+              "type": "string",
+              "pattern": "^claude-",
+              "description": "Model for new features. More capable models recommended for complex features."
+            },
+            "refactor": {
+              "type": "string",
+              "pattern": "^claude-",
+              "description": "Model for refactoring. Requires deep code understanding."
+            },
+            "docs": {
+              "type": "string",
+              "pattern": "^claude-",
+              "description": "Model for documentation. Haiku works well for simple text."
+            },
+            "test": {
+              "type": "string",
+              "pattern": "^claude-",
+              "description": "Model for test writing. Balanced models work well."
+            },
+            "chore": {
+              "type": "string",
+              "pattern": "^claude-",
+              "description": "Model for routine maintenance. Haiku often sufficient."
+            }
+          },
+          "additionalProperties": false
         }
       }
     }

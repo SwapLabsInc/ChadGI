@@ -91,6 +91,8 @@ export interface TaskMetrics {
   failure_reason?: string;
   failure_phase?: 'phase1' | 'phase2' | 'verification' | string;
   category?: string;
+  /** Claude model used for this task */
+  model?: string;
   retry_count?: number;
   phases?: PhaseMetrics;
   tokens?: TokenMetrics;
@@ -347,6 +349,28 @@ export interface IterationConfig {
 }
 
 /**
+ * Model category mapping for per-category model selection
+ */
+export interface ModelCategoryMapping {
+  bug?: string;
+  feature?: string;
+  refactor?: string;
+  docs?: string;
+  test?: string;
+  chore?: string;
+}
+
+/**
+ * Models configuration section for per-category Claude model selection
+ */
+export interface ModelsConfig {
+  /** Default model to use when category is not detected or not configured */
+  default?: string;
+  /** Model selection by task category */
+  by_category?: ModelCategoryMapping;
+}
+
+/**
  * ChadGI configuration structure
  */
 export interface ChadGIConfig {
@@ -363,6 +387,8 @@ export interface ChadGIConfig {
   on_empty_queue?: 'generate' | 'wait' | 'exit';
   iteration: IterationConfig;
   budget?: BudgetConfig;
+  /** Model selection configuration for per-category Claude model selection */
+  models?: ModelsConfig;
   output?: {
     show_tool_details?: boolean;
     show_cost?: boolean;

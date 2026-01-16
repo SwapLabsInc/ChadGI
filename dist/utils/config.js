@@ -77,6 +77,53 @@ export function parseYamlNumber(content, parent, key) {
     return isNaN(num) ? undefined : num;
 }
 /**
+ * Parse the models.by_category section from YAML content
+ * This handles the double-nested structure: models.by_category.{category}
+ *
+ * @param content - The YAML content string
+ * @returns Object mapping category names to model names
+ */
+export function parseModelsByCategory(content) {
+    const lines = content.split('\n');
+    const result = {};
+    let inModels = false;
+    let inByCategory = false;
+    for (const line of lines) {
+        // Check if we're entering the models section
+        if (line.match(/^models:/)) {
+            inModels = true;
+            inByCategory = false;
+            continue;
+        }
+        // Check if we're exiting the models section (new top-level key)
+        if (inModels && line.match(/^[a-z]/)) {
+            inModels = false;
+            inByCategory = false;
+        }
+        // Check if we're entering the by_category sub-section
+        if (inModels && line.match(/^\s{2}by_category:/)) {
+            inByCategory = true;
+            continue;
+        }
+        // Check if we're exiting by_category (new key at models level)
+        if (inByCategory && line.match(/^\s{2}[a-z]/)) {
+            inByCategory = false;
+        }
+        // Parse category model mappings (4 spaces indentation)
+        if (inByCategory && line.match(/^\s{4}[a-z]+:/)) {
+            const match = line.match(/^\s{4}([a-z]+):\s*(.+)$/);
+            if (match) {
+                const category = match[1];
+                const model = match[2].replace(/["']/g, '').replace(/#.*$/, '').trim();
+                if (model) {
+                    result[category] = model;
+                }
+            }
+        }
+    }
+    return result;
+}
+/**
  * Resolve the config file path from options or use default
  *
  * @param configOption - Optional config path from command options
@@ -478,6 +525,17 @@ export function loadConfigWithEnv(configPath, options = {}) {
         }
         if (Object.keys(output).length > 0)
             config.output = output;
+        // Parse models section
+        const models = {};
+        const defaultModel = parseYamlNested(content, 'models', 'default');
+        if (defaultModel)
+            models.default = defaultModel;
+        // Parse by_category sub-section
+        const byCategory = parseModelsByCategory(content);
+        if (Object.keys(byCategory).length > 0)
+            models.by_category = byCategory;
+        if (Object.keys(models).length > 0)
+            config.models = models;
     }
     // Parse and apply environment variable overrides
     const envOverrides = parseEnvOverrides(envPrefix, env);
@@ -537,6 +595,14 @@ export const SUPPORTED_ENV_CONFIG_PATHS = [
     'output.show_cost',
     'output.truncate_length',
     'output.hyperlinks',
+    // Models configuration
+    'models.default',
+    'models.by_category.bug',
+    'models.by_category.feature',
+    'models.by_category.refactor',
+    'models.by_category.docs',
+    'models.by_category.test',
+    'models.by_category.chore',
 ];
 /**
  * Get all supported environment variable names for a given prefix.

@@ -2,6 +2,7 @@ interface StartOptions {
     config?: string;
     dryRun?: boolean;
     timeout?: number;
+    model?: string;
     debug?: boolean;
     ignoreDeps?: boolean;
     workspace?: boolean;

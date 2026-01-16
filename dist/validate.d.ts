@@ -8,6 +8,12 @@ interface ValidateOptions {
     verbose?: boolean;
     envPrefix?: string;
 }
+/**
+ * Check if a model name is valid
+ * @param modelName - The model name to validate
+ * @returns true if valid, false otherwise
+ */
+export declare function isValidModelName(modelName: string): boolean;
 interface TemplateVariableMatch {
     variable: string;
     line: number;

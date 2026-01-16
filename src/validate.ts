@@ -7,6 +7,7 @@ import {
   parseYamlValue,
   parseYamlNested,
   parseEnvOverrides,
+  parseModelsByCategory,
   DEFAULT_ENV_PREFIX,
   formatEnvVarHelp,
 } from './utils/config.js';
@@ -288,6 +289,58 @@ const VALID_TEMPLATE_VARIABLES = new Set([
   'EXISTING_ISSUES',
   'GITHUB_USERNAME',
 ]);
+
+// Valid Claude model names (patterns)
+// Accepts model IDs and aliases. Common patterns:
+// - claude-3-opus, claude-3-sonnet, claude-3-haiku (aliases)
+// - claude-3-opus-20240229, claude-3-5-sonnet-20241022, etc (full IDs)
+// - claude-sonnet-4-20250514, claude-opus-4-5-20251101 (new naming)
+const VALID_MODEL_PATTERNS = [
+  /^claude-3-opus/,
+  /^claude-3-sonnet/,
+  /^claude-3-haiku/,
+  /^claude-3-5-opus/,
+  /^claude-3-5-sonnet/,
+  /^claude-3-5-haiku/,
+  /^claude-sonnet-4/,
+  /^claude-opus-4/,
+  /^claude-haiku-4/,
+];
+
+/**
+ * Check if a model name is valid
+ * @param modelName - The model name to validate
+ * @returns true if valid, false otherwise
+ */
+export function isValidModelName(modelName: string): boolean {
+  // Check against known patterns
+  return VALID_MODEL_PATTERNS.some(pattern => pattern.test(modelName));
+}
+
+/**
+ * Validate model configuration
+ * @param configContent - The config file content
+ * @returns Array of validation errors
+ */
+function validateModelConfiguration(configContent: string): string[] {
+  const errors: string[] = [];
+
+  // Check default model
+  const defaultModel = parseYamlNested(configContent, 'models', 'default');
+  if (defaultModel && !isValidModelName(defaultModel)) {
+    errors.push(`Invalid default model: ${defaultModel}`);
+  }
+
+  // Check per-category models
+  const categoryModels = parseModelsByCategory(configContent);
+  for (const [category, model] of Object.entries(categoryModels)) {
+    if (!isValidModelName(model)) {
+      errors.push(`Invalid model for category '${category}': ${model}`);
+    }
+  }
+
+  return errors;
+}
 
 interface TemplateVariableMatch {
   variable: string;
@@ -732,6 +785,44 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
         console.log('\x1b[33m!\x1b[0m Tip: Add custom variables to config with custom_template_variables:');
         console.log('    custom_template_variables:');
         console.log('      - MY_CUSTOM_VAR');
+      }
+    }
+
+    // Validate model configuration
+    if (!quiet) {
+      console.log('');
+      console.log('Checking model configuration:\n');
+    }
+
+    const modelErrors = validateModelConfiguration(configContent);
+    if (modelErrors.length === 0) {
+      results.push({
+        name: 'models',
+        status: 'ok',
+        message: 'all model names valid'
+      });
+      if (!quiet) {
+        console.log('\x1b[32m+\x1b[0m Model configuration valid');
+      }
+    } else {
+      // In strict mode, invalid models are errors; otherwise warnings
+      const status = options.strict ? 'error' : 'warning';
+      const icon = options.strict ? 'x' : '!';
+      const color = options.strict ? '\x1b[31m' : '\x1b[33m';
+
+      results.push({
+        name: 'models',
+        status,
+        message: `${modelErrors.length} invalid model name(s)`
+      });
+
+      if (!quiet) {
+        console.log(`${color}${icon}\x1b[0m Model configuration has issues:`);
+        for (const error of modelErrors) {
+          console.log(`    ${error}`);
+        }
+        console.log('');
+        console.log('    Valid model patterns: claude-3-*, claude-3-5-*, claude-sonnet-4-*, claude-opus-4-*');
       }
     }
 

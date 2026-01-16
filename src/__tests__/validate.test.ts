@@ -38,7 +38,7 @@ jest.unstable_mockModule('../utils/secrets.js', () => ({
   setMaskingDisabled: jest.fn(),
 }));
 
-const { validateTemplateVariables } = await import('../validate.js');
+const { validateTemplateVariables, isValidModelName } = await import('../validate.js');
 
 import {
   validConfig,
@@ -176,6 +176,39 @@ Line three`;
 
       const result = validateTemplateVariables('/project/.chadgi/chadgi-task.md');
       expect(result.unknownVariables).toHaveLength(0);
+    });
+  });
+
+  describe('isValidModelName', () => {
+    it('should accept valid claude-3 model names', () => {
+      expect(isValidModelName('claude-3-opus-20240229')).toBe(true);
+      expect(isValidModelName('claude-3-sonnet-20240229')).toBe(true);
+      expect(isValidModelName('claude-3-haiku-20240307')).toBe(true);
+    });
+
+    it('should accept valid claude-3-5 model names', () => {
+      expect(isValidModelName('claude-3-5-sonnet-20241022')).toBe(true);
+      expect(isValidModelName('claude-3-5-haiku-20241022')).toBe(true);
+    });
+
+    it('should accept valid claude-4 model names', () => {
+      expect(isValidModelName('claude-sonnet-4-20250514')).toBe(true);
+      expect(isValidModelName('claude-opus-4-5-20251101')).toBe(true);
+    });
+
+    it('should accept short aliases for claude models', () => {
+      expect(isValidModelName('claude-3-opus')).toBe(true);
+      expect(isValidModelName('claude-3-sonnet')).toBe(true);
+      expect(isValidModelName('claude-3-haiku')).toBe(true);
+      expect(isValidModelName('claude-3-5-sonnet')).toBe(true);
+    });
+
+    it('should reject invalid model names', () => {
+      expect(isValidModelName('invalid-model')).toBe(false);
+      expect(isValidModelName('gpt-4')).toBe(false);
+      expect(isValidModelName('claude-2')).toBe(false);
+      expect(isValidModelName('')).toBe(false);
+      expect(isValidModelName('claude')).toBe(false);
     });
   });
 });
