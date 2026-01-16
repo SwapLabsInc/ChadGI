@@ -11,7 +11,11 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "test": "bash tests/test-shared-utils.sh && bash tests/test-secret-masking.sh && bash tests/test-gigachad-mode.sh && bash tests/test-dry-run-mode.sh && bash tests/test-session-stats.sh && bash tests/test-retry-delay.sh && bash tests/test-webhook-notifications.sh && bash tests/test-task-timeout.sh && bash tests/test-pause-resume.sh && bash tests/test-error-diagnostics.sh && bash tests/test-insights.sh && bash tests/test-template-variables.sh && bash tests/test-doctor.sh && bash tests/test-config-inheritance.sh && bash tests/test-cleanup.sh && bash tests/test-category.sh && bash tests/test-priority.sh && bash tests/test-dependencies.sh && bash tests/test-estimate.sh && bash tests/test-queue.sh && bash tests/test-watch.sh && bash tests/test-history.sh && bash tests/test-setup.sh && bash tests/test-config-export-import.sh && bash tests/test-completion.sh && bash tests/test-replay.sh && bash tests/test-diff.sh && bash tests/test-workspace.sh && bash tests/test-interactive-approval.sh && bash tests/test-benchmark.sh && bash tests/test-snapshot.sh",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:integration": "bash tests/test-shared-utils.sh && bash tests/test-secret-masking.sh && bash tests/test-gigachad-mode.sh && bash tests/test-dry-run-mode.sh && bash tests/test-session-stats.sh && bash tests/test-retry-delay.sh && bash tests/test-webhook-notifications.sh && bash tests/test-task-timeout.sh && bash tests/test-pause-resume.sh && bash tests/test-error-diagnostics.sh && bash tests/test-insights.sh && bash tests/test-template-variables.sh && bash tests/test-doctor.sh && bash tests/test-config-inheritance.sh && bash tests/test-cleanup.sh && bash tests/test-category.sh && bash tests/test-priority.sh && bash tests/test-dependencies.sh && bash tests/test-estimate.sh && bash tests/test-queue.sh && bash tests/test-watch.sh && bash tests/test-history.sh && bash tests/test-setup.sh && bash tests/test-config-export-import.sh && bash tests/test-completion.sh && bash tests/test-replay.sh && bash tests/test-diff.sh && bash tests/test-workspace.sh && bash tests/test-interactive-approval.sh && bash tests/test-benchmark.sh && bash tests/test-snapshot.sh",
     "prepublishOnly": "npm run build",
     "release": "./scripts/publish.sh"
   },
@@ -37,7 +41,11 @@
     "commander": "^12.0.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
+    "jest": "^30.2.0",
+    "memfs": "^4.52.0",
+    "ts-jest": "^29.4.6",
     "typescript": "^5.0.0"
   },
   "engines": {
