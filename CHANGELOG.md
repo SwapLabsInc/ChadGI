@@ -1,3 +1,11 @@
+## [1.1.1](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.0...v1.1.1) (2026-01-16)
+
+
+### Bug Fixes
+
+* increase timing buffer in flaky error-context test ([c0888ab](https://github.com/SwapLabsInc/ChadGI/commit/c0888ab8713b4f8aa2888291c2363518523f8b33))
+* trigger release to test npm OIDC publish ([48c8135](https://github.com/SwapLabsInc/ChadGI/commit/48c8135c8ed867375fcf8a6380d24c3255ae1056))
+
 # [1.1.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.0.10...v1.1.0) (2026-01-16)
 
 
