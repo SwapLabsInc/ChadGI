@@ -8,7 +8,7 @@ You are working on GitHub issue #{{ISSUE_NUMBER}} from the {{REPO}} repository.
 >
 > **Phase 1: Implementation** - Implement, test locally, commit. Do NOT create a PR yet.
 > When implementation is complete and tests pass locally, output:
-> `<promise>READY_FOR_PR</promise>`
+> `<promise>{{READY_PROMISE}}</promise>`
 >
 > **Phase 2: PR Creation** - After verification passes, you'll be asked to create the PR.
 > After creating the PR, output: `<promise>{{COMPLETION_PROMISE}}</promise>`
@@ -53,7 +53,7 @@ You are already on a fresh branch: **{{BRANCH_NAME}}** (created from {{BASE_BRAN
 
 ### Before Signaling Ready (Required Self-Review)
 
-**STOP.** Before outputting READY_FOR_PR, you MUST complete the checklist below.
+**STOP.** Before outputting {{READY_PROMISE}}, you MUST complete the checklist below.
 
 Output this exact format with your answers filled in:
 
@@ -86,7 +86,7 @@ Fixed: [yes/not applicable]
 
 **Only after completing this checklist with all items passing**, output:
 
-<promise>READY_FOR_PR</promise>
+<promise>{{READY_PROMISE}}</promise>
 
 ### Phase 2: PR Creation (Wait For Instructions)
 
