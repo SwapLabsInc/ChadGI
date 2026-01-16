@@ -6,6 +6,7 @@ import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
 import { stats } from './stats.js';
+import { history } from './history.js';
 import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
@@ -103,6 +104,23 @@ program
   .action(async (options) => {
     try {
       await stats(options);
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('history')
+  .description('View task execution history')
+  .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+  .option('-l, --limit <n>', 'Number of entries to show (default: 10)', parseInt)
+  .option('-s, --since <time>', 'Show tasks since (e.g., 7d, 2w, 1m, 2024-01-01)')
+  .option('--status <outcome>', 'Filter by outcome (success, failed, skipped)')
+  .option('-j, --json', 'Output history as JSON')
+  .action(async (options) => {
+    try {
+      await history(options);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);

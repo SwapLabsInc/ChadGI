@@ -5,10 +5,12 @@ import { start } from './start.js';
 import { setupProject } from './setup-project.js';
 import { validate } from './validate.js';
 import { stats } from './stats.js';
+import { history } from './history.js';
 import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
+import { watch } from './watch.js';
 import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
@@ -103,6 +105,23 @@ program
     }
 });
 program
+    .command('history')
+    .description('View task execution history')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-l, --limit <n>', 'Number of entries to show (default: 10)', parseInt)
+    .option('-s, --since <time>', 'Show tasks since (e.g., 7d, 2w, 1m, 2024-01-01)')
+    .option('--status <outcome>', 'Filter by outcome (success, failed, skipped)')
+    .option('-j, --json', 'Output history as JSON')
+    .action(async (options) => {
+    try {
+        await history(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
     .command('insights')
     .description('Display aggregated performance analytics and profiling')
     .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
@@ -156,6 +175,22 @@ program
     .action(async (options) => {
     try {
         await status(options);
+    }
+    catch (error) {
+        console.error('Error:', error.message);
+        process.exit(1);
+    }
+});
+program
+    .command('watch')
+    .description('Monitor a running ChadGI session in real-time')
+    .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
+    .option('-j, --json', 'Output status as JSON (requires --once)')
+    .option('-o, --once', 'Show current status once without auto-refresh')
+    .option('-i, --interval <ms>', 'Refresh interval in milliseconds (default: 2000)', parseInt)
+    .action(async (options) => {
+    try {
+        await watch(options);
     }
     catch (error) {
         console.error('Error:', error.message);
