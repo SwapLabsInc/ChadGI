@@ -1,3 +1,11 @@
+## [1.1.4](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.3...v1.1.4) (2026-01-16)
+
+
+### Bug Fixes
+
+* use azu/setup-npm-trusted-publish action for OIDC ([dd7b4b4](https://github.com/SwapLabsInc/ChadGI/commit/dd7b4b4a127f73cde7702fcd77e9e91e4fd5daea))
+* use NPM_TOKEN for npm publish ([9bfeeff](https://github.com/SwapLabsInc/ChadGI/commit/9bfeeff4502818945f29ee2552bf6f5f95be03e2))
+
 ## [1.1.3](https://github.com/SwapLabsInc/ChadGI/compare/v1.1.2...v1.1.3) (2026-01-16)
 
 
