@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/SwapLabsInc/ChadGI/compare/v1.3.0...v1.3.1) (2026-01-16)
+
+
+### Bug Fixes
+
+* use stdin instead of command-line args for Claude prompts ([ffbedba](https://github.com/SwapLabsInc/ChadGI/commit/ffbedba91950c04c9042ad6e7e0f81d8fb3a9a85))
+
 # [1.3.0](https://github.com/SwapLabsInc/ChadGI/compare/v1.2.0...v1.3.0) (2026-01-16)
 
 
