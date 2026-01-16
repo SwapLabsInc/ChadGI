@@ -237,12 +237,13 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 19: status.ts checks for pause.lock
+# Test 19: status.ts checks for pause.lock (via shared utils)
 #------------------------------------------------------------------------------
 echo "Test 19: status.ts checks for pause.lock"
 
-if grep -q "pause.lock" "$PROJECT_ROOT/src/status.ts"; then
-    pass "status.ts checks for pause.lock file"
+# Check if status.ts uses loadPauseLock or if pause.lock is in data.ts
+if grep -q "loadPauseLock" "$PROJECT_ROOT/src/status.ts" || grep -q "pause.lock" "$PROJECT_ROOT/src/utils/data.ts"; then
+    pass "status.ts checks for pause.lock file (via shared utils)"
 else
     fail "status.ts should check for pause.lock file"
 fi
@@ -349,12 +350,13 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 29: status.ts reads progress file
+# Test 29: status.ts reads progress file (via shared utils)
 #------------------------------------------------------------------------------
 echo "Test 29: status.ts reads progress file"
 
-if grep -q "chadgi-progress.json\|progressFile\|PROGRESS_FILE" "$PROJECT_ROOT/src/status.ts"; then
-    pass "status.ts reads progress file"
+# Check if status.ts uses loadProgressData or if progress file is in data.ts
+if grep -q "loadProgressData" "$PROJECT_ROOT/src/status.ts" || grep -q "chadgi-progress.json" "$PROJECT_ROOT/src/utils/data.ts"; then
+    pass "status.ts reads progress file (via shared utils)"
 else
     fail "status.ts should read progress file"
 fi

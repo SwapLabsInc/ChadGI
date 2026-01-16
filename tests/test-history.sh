@@ -114,14 +114,14 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 8: history.ts defines HistoryEntry interface
+# Test 8: history.ts imports HistoryEntry from types
 #------------------------------------------------------------------------------
-echo "Test 8: history.ts defines HistoryEntry interface"
+echo "Test 8: history.ts imports HistoryEntry from types"
 
-if grep -q "interface HistoryEntry" "$PROJECT_ROOT/src/history.ts"; then
-    pass "HistoryEntry interface defined"
+if grep -q "import type.*HistoryEntry" "$PROJECT_ROOT/src/history.ts" || grep -q "interface HistoryEntry" "$PROJECT_ROOT/src/types/index.ts"; then
+    pass "HistoryEntry interface available"
 else
-    fail "HistoryEntry interface should be defined"
+    fail "HistoryEntry interface should be defined or imported"
 fi
 
 #------------------------------------------------------------------------------
@@ -129,7 +129,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 9: HistoryEntry includes issueNumber"
 
-if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/history.ts" | grep -q "issueNumber"; then
+if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/types/index.ts" | grep -q "issueNumber"; then
     pass "HistoryEntry includes issueNumber"
 else
     fail "HistoryEntry should include issueNumber"
@@ -140,7 +140,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 10: HistoryEntry includes outcome"
 
-if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/history.ts" | grep -q "outcome"; then
+if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/types/index.ts" | grep -q "outcome"; then
     pass "HistoryEntry includes outcome"
 else
     fail "HistoryEntry should include outcome"
@@ -151,7 +151,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 11: HistoryEntry includes elapsedTime"
 
-if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/history.ts" | grep -q "elapsedTime"; then
+if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/types/index.ts" | grep -q "elapsedTime"; then
     pass "HistoryEntry includes elapsedTime"
 else
     fail "HistoryEntry should include elapsedTime"
@@ -162,7 +162,7 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 12: HistoryEntry includes cost"
 
-if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/history.ts" | grep -q "cost"; then
+if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/types/index.ts" | grep -q "cost"; then
     pass "HistoryEntry includes cost"
 else
     fail "HistoryEntry should include cost"
@@ -173,65 +173,65 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 13: HistoryEntry includes prUrl"
 
-if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/history.ts" | grep -q "prUrl"; then
+if grep -A20 "interface HistoryEntry" "$PROJECT_ROOT/src/types/index.ts" | grep -q "prUrl"; then
     pass "HistoryEntry includes prUrl"
 else
     fail "HistoryEntry should include prUrl"
 fi
 
 #------------------------------------------------------------------------------
-# Test 14: history.ts has parseSince function
+# Test 14: history.ts uses parseSince function from utils
 #------------------------------------------------------------------------------
-echo "Test 14: history.ts has parseSince function"
+echo "Test 14: history.ts uses parseSince function"
 
-if grep -q "function parseSince" "$PROJECT_ROOT/src/history.ts"; then
-    pass "parseSince function exists"
+if grep -q "parseSince" "$PROJECT_ROOT/src/history.ts"; then
+    pass "parseSince function is used"
 else
-    fail "parseSince function should exist for date parsing"
+    fail "parseSince function should be used for date parsing"
 fi
 
 #------------------------------------------------------------------------------
-# Test 15: parseSince supports relative dates (e.g., 7d)
+# Test 15: parseSince supports relative dates (e.g., 7d) in utils
 #------------------------------------------------------------------------------
 echo "Test 15: parseSince supports relative dates"
 
-if grep -A20 "function parseSince" "$PROJECT_ROOT/src/history.ts" | grep -q "relativeMatch"; then
+if grep -A20 "function parseSince" "$PROJECT_ROOT/src/utils/formatting.ts" | grep -q "relativeMatch"; then
     pass "parseSince supports relative date format"
 else
     fail "parseSince should support relative date format (e.g., 7d)"
 fi
 
 #------------------------------------------------------------------------------
-# Test 16: parseSince supports ISO dates (e.g., 2024-01-01)
+# Test 16: parseSince supports ISO dates (e.g., 2024-01-01) in utils
 #------------------------------------------------------------------------------
 echo "Test 16: parseSince supports ISO dates"
 
-if grep -A30 "function parseSince" "$PROJECT_ROOT/src/history.ts" | grep -q "dateMatch"; then
+if grep -A30 "function parseSince" "$PROJECT_ROOT/src/utils/formatting.ts" | grep -q "dateMatch"; then
     pass "parseSince supports ISO date format"
 else
     fail "parseSince should support ISO date format (e.g., 2024-01-01)"
 fi
 
 #------------------------------------------------------------------------------
-# Test 17: history.ts loads from chadgi-stats.json
+# Test 17: history.ts uses loadSessionStats from utils
 #------------------------------------------------------------------------------
-echo "Test 17: history.ts loads from chadgi-stats.json"
+echo "Test 17: history.ts uses loadSessionStats from utils"
 
-if grep -q "chadgi-stats.json" "$PROJECT_ROOT/src/history.ts"; then
-    pass "Loads from chadgi-stats.json"
+if grep -q "loadSessionStats" "$PROJECT_ROOT/src/history.ts"; then
+    pass "Uses loadSessionStats from utils"
 else
-    fail "Should load from chadgi-stats.json"
+    fail "Should use loadSessionStats from utils"
 fi
 
 #------------------------------------------------------------------------------
-# Test 18: history.ts loads from chadgi-metrics.json
+# Test 18: history.ts uses loadTaskMetrics from utils
 #------------------------------------------------------------------------------
-echo "Test 18: history.ts loads from chadgi-metrics.json"
+echo "Test 18: history.ts uses loadTaskMetrics from utils"
 
-if grep -q "chadgi-metrics.json" "$PROJECT_ROOT/src/history.ts"; then
-    pass "Loads from chadgi-metrics.json"
+if grep -q "loadTaskMetrics" "$PROJECT_ROOT/src/history.ts"; then
+    pass "Uses loadTaskMetrics from utils"
 else
-    fail "Should load from chadgi-metrics.json"
+    fail "Should use loadTaskMetrics from utils"
 fi
 
 #------------------------------------------------------------------------------
@@ -323,36 +323,36 @@ else
 fi
 
 #------------------------------------------------------------------------------
-# Test 27: HistoryResult interface exists for JSON output
+# Test 27: HistoryResult interface exists in types
 #------------------------------------------------------------------------------
 echo "Test 27: HistoryResult interface exists for JSON output"
 
-if grep -q "interface HistoryResult" "$PROJECT_ROOT/src/history.ts"; then
+if grep -q "interface HistoryResult" "$PROJECT_ROOT/src/types/index.ts"; then
     pass "HistoryResult interface exists"
 else
     fail "HistoryResult interface should exist for JSON output"
 fi
 
 #------------------------------------------------------------------------------
-# Test 28: history.ts handles outcome types
+# Test 28: types/index.ts handles outcome types
 #------------------------------------------------------------------------------
-echo "Test 28: history.ts handles outcome types (success/skipped/failed)"
+echo "Test 28: types/index.ts handles outcome types (success/skipped/failed)"
 
-if grep -q "'success' | 'skipped' | 'failed'" "$PROJECT_ROOT/src/history.ts"; then
+if grep -q "'success' | 'skipped' | 'failed'" "$PROJECT_ROOT/src/types/index.ts"; then
     pass "Handles outcome types"
 else
     fail "Should handle outcome types (success/skipped/failed)"
 fi
 
 #------------------------------------------------------------------------------
-# Test 29: history.ts has fetchPrUrl function
+# Test 29: history.ts uses fetchPrUrl from utils
 #------------------------------------------------------------------------------
-echo "Test 29: history.ts has fetchPrUrl function"
+echo "Test 29: history.ts uses fetchPrUrl from utils"
 
-if grep -q "function fetchPrUrl" "$PROJECT_ROOT/src/history.ts"; then
-    pass "fetchPrUrl function exists"
+if grep -q "fetchPrUrl" "$PROJECT_ROOT/src/history.ts"; then
+    pass "fetchPrUrl function is used"
 else
-    fail "fetchPrUrl function should exist to get PR links"
+    fail "fetchPrUrl function should be used to get PR links"
 fi
 
 #------------------------------------------------------------------------------
