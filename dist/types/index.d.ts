@@ -315,6 +315,8 @@ export interface ChadGIConfig {
         show_cost?: boolean;
         truncate_length?: number;
     };
+    /** OpenTelemetry configuration for distributed tracing and metrics */
+    telemetry?: TelemetryConfig;
 }
 /**
  * Configuration migration function signature.
@@ -766,6 +768,88 @@ export interface VersionInfo {
         current: string;
         latest: string;
         cached: boolean;
+    };
+}
+/**
+ * Supported telemetry exporters
+ */
+export type TelemetryExporter = 'console' | 'otlp' | 'prometheus' | 'none';
+/**
+ * Telemetry configuration
+ */
+export interface TelemetryConfig {
+    /** Whether telemetry is enabled */
+    enabled?: boolean;
+    /** Exporter type for traces */
+    trace_exporter?: TelemetryExporter;
+    /** Exporter type for metrics */
+    metrics_exporter?: TelemetryExporter;
+    /** OTLP endpoint URL (for otlp exporter) */
+    otlp_endpoint?: string;
+    /** OTLP headers (for authentication) */
+    otlp_headers?: Record<string, string>;
+    /** Prometheus metrics HTTP port (for prometheus exporter) */
+    prometheus_port?: number;
+    /** Service name for telemetry (default: chadgi) */
+    service_name?: string;
+    /** Custom resource attributes */
+    resource_attributes?: Record<string, string>;
+    /** Whether to include trace IDs in log output */
+    log_correlation?: boolean;
+    /** Sampling ratio for traces (0.0 to 1.0, default: 1.0) */
+    sampling_ratio?: number;
+}
+/**
+ * Span attributes for task operations
+ */
+export interface TaskSpanAttributes {
+    'chadgi.task.issue_number'?: number;
+    'chadgi.task.title'?: string;
+    'chadgi.task.branch'?: string;
+    'chadgi.task.phase'?: string;
+    'chadgi.task.iteration'?: number;
+    'chadgi.task.max_iterations'?: number;
+    'chadgi.task.cost_usd'?: number;
+    'chadgi.task.status'?: string;
+    'chadgi.task.category'?: string;
+}
+/**
+ * Span attributes for GitHub operations
+ */
+export interface GitHubSpanAttributes {
+    'chadgi.github.operation'?: string;
+    'chadgi.github.repo'?: string;
+    'chadgi.github.project_number'?: number;
+    'chadgi.github.issue_number'?: number;
+    'chadgi.github.pr_number'?: number;
+}
+/**
+ * Span attributes for Claude operations
+ */
+export interface ClaudeSpanAttributes {
+    'chadgi.claude.phase'?: string;
+    'chadgi.claude.iteration'?: number;
+    'chadgi.claude.timeout_minutes'?: number;
+    'chadgi.claude.cost_usd'?: number;
+    'chadgi.claude.tokens_input'?: number;
+    'chadgi.claude.tokens_output'?: number;
+}
+/**
+ * Telemetry health check result
+ */
+export interface TelemetryHealthCheck {
+    /** Whether telemetry is configured and enabled */
+    enabled: boolean;
+    /** Status of trace exporter connection */
+    trace_exporter_status: 'ok' | 'error' | 'disabled';
+    /** Status of metrics exporter connection */
+    metrics_exporter_status: 'ok' | 'error' | 'disabled';
+    /** Any error messages */
+    errors?: string[];
+    /** Configured endpoints */
+    endpoints?: {
+        otlp?: string;
+        prometheus?: string;
     };
 }
 //# sourceMappingURL=index.d.ts.map

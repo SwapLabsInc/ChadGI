@@ -11,9 +11,15 @@
  * Control via:
  * - CLI flags: --verbose / -v, --trace
  * - Environment variables: CHADGI_VERBOSE=1, CHADGI_TRACE=1
+ *
+ * OpenTelemetry Integration:
+ * - When telemetry is enabled, timing functions create spans
+ * - Spans provide distributed tracing across task execution
+ * - Log correlation adds trace/span IDs to log output
  */
 import { maskSecrets } from './secrets.js';
 import { colors } from './colors.js';
+import { isTelemetryEnabled, getCurrentTraceId, getCurrentSpanId, startTaskSpan, endSpanSuccess, endSpanError, } from './telemetry.js';
 /**
  * Global debug configuration state
  */
@@ -123,7 +129,7 @@ export function isTrace() {
     return debugConfig.level === 'trace';
 }
 /**
- * Format a timestamp for debug output
+ * Format a timestamp for debug output, optionally including trace correlation IDs
  */
 function formatTimestamp() {
     if (!debugConfig.timestamps) {
@@ -134,7 +140,17 @@ function formatTimestamp() {
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const seconds = String(now.getSeconds()).padStart(2, '0');
     const ms = String(now.getMilliseconds()).padStart(3, '0');
-    return `${hours}:${minutes}:${seconds}.${ms} `;
+    let timestamp = `${hours}:${minutes}:${seconds}.${ms} `;
+    // Add trace correlation IDs if telemetry is enabled with log correlation
+    if (isTelemetryEnabled()) {
+        const traceId = getCurrentTraceId();
+        const spanId = getCurrentSpanId();
+        if (traceId && spanId) {
+            // Use short versions of IDs (first 8 chars)
+            timestamp += `[${traceId.substring(0, 8)}:${spanId.substring(0, 8)}] `;
+        }
+    }
+    return timestamp;
 }
 /**
  * Format and optionally mask a message for output
@@ -240,9 +256,11 @@ export function traceLog(message, data) {
  * Log the start of a timed operation for performance analysis.
  * Returns a function to call when the operation completes.
  *
- * Only outputs when verbose or trace mode is enabled.
+ * When telemetry is enabled, also creates an OpenTelemetry span for distributed tracing.
+ * Only outputs to console when verbose or trace mode is enabled.
  *
  * @param operationName - Name of the operation being timed
+ * @param attributes - Optional attributes to add to the span
  * @returns A function to call when the operation completes
  *
  * @example
@@ -252,24 +270,50 @@ export function traceLog(message, data) {
  * endTiming(); // Logs: "[DEBUG] fetch issues completed in 123ms"
  * ```
  */
-export function startTiming(operationName) {
-    if (!isVerbose()) {
-        return () => { };
+export function startTiming(operationName, attributes) {
+    const ctx = {
+        startTime: performance.now(),
+    };
+    // Create span if telemetry is enabled (regardless of verbose mode)
+    if (isTelemetryEnabled()) {
+        ctx.span = startTaskSpan(operationName, attributes);
     }
-    const startTime = performance.now();
-    debugLog(`${operationName} started`);
-    return () => {
-        const duration = performance.now() - startTime;
-        debugLog(`${operationName} completed in ${duration.toFixed(1)}ms`);
+    // Log to console if verbose mode is enabled
+    if (isVerbose()) {
+        debugLog(`${operationName} started`);
+    }
+    return (error) => {
+        const duration = performance.now() - ctx.startTime;
+        // End span if it exists
+        if (ctx.span) {
+            if (error) {
+                endSpanError(ctx.span, error, { 'chadgi.duration_ms': duration });
+            }
+            else {
+                endSpanSuccess(ctx.span, { 'chadgi.duration_ms': duration });
+            }
+        }
+        // Log to console if verbose mode is enabled
+        if (isVerbose()) {
+            if (error) {
+                const errorMsg = error instanceof Error ? error.message : error;
+                debugLog(`${operationName} failed in ${duration.toFixed(1)}ms: ${errorMsg}`);
+            }
+            else {
+                debugLog(`${operationName} completed in ${duration.toFixed(1)}ms`);
+            }
+        }
     };
 }
 /**
  * Log the start of a timed operation at trace level.
  * Returns a function to call when the operation completes.
  *
- * Only outputs when trace mode is enabled.
+ * When telemetry is enabled, also creates an OpenTelemetry span for distributed tracing.
+ * Only outputs to console when trace mode is enabled.
  *
  * @param operationName - Name of the operation being timed
+ * @param attributes - Optional attributes to add to the span
  * @returns A function to call when the operation completes
  *
  * @example
@@ -279,19 +323,41 @@ export function startTiming(operationName) {
  * endTiming(result); // Logs timing and result at trace level
  * ```
  */
-export function startTraceTiming(operationName) {
-    if (!isTrace()) {
-        return () => { };
+export function startTraceTiming(operationName, attributes) {
+    const ctx = {
+        startTime: performance.now(),
+    };
+    // Create span if telemetry is enabled (regardless of trace mode)
+    if (isTelemetryEnabled()) {
+        ctx.span = startTaskSpan(operationName, attributes);
     }
-    const startTime = performance.now();
-    traceLog(`${operationName} started`);
-    return (result) => {
-        const duration = performance.now() - startTime;
-        if (result !== undefined) {
-            traceLog(`${operationName} completed in ${duration.toFixed(1)}ms`, result);
+    // Log to console if trace mode is enabled
+    if (isTrace()) {
+        traceLog(`${operationName} started`);
+    }
+    return (result, error) => {
+        const duration = performance.now() - ctx.startTime;
+        // End span if it exists
+        if (ctx.span) {
+            if (error) {
+                endSpanError(ctx.span, error, { 'chadgi.duration_ms': duration });
+            }
+            else {
+                endSpanSuccess(ctx.span, { 'chadgi.duration_ms': duration });
+            }
         }
-        else {
-            traceLog(`${operationName} completed in ${duration.toFixed(1)}ms`);
+        // Log to console if trace mode is enabled
+        if (isTrace()) {
+            if (error) {
+                const errorMsg = error instanceof Error ? error.message : error;
+                traceLog(`${operationName} failed in ${duration.toFixed(1)}ms: ${errorMsg}`);
+            }
+            else if (result !== undefined) {
+                traceLog(`${operationName} completed in ${duration.toFixed(1)}ms`, result);
+            }
+            else {
+                traceLog(`${operationName} completed in ${duration.toFixed(1)}ms`);
+            }
         }
     };
 }

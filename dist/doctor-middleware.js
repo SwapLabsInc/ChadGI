@@ -13,8 +13,95 @@ import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested } from './utils/config.js';
 import { listTaskLocks, findStaleLocks, cleanupStaleLocks, DEFAULT_LOCK_TIMEOUT_MINUTES, } from './utils/locks.js';
 import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
+import { checkTelemetryHealth, getPrometheusEndpoint, } from './utils/telemetry.js';
 // Import middleware utilities
 import { withCommand, withDirectory, withDirectoryValidation, } from './utils/index.js';
+/**
+ * Check OpenTelemetry configuration and connectivity
+ */
+async function checkTelemetryConfig(configContent) {
+    const checks = [];
+    // Parse telemetry config from YAML
+    const telemetryEnabled = parseYamlNested(configContent, 'telemetry', 'enabled');
+    const traceExporter = parseYamlNested(configContent, 'telemetry', 'trace_exporter');
+    const metricsExporter = parseYamlNested(configContent, 'telemetry', 'metrics_exporter');
+    if (!telemetryEnabled || telemetryEnabled !== 'true') {
+        checks.push({
+            name: 'Telemetry Configuration',
+            category: 'telemetry',
+            status: 'ok',
+            message: 'Telemetry is disabled (not configured or enabled: false)',
+        });
+        return checks;
+    }
+    // Check if telemetry is initialized
+    const health = await checkTelemetryHealth();
+    if (!health.enabled) {
+        checks.push({
+            name: 'Telemetry Configuration',
+            category: 'telemetry',
+            status: 'warning',
+            message: 'Telemetry is configured but not initialized. Will be enabled when ChadGI starts.',
+        });
+        return checks;
+    }
+    // Check trace exporter
+    if (traceExporter && traceExporter !== 'none') {
+        if (health.trace_exporter_status === 'ok') {
+            const endpoint = health.endpoints?.otlp || 'console';
+            checks.push({
+                name: 'Trace Exporter',
+                category: 'telemetry',
+                status: 'ok',
+                message: `${traceExporter} exporter configured (endpoint: ${endpoint})`,
+            });
+        }
+        else if (health.trace_exporter_status === 'error') {
+            checks.push({
+                name: 'Trace Exporter',
+                category: 'telemetry',
+                status: 'error',
+                message: `${traceExporter} exporter failed: ${health.errors?.join(', ') || 'unknown error'}`,
+            });
+        }
+    }
+    // Check metrics exporter
+    if (metricsExporter && metricsExporter !== 'none') {
+        if (health.metrics_exporter_status === 'ok') {
+            let endpoint = 'console';
+            if (metricsExporter === 'prometheus') {
+                endpoint = health.endpoints?.prometheus || getPrometheusEndpoint() || 'unknown';
+            }
+            else if (metricsExporter === 'otlp') {
+                endpoint = health.endpoints?.otlp || 'unknown';
+            }
+            checks.push({
+                name: 'Metrics Exporter',
+                category: 'telemetry',
+                status: 'ok',
+                message: `${metricsExporter} exporter configured (endpoint: ${endpoint})`,
+            });
+        }
+        else if (health.metrics_exporter_status === 'error') {
+            checks.push({
+                name: 'Metrics Exporter',
+                category: 'telemetry',
+                status: 'error',
+                message: `${metricsExporter} exporter failed: ${health.errors?.join(', ') || 'unknown error'}`,
+            });
+        }
+    }
+    // If both exporters are none, show a warning
+    if ((!traceExporter || traceExporter === 'none') && (!metricsExporter || metricsExporter === 'none')) {
+        checks.push({
+            name: 'Telemetry Exporters',
+            category: 'telemetry',
+            status: 'warning',
+            message: 'Telemetry is enabled but no exporters are configured. Set trace_exporter or metrics_exporter.',
+        });
+    }
+    return checks;
+}
 /**
  * Check GitHub API rate limit status
  */
@@ -730,6 +817,7 @@ function calculateHealthScore(checks) {
         environment: 10,
         diagnostics: 5,
         locks: 10,
+        telemetry: 5,
     };
     // Penalty multipliers by status
     const statusPenalties = {
@@ -979,6 +1067,10 @@ async function doctorHandler(ctx) {
     checks.push(...checkDiskSpace());
     // Diagnostics checks
     checks.push(...checkDiagnosticsFolder(chadgiDir));
+    // Telemetry checks
+    if (configContent) {
+        checks.push(...(await checkTelemetryConfig(configContent)));
+    }
     // Build report
     const healthScore = calculateHealthScore(checks);
     const recommendations = generateRecommendations(checks);

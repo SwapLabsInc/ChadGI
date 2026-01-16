@@ -463,3 +463,33 @@ export {
   hasUnknownErrors,
   formatErrorSummary,
 } from './diagnostics.js';
+
+// Telemetry (OpenTelemetry integration)
+export {
+  // Initialization
+  initTelemetry,
+  shutdownTelemetry,
+  isTelemetryEnabled,
+  getTelemetryConfig,
+  // Tracers and meters
+  getTracer,
+  getMeter,
+  // Trace context
+  getCurrentTraceId,
+  getCurrentSpanId,
+  // Span creation helpers
+  startTaskSpan,
+  startGitHubSpan,
+  startClaudeSpan,
+  endSpanSuccess,
+  endSpanError,
+  withSpan,
+  withSpanAsync,
+  // Metrics recording
+  recordTaskCompletion,
+  recordClaudeInvocation,
+  recordGitHubOperation,
+  // Health check
+  checkTelemetryHealth,
+  getPrometheusEndpoint,
+} from './telemetry.js';

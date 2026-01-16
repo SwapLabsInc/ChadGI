@@ -11,6 +11,11 @@
  * Control via:
  * - CLI flags: --verbose / -v, --trace
  * - Environment variables: CHADGI_VERBOSE=1, CHADGI_TRACE=1
+ *
+ * OpenTelemetry Integration:
+ * - When telemetry is enabled, timing functions create spans
+ * - Spans provide distributed tracing across task execution
+ * - Log correlation adds trace/span IDs to log output
  */
 /**
  * Verbosity levels for debug output
@@ -129,9 +134,11 @@ export declare function traceLog(message: string, data?: unknown): void;
  * Log the start of a timed operation for performance analysis.
  * Returns a function to call when the operation completes.
  *
- * Only outputs when verbose or trace mode is enabled.
+ * When telemetry is enabled, also creates an OpenTelemetry span for distributed tracing.
+ * Only outputs to console when verbose or trace mode is enabled.
  *
  * @param operationName - Name of the operation being timed
+ * @param attributes - Optional attributes to add to the span
  * @returns A function to call when the operation completes
  *
  * @example
@@ -141,14 +148,16 @@ export declare function traceLog(message: string, data?: unknown): void;
  * endTiming(); // Logs: "[DEBUG] fetch issues completed in 123ms"
  * ```
  */
-export declare function startTiming(operationName: string): () => void;
+export declare function startTiming(operationName: string, attributes?: Record<string, string | number | boolean>): (error?: Error | string) => void;
 /**
  * Log the start of a timed operation at trace level.
  * Returns a function to call when the operation completes.
  *
- * Only outputs when trace mode is enabled.
+ * When telemetry is enabled, also creates an OpenTelemetry span for distributed tracing.
+ * Only outputs to console when trace mode is enabled.
  *
  * @param operationName - Name of the operation being timed
+ * @param attributes - Optional attributes to add to the span
  * @returns A function to call when the operation completes
  *
  * @example
@@ -158,7 +167,7 @@ export declare function startTiming(operationName: string): () => void;
  * endTiming(result); // Logs timing and result at trace level
  * ```
  */
-export declare function startTraceTiming(operationName: string): (result?: unknown) => void;
+export declare function startTraceTiming(operationName: string, attributes?: Record<string, string | number | boolean>): (result?: unknown, error?: Error | string) => void;
 /**
  * Debug log for decision points in the code.
  * Helps understand why certain paths were taken.

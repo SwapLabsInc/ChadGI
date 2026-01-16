@@ -108,6 +108,9 @@
     "hooks": {
       "$ref": "#/$defs/HooksConfig"
     },
+    "telemetry": {
+      "$ref": "#/$defs/TelemetryConfig"
+    },
     "custom_template_variables": {
       "type": "array",
       "items": {
@@ -692,6 +695,69 @@
         }
       },
       "required": ["script"]
+    },
+    "TelemetryConfig": {
+      "type": "object",
+      "description": "OpenTelemetry integration for distributed tracing and metrics export. Provides visibility into task execution, GitHub operations, and Claude invocations.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable OpenTelemetry tracing and metrics. When disabled, no telemetry data is collected or exported."
+        },
+        "trace_exporter": {
+          "type": "string",
+          "enum": ["console", "otlp", "none"],
+          "default": "none",
+          "description": "Exporter for trace data. 'console' outputs to stderr, 'otlp' sends to an OTLP endpoint, 'none' disables tracing."
+        },
+        "metrics_exporter": {
+          "type": "string",
+          "enum": ["console", "otlp", "prometheus", "none"],
+          "default": "none",
+          "description": "Exporter for metrics. 'console' outputs to stderr, 'otlp' sends to an OTLP endpoint, 'prometheus' exposes a /metrics HTTP endpoint, 'none' disables metrics."
+        },
+        "otlp_endpoint": {
+          "type": "string",
+          "format": "uri",
+          "default": "http://localhost:4318",
+          "description": "OTLP HTTP endpoint URL for trace and metrics export. Used when trace_exporter or metrics_exporter is 'otlp'."
+        },
+        "otlp_headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "HTTP headers for OTLP requests (e.g., Authorization). Can be used for authentication with observability backends."
+        },
+        "prometheus_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 9464,
+          "description": "Port for the Prometheus metrics HTTP endpoint. Used when metrics_exporter is 'prometheus'."
+        },
+        "service_name": {
+          "type": "string",
+          "default": "chadgi",
+          "description": "Service name reported in telemetry data. Useful for identifying ChadGI instances in multi-service environments."
+        },
+        "resource_attributes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Additional resource attributes to include in all telemetry data (e.g., deployment.environment, host.name)."
+        },
+        "log_correlation": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include trace and span IDs in log output for correlation with distributed traces."
+        },
+        "sampling_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1.0,
+          "description": "Trace sampling ratio (0.0 to 1.0). 1.0 samples all traces, 0.5 samples 50%, etc. Lower values reduce overhead but lose trace data."
+        }
+      }
     }
   }
 }
