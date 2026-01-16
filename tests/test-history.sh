@@ -63,7 +63,9 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 3: CLI imports history module"
 
-if grep -q "import { history }" "$PROJECT_ROOT/src/cli.ts"; then
+# Accept either direct import or middleware import pattern
+if grep -q "import { history }" "$PROJECT_ROOT/src/cli.ts" || \
+   grep -q "import { historyMiddleware }" "$PROJECT_ROOT/src/cli.ts"; then
     pass "history module imported in CLI"
 else
     fail "history module should be imported in CLI"

@@ -63,7 +63,9 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 3: CLI imports doctor module"
 
-if grep -q "import { doctor }" "$PROJECT_ROOT/src/cli.ts"; then
+# Accept either direct import or middleware import pattern
+if grep -q "import { doctor }" "$PROJECT_ROOT/src/cli.ts" || \
+   grep -q "import { doctorMiddleware }" "$PROJECT_ROOT/src/cli.ts"; then
     pass "doctor module imported in CLI"
 else
     fail "doctor module should be imported in CLI"

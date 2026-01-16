@@ -63,7 +63,9 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 3: CLI imports insights module"
 
-if grep -q "import { insights }" "$PROJECT_ROOT/src/cli.ts"; then
+# Accept either direct import or middleware import pattern
+if grep -q "import { insights }" "$PROJECT_ROOT/src/cli.ts" || \
+   grep -q "import { insightsMiddleware }" "$PROJECT_ROOT/src/cli.ts"; then
     pass "insights module imported in CLI"
 else
     fail "insights module should be imported in CLI"

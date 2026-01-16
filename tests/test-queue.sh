@@ -63,7 +63,9 @@ fi
 #------------------------------------------------------------------------------
 echo "Test 3: CLI imports queue module"
 
-if grep -q "import { queue, queueSkip, queuePromote }" "$PROJECT_ROOT/src/cli.ts"; then
+# Accept either direct import or middleware import pattern
+if grep -q "import { queue, queueSkip, queuePromote }" "$PROJECT_ROOT/src/cli.ts" || \
+   grep -q "import { queueMiddleware }" "$PROJECT_ROOT/src/cli.ts"; then
     pass "queue module imported in CLI"
 else
     fail "queue module should be imported in CLI"
