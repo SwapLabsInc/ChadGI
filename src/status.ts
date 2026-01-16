@@ -5,6 +5,7 @@ import { colors } from './utils/colors.js';
 import { resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
 import { formatDuration } from './utils/formatting.js';
 import { loadProgressData, loadPauseLock, findPendingApproval, loadAllTaskLocks } from './utils/data.js';
+import { Section, keyValue } from './utils/textui.js';
 
 // Import shared types
 import type { ProgressData, PauseLockData, ApprovalLockData, StatusInfo, TaskLockInfo } from './types/index.js';
@@ -158,11 +159,13 @@ function buildStatusInfo(
 }
 
 function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): void {
-  console.log(`${colors.purple}${colors.bold}`);
-  console.log('==========================================================');
-  console.log('                    CHADGI STATUS                          ');
-  console.log('==========================================================');
-  console.log(`${colors.reset}`);
+  // Print section header using Section component
+  const header = new Section({
+    title: 'CHADGI STATUS',
+    width: 58,
+  });
+  header.printHeader();
+  console.log('');
 
   // State display
   const stateColor = getStateColor(statusInfo.state);
@@ -173,10 +176,10 @@ function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): v
   // Pause info
   if (statusInfo.pause) {
     console.log(`${colors.yellow}${colors.bold}PAUSE INFORMATION${colors.reset}`);
-    console.log(`  Paused at:     ${formatDate(statusInfo.pause.pausedAt)}`);
-    console.log(`  Paused for:    ${formatDuration(statusInfo.pause.pausedSeconds)}`);
+    console.log(keyValue('Paused at:', formatDate(statusInfo.pause.pausedAt), 13));
+    console.log(keyValue('Paused for:', formatDuration(statusInfo.pause.pausedSeconds), 13));
     if (statusInfo.pause.reason) {
-      console.log(`  Reason:        ${statusInfo.pause.reason}`);
+      console.log(keyValue('Reason:', statusInfo.pause.reason, 13));
     }
     if (statusInfo.pause.resumeAt) {
       const resumeTime = new Date(statusInfo.pause.resumeAt);
@@ -184,9 +187,9 @@ function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): v
       if (resumeTime > now) {
         const remainingMs = resumeTime.getTime() - now.getTime();
         const remainingSecs = Math.floor(remainingMs / 1000);
-        console.log(`  Auto-resume:   ${formatDate(statusInfo.pause.resumeAt)} (in ${formatDuration(remainingSecs)})`);
+        console.log(keyValue('Auto-resume:', `${formatDate(statusInfo.pause.resumeAt)} (in ${formatDuration(remainingSecs)})`, 13));
       } else {
-        console.log(`  Auto-resume:   ${formatDate(statusInfo.pause.resumeAt)} ${colors.yellow}(expired)${colors.reset}`);
+        console.log(keyValue('Auto-resume:', `${formatDate(statusInfo.pause.resumeAt)} ${colors.yellow}(expired)${colors.reset}`, 13));
       }
     }
     console.log('');
@@ -196,16 +199,16 @@ function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): v
   if (statusInfo.pendingApproval) {
     const phaseName = formatPhaseName(statusInfo.pendingApproval.phase);
     console.log(`${colors.purple}${colors.bold}PENDING APPROVAL${colors.reset}`);
-    console.log(`  Issue:         #${statusInfo.pendingApproval.issueNumber}`);
+    console.log(keyValue('Issue:', `#${statusInfo.pendingApproval.issueNumber}`, 13));
     if (statusInfo.pendingApproval.issueTitle) {
-      console.log(`  Title:         ${statusInfo.pendingApproval.issueTitle}`);
+      console.log(keyValue('Title:', statusInfo.pendingApproval.issueTitle, 13));
     }
-    console.log(`  Phase:         ${phaseName}`);
-    console.log(`  Waiting:       ${formatDuration(statusInfo.pendingApproval.waitingSeconds)}`);
+    console.log(keyValue('Phase:', phaseName, 13));
+    console.log(keyValue('Waiting:', formatDuration(statusInfo.pendingApproval.waitingSeconds), 13));
     if (statusInfo.pendingApproval.filesChanged !== undefined) {
       const ins = statusInfo.pendingApproval.insertions ?? 0;
       const del = statusInfo.pendingApproval.deletions ?? 0;
-      console.log(`  Changes:       ${statusInfo.pendingApproval.filesChanged} files (+${ins}/-${del})`);
+      console.log(keyValue('Changes:', `${statusInfo.pendingApproval.filesChanged} files (+${ins}/-${del})`, 13));
     }
     console.log('');
     console.log(`  ${colors.green}chadgi approve${colors.reset}    - Approve and continue`);
@@ -217,11 +220,11 @@ function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): v
   // Current task info
   if (statusInfo.currentTask) {
     console.log(`${colors.cyan}${colors.bold}CURRENT TASK${colors.reset}`);
-    console.log(`  Issue:         #${statusInfo.currentTask.id}`);
-    console.log(`  Title:         ${statusInfo.currentTask.title}`);
-    console.log(`  Branch:        ${statusInfo.currentTask.branch}`);
-    console.log(`  Started:       ${formatDate(statusInfo.currentTask.startedAt)}`);
-    console.log(`  Elapsed:       ${formatDuration(statusInfo.currentTask.elapsedSeconds)}`);
+    console.log(keyValue('Issue:', `#${statusInfo.currentTask.id}`, 13));
+    console.log(keyValue('Title:', statusInfo.currentTask.title, 13));
+    console.log(keyValue('Branch:', statusInfo.currentTask.branch, 13));
+    console.log(keyValue('Started:', formatDate(statusInfo.currentTask.startedAt), 13));
+    console.log(keyValue('Elapsed:', formatDuration(statusInfo.currentTask.elapsedSeconds), 13));
     console.log('');
   } else if (statusInfo.state === 'running') {
     console.log(`${colors.cyan}${colors.bold}CURRENT TASK${colors.reset}`);
@@ -232,10 +235,10 @@ function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): v
   // Session info
   if (statusInfo.session) {
     console.log(`${colors.cyan}${colors.bold}SESSION STATISTICS${colors.reset}`);
-    console.log(`  Started:       ${formatDate(statusInfo.session.startedAt)}`);
-    console.log(`  Duration:      ${formatDuration(statusInfo.session.elapsedSeconds)}`);
-    console.log(`  Completed:     ${statusInfo.session.tasksCompleted} task(s)`);
-    console.log(`  Total cost:    $${statusInfo.session.totalCostUsd.toFixed(4)}`);
+    console.log(keyValue('Started:', formatDate(statusInfo.session.startedAt), 13));
+    console.log(keyValue('Duration:', formatDuration(statusInfo.session.elapsedSeconds), 13));
+    console.log(keyValue('Completed:', `${statusInfo.session.tasksCompleted} task(s)`, 13));
+    console.log(keyValue('Total cost:', `$${statusInfo.session.totalCostUsd.toFixed(4)}`, 13));
     console.log('');
   }
 
@@ -245,9 +248,9 @@ function printStatus(statusInfo: StatusInfo & { taskLocks?: TaskLockInfo[] }): v
     const staleLocks = statusInfo.taskLocks.filter((l) => l.isStale);
 
     console.log(`${colors.cyan}${colors.bold}TASK LOCKS${colors.reset}`);
-    console.log(`  Active:        ${activeLocks.length} lock(s)`);
+    console.log(keyValue('Active:', `${activeLocks.length} lock(s)`, 13));
     if (staleLocks.length > 0) {
-      console.log(`  Stale:         ${colors.yellow}${staleLocks.length} lock(s)${colors.reset}`);
+      console.log(keyValue('Stale:', `${colors.yellow}${staleLocks.length} lock(s)${colors.reset}`, 13));
     }
 
     // Show first few locks

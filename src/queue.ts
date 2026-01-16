@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { parseYamlValue, parseYamlNested, parseYamlBoolean, ensureChadgiDirExists } from './utils/config.js';
 import { gh, GhClientError } from './utils/gh-client.js';
+import { Section, Table, Badge, type TableColumn } from './utils/textui.js';
 
 // Queue task from GitHub project board
 interface QueueTask {
@@ -441,12 +442,16 @@ function moveItemToColumn(
   }
 }
 
-// Print queue in table format
+// Print queue in table format using text UI components
 function printQueue(tasks: QueueTask[], readyColumn: string, dependenciesEnabled: boolean): void {
-  console.log(`${colors.purple}${colors.bold}`);
-  console.log('ChadGI Task Queue');
-  console.log('=================');
-  console.log(`${colors.reset}`);
+  // Print section header
+  const section = new Section({
+    title: 'ChadGI Task Queue',
+    width: 17,
+    showTopDivider: false,
+  });
+  section.printHeader();
+  console.log('');
 
   console.log(`${colors.cyan}${readyColumn} column:${colors.reset} ${tasks.length} task${tasks.length !== 1 ? 's' : ''}`);
   console.log('');
@@ -457,58 +462,87 @@ function printQueue(tasks: QueueTask[], readyColumn: string, dependenciesEnabled
     return;
   }
 
-  // Print header
+  // Determine which columns to show
   const hasCategory = tasks.some(t => t.category);
   const hasPriority = tasks.some(t => t.priorityName);
 
-  let header = ` #   Issue   `;
-  if (hasPriority) header += `Priority   `;
-  if (hasCategory) header += `Category   `;
-  header += `Title`;
-  if (dependenciesEnabled) header += `                              Status`;
+  // Build dynamic columns
+  const columns: TableColumn[] = [
+    { header: '#', key: 'index', width: 3, align: 'right' },
+    { header: 'Issue', key: 'issue', width: 7 },
+  ];
 
-  console.log(`${colors.dim}${header}${colors.reset}`);
-  console.log(`${colors.dim}${'─'.repeat(Math.max(80, header.length))}${colors.reset}`);
+  if (hasPriority) {
+    columns.push({
+      header: 'Priority',
+      key: 'priority',
+      width: 10,
+      render: (_, row) => {
+        const name = row.priorityName as string || 'normal';
+        const priorityColor = name === 'critical' ? colors.red
+          : name === 'high' ? colors.yellow
+          : name === 'low' ? colors.dim
+          : '';
+        return `${priorityColor}${name}${priorityColor ? colors.reset : ''}`;
+      },
+    });
+  }
 
-  // Print tasks
-  tasks.forEach((task, index) => {
-    const num = String(index + 1).padStart(2);
-    const issueNum = `#${task.number}`.padEnd(6);
+  if (hasCategory) {
+    columns.push({
+      header: 'Category',
+      key: 'category',
+      width: 10,
+      color: 'cyan',
+      render: (value) => (value as string) || '-',
+    });
+  }
 
-    let line = ` ${num}   ${issueNum}  `;
-
-    if (hasPriority) {
-      const priorityStr = (task.priorityName || 'normal').padEnd(9);
-      const priorityColor = task.priorityName === 'critical' ? colors.red
-        : task.priorityName === 'high' ? colors.yellow
-        : task.priorityName === 'low' ? colors.dim
-        : colors.reset;
-      line += `${priorityColor}${priorityStr}${colors.reset}  `;
-    }
-
-    if (hasCategory) {
-      const categoryStr = (task.category || '-').padEnd(9);
-      line += `${colors.cyan}${categoryStr}${colors.reset}  `;
-    }
-
-    // Truncate title to fit
-    const maxTitleLen = dependenciesEnabled ? 30 : 50;
-    const title = task.title.length > maxTitleLen
-      ? task.title.substring(0, maxTitleLen - 3) + '...'
-      : task.title.padEnd(maxTitleLen);
-    line += title;
-
-    if (dependenciesEnabled) {
-      if (task.dependencyStatus === 'blocked') {
-        const blocking = task.blockingIssues?.map(n => `#${n}`).join(', ') || '';
-        line += `  ${colors.red}blocked by ${blocking}${colors.reset}`;
-      } else if (task.dependencies && task.dependencies.length > 0) {
-        line += `  ${colors.green}deps resolved${colors.reset}`;
-      }
-    }
-
-    console.log(line);
+  columns.push({
+    header: 'Title',
+    key: 'title',
+    width: dependenciesEnabled ? 30 : 50,
   });
+
+  if (dependenciesEnabled) {
+    columns.push({
+      header: 'Status',
+      key: 'status',
+      width: 20,
+      render: (_, row) => {
+        const depStatus = row.dependencyStatus as string;
+        const blockingIssues = row.blockingIssues as number[] | undefined;
+        const deps = row.dependencies as number[] | undefined;
+
+        if (depStatus === 'blocked' && blockingIssues && blockingIssues.length > 0) {
+          const blocking = blockingIssues.map(n => `#${n}`).join(', ');
+          return `${colors.red}blocked by ${blocking}${colors.reset}`;
+        } else if (deps && deps.length > 0) {
+          return `${colors.green}deps resolved${colors.reset}`;
+        }
+        return '';
+      },
+    });
+  }
+
+  // Build table
+  const table = new Table({ columns });
+
+  // Add rows with index
+  tasks.forEach((task, index) => {
+    table.addRow({
+      index: index + 1,
+      issue: `#${task.number}`,
+      priorityName: task.priorityName,
+      category: task.category,
+      title: task.title,
+      dependencyStatus: task.dependencyStatus,
+      blockingIssues: task.blockingIssues,
+      dependencies: task.dependencies,
+    });
+  });
+
+  table.print();
 
   // Print commands
   console.log('');

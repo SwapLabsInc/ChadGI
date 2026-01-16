@@ -4,9 +4,10 @@ import { dirname, resolve } from 'path';
 // Import shared utilities
 import { colors } from './utils/colors.js';
 import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
-import { formatDuration, formatDate, formatCost, parseSince, horizontalLine, truncate } from './utils/formatting.js';
+import { formatDuration, formatDate, formatCost, parseSince, truncate } from './utils/formatting.js';
 import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
 import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
+import { Section, BracketedBadge, divider, keyValue } from './utils/textui.js';
 
 // Import shared types
 import type { BaseCommandOptions, SessionStats, TaskMetrics, HistoryEntry, HistoryResult } from './types/index.js';
@@ -131,7 +132,7 @@ function applyFilters(
   return { filtered, sinceDate, statusFilter };
 }
 
-// Print formatted history output
+// Print formatted history output using text UI components
 function printHistory(
   entries: HistoryEntry[],
   total: number,
@@ -139,11 +140,13 @@ function printHistory(
   statusFilter?: string,
   _repo?: string
 ): void {
-  console.log(`${colors.purple}${colors.bold}`);
-  console.log('==========================================================');
-  console.log('                  CHADGI TASK HISTORY                      ');
-  console.log('==========================================================');
-  console.log(`${colors.reset}`);
+  // Print section header using Section component
+  const header = new Section({
+    title: 'CHADGI TASK HISTORY',
+    width: 58,
+  });
+  header.printHeader();
+  console.log('');
 
   // Show filters if applied
   if (sinceDate || statusFilter) {
@@ -190,16 +193,16 @@ function printHistory(
 
   // Task list header
   console.log(`${colors.cyan}${colors.bold}Task History${colors.reset}`);
-  console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
+  console.log(divider(78));
 
-  // Task entries
+  // Task entries using Badge for status
   for (const entry of entries) {
-    const outcomeColor =
+    const badgeStyle =
       entry.outcome === 'success'
-        ? colors.green
+        ? 'success'
         : entry.outcome === 'skipped'
-          ? colors.yellow
-          : colors.red;
+          ? 'warning'
+          : 'error';
 
     const outcomeText =
       entry.outcome === 'success'
@@ -208,9 +211,9 @@ function printHistory(
           ? 'SKIPPED'
           : 'FAILED';
 
-    // Issue line
+    // Issue line with bracketed badge
     console.log(
-      `${colors.bold}#${entry.issueNumber}${colors.reset} ${outcomeColor}[${outcomeText}]${colors.reset}`
+      `${colors.bold}#${entry.issueNumber}${colors.reset} ${BracketedBadge(outcomeText, badgeStyle)}`
     );
 
     // Title if available
@@ -218,20 +221,20 @@ function printHistory(
       console.log(`  ${colors.dim}${truncate(entry.issueTitle, 60)}${colors.reset}`);
     }
 
-    // Details
-    console.log(`  Date:    ${formatDate(entry.startedAt)}`);
-    console.log(`  Elapsed: ${formatDuration(entry.elapsedTime)}`);
+    // Details using keyValue helper
+    console.log(keyValue('Date:', formatDate(entry.startedAt), 10));
+    console.log(keyValue('Elapsed:', formatDuration(entry.elapsedTime), 10));
 
     if (entry.cost !== undefined && entry.cost > 0) {
-      console.log(`  Cost:    ${formatCost(entry.cost)}`);
+      console.log(keyValue('Cost:', formatCost(entry.cost), 10));
     }
 
     if (entry.category) {
-      console.log(`  Category: ${entry.category}`);
+      console.log(keyValue('Category:', entry.category, 10));
     }
 
     if (entry.iterations && entry.iterations > 1) {
-      console.log(`  Iterations: ${entry.iterations}`);
+      console.log(keyValue('Iterations:', String(entry.iterations), 10));
     }
 
     // Failure reason if applicable
@@ -244,13 +247,18 @@ function printHistory(
       console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
     }
 
-    console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
+    console.log(divider(78));
   }
 
   console.log('');
-  console.log(`${colors.purple}${colors.bold}==========================================================`);
-  console.log('               Chad does what Chad wants.');
-  console.log(`==========================================================${colors.reset}`);
+  // Footer section
+  const footer = new Section({
+    title: 'Chad does what Chad wants.',
+    width: 58,
+    showTopDivider: true,
+    showBottomDivider: false,
+  });
+  footer.printHeader();
 }
 
 export async function history(options: HistoryOptions = {}): Promise<void> {
