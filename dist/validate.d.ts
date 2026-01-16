@@ -4,6 +4,7 @@ interface ValidateOptions {
     notifyTest?: boolean;
     strict?: boolean;
     showMerged?: boolean;
+    mask?: boolean;
 }
 interface TemplateVariableMatch {
     variable: string;

@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { maskSecrets, setMaskingDisabled } from './utils/secrets.js';
 import { parseYamlValue, parseYamlNested } from './utils/config.js';
+import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -413,6 +414,31 @@ export async function validate(options: ValidateOptions = {}): Promise<boolean> 
     });
     if (!quiet) {
       console.log(`\x1b[32m+\x1b[0m Config file found: ${configPath}`);
+    }
+
+    // Check config version and pending migrations
+    const migrationCheck = checkMigrations(configPath);
+    const currentVersion = migrationCheck.currentVersion || `${DEFAULT_CONFIG_VERSION} (implicit)`;
+
+    if (migrationCheck.needsMigration) {
+      results.push({
+        name: 'config_version',
+        status: 'warning',
+        message: `${currentVersion} -> ${CURRENT_CONFIG_VERSION} (migration available)`
+      });
+      if (!quiet) {
+        console.log(`\x1b[33m!\x1b[0m Config version: ${currentVersion} (migration available to ${CURRENT_CONFIG_VERSION})`);
+        console.log(`    Run 'chadgi config migrate' to update`);
+      }
+    } else {
+      results.push({
+        name: 'config_version',
+        status: 'ok',
+        message: CURRENT_CONFIG_VERSION
+      });
+      if (!quiet) {
+        console.log(`\x1b[32m+\x1b[0m Config version: ${CURRENT_CONFIG_VERSION}`);
+      }
     }
 
     // Load and validate config inheritance chain

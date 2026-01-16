@@ -5,6 +5,7 @@ import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
 import { maskSecrets, maskObject } from './utils/secrets.js';
 import { colors } from './utils/colors.js';
+import { CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,6 +32,7 @@ export interface ConfigImportOptions {
 interface ExportBundle {
   _meta: {
     chadgi_version: string;
+    config_version: string;
     exported_at: string;
     source_repo: string | null;
   };
@@ -329,9 +331,16 @@ export async function configExport(options: ConfigExportOptions = {}): Promise<v
   }
 
   // Build export bundle
+  // Ensure config_version is set in the exported config
+  const configVersion = (configObj.config_version as string) || DEFAULT_CONFIG_VERSION;
+  if (!configObj.config_version) {
+    configObj.config_version = configVersion;
+  }
+
   const bundle: ExportBundle = {
     _meta: {
       chadgi_version: CHADGI_VERSION,
+      config_version: configVersion,
       exported_at: new Date().toISOString(),
       source_repo: detectRepository(),
     },
@@ -349,12 +358,14 @@ export async function configExport(options: ConfigExportOptions = {}): Promise<v
     lines.push('# ChadGI Configuration Export');
     lines.push(`# Exported at: ${bundle._meta.exported_at}`);
     lines.push(`# ChadGI version: ${bundle._meta.chadgi_version}`);
+    lines.push(`# Config schema version: ${bundle._meta.config_version}`);
     if (bundle._meta.source_repo) {
       lines.push(`# Source repository: ${bundle._meta.source_repo}`);
     }
     lines.push('');
     lines.push('_meta:');
     lines.push(`  chadgi_version: "${bundle._meta.chadgi_version}"`);
+    lines.push(`  config_version: "${bundle._meta.config_version}"`);
     lines.push(`  exported_at: "${bundle._meta.exported_at}"`);
     lines.push(`  source_repo: ${bundle._meta.source_repo ? `"${bundle._meta.source_repo}"` : 'null'}`);
     lines.push('');
@@ -421,6 +432,7 @@ export async function configImport(options: ConfigImportOptions): Promise<void> 
       bundle = {
         _meta: {
           chadgi_version: (yamlObj._meta as Record<string, string>)?.chadgi_version || '0.0.0',
+          config_version: (yamlObj._meta as Record<string, string>)?.config_version || DEFAULT_CONFIG_VERSION,
           exported_at: (yamlObj._meta as Record<string, string>)?.exported_at || new Date().toISOString(),
           source_repo: (yamlObj._meta as Record<string, string>)?.source_repo || null,
         },
@@ -468,10 +480,21 @@ export async function configImport(options: ConfigImportOptions): Promise<void> 
     console.log('');
   }
 
+  // Config schema version check
+  const importedConfigVersion = bundle._meta.config_version || DEFAULT_CONFIG_VERSION;
+  if (importedConfigVersion !== CURRENT_CONFIG_VERSION) {
+    console.log(`${colors.yellow}Note:${colors.reset} Config schema version difference`);
+    console.log(`  Imported config version: ${importedConfigVersion}`);
+    console.log(`  Current config version: ${CURRENT_CONFIG_VERSION}`);
+    console.log(`  Run 'chadgi config migrate' after import to update the schema.`);
+    console.log('');
+  }
+
   // Show metadata
   console.log(`${colors.cyan}Import Details:${colors.reset}`);
   console.log(`  Source: ${basename(importPath)}`);
   console.log(`  Exported: ${bundle._meta.exported_at}`);
+  console.log(`  Config version: ${importedConfigVersion}`);
   if (bundle._meta.source_repo) {
     console.log(`  From repo: ${bundle._meta.source_repo}`);
   }

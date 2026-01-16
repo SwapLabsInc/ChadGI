@@ -3,6 +3,7 @@ import { join, dirname, resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import { validate } from './validate.js';
+import { hasPendingMigrations, getMigrationStatusMessage } from './config-migrate.js';
 import {
   getWorkspaceConfigPath,
   loadWorkspaceConfig,
@@ -97,6 +98,12 @@ export async function start(options: StartOptions = {}): Promise<void> {
 
   if (ignoreDeps) {
     console.log('Dependency checking: DISABLED (via --ignore-deps flag)\n');
+  }
+
+  // Check for pending migrations
+  if (hasPendingMigrations(configPath)) {
+    const migrationMessage = getMigrationStatusMessage(configPath);
+    console.log(`${colors.yellow}Warning:${colors.reset} ${migrationMessage}\n`);
   }
 
   // Validate configuration first

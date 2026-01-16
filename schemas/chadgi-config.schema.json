@@ -5,6 +5,12 @@
   "description": "Configuration schema for ChadGI - Autonomous Task Worker powered by Claude Code",
   "type": "object",
   "properties": {
+    "config_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "default": "1.0",
+      "description": "Configuration schema version. Used for automatic migrations when the schema changes. Format: major.minor (e.g., '1.0', '1.1', '2.0')"
+    },
     "extends": {
       "type": "string",
       "description": "Path to a base configuration file to inherit from. Local values override base config values. Supports chained inheritance (A extends B extends C)."

@@ -1,31 +1,9 @@
-import { existsSync, readFileSync, readdirSync } from 'fs';
-import { join, dirname, resolve } from 'path';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    purple: '\x1b[35m',
-    blue: '\x1b[34m',
-};
-function formatDuration(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hours > 0) {
-        return `${hours}h ${minutes}m ${secs}s`;
-    }
-    else if (minutes > 0) {
-        return `${minutes}m ${secs}s`;
-    }
-    else {
-        return `${secs}s`;
-    }
-}
+import { existsSync } from 'fs';
+// Import shared utilities
+import { colors } from './utils/colors.js';
+import { resolveConfigPath } from './utils/config.js';
+import { formatDuration } from './utils/formatting.js';
+import { loadProgressData, loadPauseLock, findPendingApproval, loadAllTaskLocks } from './utils/data.js';
 function formatDate(isoDate) {
     return new Date(isoDate).toLocaleString();
 }
@@ -63,9 +41,6 @@ function getStateEmoji(state) {
             return '?';
     }
 }
-/**
- * Format phase name for display
- */
 function formatPhaseName(phase) {
     switch (phase) {
         case 'pre_task':
@@ -78,133 +53,70 @@ function formatPhaseName(phase) {
             return phase;
     }
 }
-/**
- * Find pending approval lock files and return the first one
- */
-function findPendingApproval(chadgiDir) {
-    try {
-        const files = readdirSync(chadgiDir).filter(f => f.startsWith('approval-') && f.endsWith('.lock'));
-        for (const file of files) {
-            try {
-                const data = JSON.parse(readFileSync(join(chadgiDir, file), 'utf-8'));
-                if (data.status === 'pending') {
-                    return data;
-                }
-            }
-            catch {
-                // Skip invalid files
-            }
-        }
-    }
-    catch {
-        // Directory read error
-    }
-    return null;
-}
-export async function status(options = {}) {
-    const cwd = process.cwd();
-    const chadgiDir = options.config
-        ? dirname(resolve(options.config))
-        : join(cwd, '.chadgi');
-    if (!existsSync(chadgiDir)) {
-        if (options.json) {
-            console.log(JSON.stringify({ state: 'unknown', error: '.chadgi directory not found' }, null, 2));
-        }
-        else {
-            console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-            console.error('Run `chadgi init` first to initialize ChadGI.');
-        }
-        process.exit(1);
-    }
-    const progressFile = join(chadgiDir, 'chadgi-progress.json');
-    const pauseLockFile = join(chadgiDir, 'pause.lock');
+function buildStatusInfo(progress, pauseInfo, pendingApproval, taskLocks = []) {
     const statusInfo = {
         state: 'unknown',
     };
-    // Check for pause lock first
-    let pauseInfo = null;
-    if (existsSync(pauseLockFile)) {
-        try {
-            const parsed = JSON.parse(readFileSync(pauseLockFile, 'utf-8'));
-            pauseInfo = parsed;
-            const pausedAt = new Date(parsed.paused_at);
-            statusInfo.pause = {
-                pausedAt: parsed.paused_at,
-                reason: parsed.reason,
-                resumeAt: parsed.resume_at,
-                pausedSeconds: Math.floor((Date.now() - pausedAt.getTime()) / 1000),
+    // Set pause info if present
+    if (pauseInfo) {
+        const pausedAt = new Date(pauseInfo.paused_at);
+        statusInfo.pause = {
+            pausedAt: pauseInfo.paused_at,
+            reason: pauseInfo.reason,
+            resumeAt: pauseInfo.resume_at,
+            pausedSeconds: Math.floor((Date.now() - pausedAt.getTime()) / 1000),
+        };
+    }
+    // Determine state from progress
+    if (progress) {
+        statusInfo.lastUpdated = progress.last_updated;
+        if (pauseInfo) {
+            statusInfo.state = 'paused';
+        }
+        else if (progress.status === 'awaiting_approval') {
+            statusInfo.state = 'awaiting_approval';
+        }
+        else if (progress.status === 'in_progress') {
+            statusInfo.state = 'running';
+        }
+        else if (progress.status === 'paused') {
+            statusInfo.state = 'paused';
+        }
+        else if (progress.status === 'error') {
+            statusInfo.state = 'error';
+        }
+        else if (progress.status === 'stopped') {
+            statusInfo.state = 'stopped';
+        }
+        else if (progress.status === 'idle') {
+            statusInfo.state = 'idle';
+        }
+        // Current task info
+        if (progress.current_task?.id) {
+            const startedAt = new Date(progress.current_task.started_at);
+            statusInfo.currentTask = {
+                id: progress.current_task.id,
+                title: progress.current_task.title,
+                branch: progress.current_task.branch,
+                startedAt: progress.current_task.started_at,
+                elapsedSeconds: Math.floor((Date.now() - startedAt.getTime()) / 1000),
             };
         }
-        catch {
-            // Lock file exists but might be corrupted
-        }
-    }
-    // Read progress file
-    let progress = null;
-    if (existsSync(progressFile)) {
-        try {
-            const parsed = JSON.parse(readFileSync(progressFile, 'utf-8'));
-            progress = parsed;
-            statusInfo.lastUpdated = parsed.last_updated;
-            // Determine state
-            if (pauseInfo) {
-                statusInfo.state = 'paused';
-            }
-            else if (parsed.status === 'awaiting_approval') {
-                statusInfo.state = 'awaiting_approval';
-            }
-            else if (parsed.status === 'in_progress') {
-                statusInfo.state = 'running';
-            }
-            else if (parsed.status === 'paused') {
-                statusInfo.state = 'paused';
-            }
-            else if (parsed.status === 'error') {
-                statusInfo.state = 'error';
-            }
-            else if (parsed.status === 'stopped') {
-                statusInfo.state = 'stopped';
-            }
-            else if (parsed.status === 'idle') {
-                statusInfo.state = 'idle';
-            }
-            // Current task info
-            if (parsed.current_task?.id) {
-                const startedAt = new Date(parsed.current_task.started_at);
-                statusInfo.currentTask = {
-                    id: parsed.current_task.id,
-                    title: parsed.current_task.title,
-                    branch: parsed.current_task.branch,
-                    startedAt: parsed.current_task.started_at,
-                    elapsedSeconds: Math.floor((Date.now() - startedAt.getTime()) / 1000),
-                };
-            }
-            // Session info
-            if (parsed.session?.started_at) {
-                const sessionStart = new Date(parsed.session.started_at);
-                statusInfo.session = {
-                    startedAt: parsed.session.started_at,
-                    tasksCompleted: parsed.session.tasks_completed ?? 0,
-                    totalCostUsd: parsed.session.total_cost_usd ?? 0,
-                    elapsedSeconds: Math.floor((Date.now() - sessionStart.getTime()) / 1000),
-                };
-            }
-        }
-        catch (error) {
-            if (options.json) {
-                console.log(JSON.stringify({ state: 'unknown', error: 'Could not read progress file' }, null, 2));
-            }
-            else {
-                console.error(`${colors.red}Error reading progress file:${colors.reset}`, error.message);
-            }
-            process.exit(1);
+        // Session info
+        if (progress.session?.started_at) {
+            const sessionStart = new Date(progress.session.started_at);
+            statusInfo.session = {
+                startedAt: progress.session.started_at,
+                tasksCompleted: progress.session.tasks_completed ?? 0,
+                totalCostUsd: progress.session.total_cost_usd ?? 0,
+                elapsedSeconds: Math.floor((Date.now() - sessionStart.getTime()) / 1000),
+            };
         }
     }
     else {
         statusInfo.state = pauseInfo ? 'paused' : 'stopped';
     }
-    // Check for pending approval lock files
-    const pendingApproval = findPendingApproval(chadgiDir);
+    // Check for pending approval
     if (pendingApproval) {
         statusInfo.state = 'awaiting_approval';
         const createdAt = new Date(pendingApproval.created_at);
@@ -219,12 +131,13 @@ export async function status(options = {}) {
             waitingSeconds: Math.floor((Date.now() - createdAt.getTime()) / 1000),
         };
     }
-    // Output as JSON if requested
-    if (options.json) {
-        console.log(JSON.stringify(statusInfo, null, 2));
-        return;
-    }
-    // Display formatted status
+    // Add task locks
+    return {
+        ...statusInfo,
+        taskLocks: taskLocks.length > 0 ? taskLocks : undefined,
+    };
+}
+function printStatus(statusInfo) {
     console.log(`${colors.purple}${colors.bold}`);
     console.log('==========================================================');
     console.log('                    CHADGI STATUS                          ');
@@ -302,6 +215,30 @@ export async function status(options = {}) {
         console.log(`  Total cost:    $${statusInfo.session.totalCostUsd.toFixed(4)}`);
         console.log('');
     }
+    // Task locks info
+    if (statusInfo.taskLocks && statusInfo.taskLocks.length > 0) {
+        const activeLocks = statusInfo.taskLocks.filter((l) => !l.isStale);
+        const staleLocks = statusInfo.taskLocks.filter((l) => l.isStale);
+        console.log(`${colors.cyan}${colors.bold}TASK LOCKS${colors.reset}`);
+        console.log(`  Active:        ${activeLocks.length} lock(s)`);
+        if (staleLocks.length > 0) {
+            console.log(`  Stale:         ${colors.yellow}${staleLocks.length} lock(s)${colors.reset}`);
+        }
+        // Show first few locks
+        const locksToShow = statusInfo.taskLocks.slice(0, 5);
+        for (const lock of locksToShow) {
+            const staleIndicator = lock.isStale ? ` ${colors.yellow}(stale)${colors.reset}` : '';
+            console.log(`  - Issue #${lock.issueNumber}: locked ${formatDuration(lock.lockedSeconds)} ago${staleIndicator}`);
+        }
+        if (statusInfo.taskLocks.length > 5) {
+            console.log(`  ${colors.dim}... and ${statusInfo.taskLocks.length - 5} more${colors.reset}`);
+        }
+        console.log('');
+        if (staleLocks.length > 0) {
+            console.log(`  ${colors.dim}Run 'chadgi unlock --stale' to clean up stale locks.${colors.reset}`);
+            console.log('');
+        }
+    }
     // Last updated
     if (statusInfo.lastUpdated) {
         console.log(`${colors.dim}Last updated: ${formatDate(statusInfo.lastUpdated)}${colors.reset}`);
@@ -323,5 +260,33 @@ export async function status(options = {}) {
     else if (statusInfo.state === 'error') {
         console.log(`${colors.yellow}Run 'chadgi start' to restart processing.${colors.reset}`);
     }
+}
+export async function status(options = {}) {
+    const cwd = process.cwd();
+    const { chadgiDir } = resolveConfigPath(options.config, cwd);
+    if (!existsSync(chadgiDir)) {
+        if (options.json) {
+            console.log(JSON.stringify({ state: 'unknown', error: '.chadgi directory not found' }, null, 2));
+        }
+        else {
+            console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
+            console.error('Run `chadgi init` first to initialize ChadGI.');
+        }
+        process.exit(1);
+    }
+    // Load data using shared utilities
+    const progress = loadProgressData(chadgiDir);
+    const pauseInfo = loadPauseLock(chadgiDir);
+    const pendingApproval = findPendingApproval(chadgiDir);
+    const taskLocks = loadAllTaskLocks(chadgiDir);
+    // Build status info
+    const statusInfo = buildStatusInfo(progress, pauseInfo, pendingApproval, taskLocks);
+    // Output as JSON if requested
+    if (options.json) {
+        console.log(JSON.stringify(statusInfo, null, 2));
+        return;
+    }
+    // Display formatted status
+    printStatus(statusInfo);
 }
 //# sourceMappingURL=status.js.map

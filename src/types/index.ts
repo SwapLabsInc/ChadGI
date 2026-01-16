@@ -350,6 +350,8 @@ export interface IterationConfig {
  * ChadGI configuration structure
  */
 export interface ChadGIConfig {
+  /** Configuration schema version for migration support */
+  config_version?: string;
   task_source?: string;
   prompt_template?: string;
   generate_template?: string;
@@ -366,6 +368,90 @@ export interface ChadGIConfig {
     show_cost?: boolean;
     truncate_length?: number;
   };
+}
+
+// ============================================================================
+// Migration Types
+// ============================================================================
+
+/**
+ * Configuration migration function signature.
+ * Migrations are pure functions that transform config from one version to the next.
+ */
+export type MigrationFunction = (config: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * A single migration definition
+ */
+export interface Migration {
+  /** Source version (e.g., "1.0") */
+  fromVersion: string;
+  /** Target version (e.g., "1.1") */
+  toVersion: string;
+  /** Description of changes in this migration */
+  description: string;
+  /** The migration function that transforms the config */
+  migrate: MigrationFunction;
+}
+
+/**
+ * Entry in the migration history log
+ */
+export interface MigrationHistoryEntry {
+  /** Timestamp when migration was applied */
+  timestamp: string;
+  /** Version before migration */
+  fromVersion: string;
+  /** Version after migration */
+  toVersion: string;
+  /** Path to backup file created before migration */
+  backupPath: string;
+  /** Whether migration was successful */
+  success: boolean;
+  /** Any error message if migration failed */
+  error?: string;
+}
+
+/**
+ * Migration history file structure (.chadgi/migration-history.json)
+ */
+export interface MigrationHistory {
+  /** List of migration entries */
+  migrations: MigrationHistoryEntry[];
+  /** Current config version after all migrations */
+  currentVersion: string;
+  /** Last updated timestamp */
+  lastUpdated: string;
+}
+
+/**
+ * Result of checking for pending migrations
+ */
+export interface MigrationCheckResult {
+  /** Whether there are pending migrations */
+  needsMigration: boolean;
+  /** Current config version (or null if missing) */
+  currentVersion: string | null;
+  /** Target version after all migrations */
+  targetVersion: string;
+  /** List of migrations that would be applied */
+  pendingMigrations: Migration[];
+}
+
+/**
+ * Result of running migrations
+ */
+export interface MigrationResult {
+  /** Whether all migrations succeeded */
+  success: boolean;
+  /** Number of migrations applied */
+  migrationsApplied: number;
+  /** Final config version */
+  finalVersion: string;
+  /** Path to backup file */
+  backupPath?: string;
+  /** Error message if migration failed */
+  error?: string;
 }
 
 // ============================================================================

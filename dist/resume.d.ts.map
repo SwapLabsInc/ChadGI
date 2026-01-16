@@ -1,1 +1,1 @@
-{"version":3,"file":"resume.d.ts","sourceRoot":"","sources":["../src/resume.ts"],"names":[],"mappings":"AAQA,UAAU,aAAa;IACrB,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,OAAO,CAAC,EAAE,OAAO,CAAC;CACnB;AAmCD,wBAAsB,MAAM,CAAC,OAAO,GAAE,aAAkB,GAAG,OAAO,CAAC,IAAI,CAAC,CAqHvE"}
+{"version":3,"file":"resume.d.ts","sourceRoot":"","sources":["../src/resume.ts"],"names":[],"mappings":"AAOA,OAAO,KAAK,EAAE,kBAAkB,EAA+B,MAAM,kBAAkB,CAAC;AAKxF,UAAU,aAAc,SAAQ,kBAAkB;IAChD,OAAO,CAAC,EAAE,OAAO,CAAC;CACnB;AAED,wBAAsB,MAAM,CAAC,OAAO,GAAE,aAAkB,GAAG,OAAO,CAAC,IAAI,CAAC,CAqHvE"}

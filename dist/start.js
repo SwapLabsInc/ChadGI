@@ -3,6 +3,7 @@ import { join, dirname, resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
 import { validate } from './validate.js';
+import { hasPendingMigrations, getMigrationStatusMessage } from './config-migrate.js';
 import { getWorkspaceConfigPath, loadWorkspaceConfig, validateRepoPath, } from './workspace.js';
 import { setMaskingDisabled } from './utils/secrets.js';
 import { colors } from './utils/colors.js';
@@ -29,6 +30,7 @@ export async function start(options = {}) {
     const debugMode = options.debug ?? false;
     const ignoreDeps = options.ignoreDeps ?? false;
     const interactiveMode = options.interactive ?? false;
+    const forceClaim = options.forceClaim ?? false;
     if (interactiveMode) {
         console.log('Starting ChadGI in INTERACTIVE mode...\n');
         console.log('  [INTERACTIVE] Human-in-the-loop approval enabled');
@@ -59,6 +61,11 @@ export async function start(options = {}) {
     if (ignoreDeps) {
         console.log('Dependency checking: DISABLED (via --ignore-deps flag)\n');
     }
+    // Check for pending migrations
+    if (hasPendingMigrations(configPath)) {
+        const migrationMessage = getMigrationStatusMessage(configPath);
+        console.log(`${colors.yellow}Warning:${colors.reset} ${migrationMessage}\n`);
+    }
     // Validate configuration first
     console.log('Validating configuration...');
     const isValid = await validate({ config: configPath, quiet: true });
@@ -85,7 +92,8 @@ export async function start(options = {}) {
         DEBUG_MODE: debugMode ? 'true' : 'false',
         IGNORE_DEPS: ignoreDeps ? 'true' : 'false',
         INTERACTIVE_MODE: interactiveMode ? 'true' : 'false',
-        NO_MASK: noMask ? 'true' : 'false'
+        NO_MASK: noMask ? 'true' : 'false',
+        FORCE_CLAIM: forceClaim ? 'true' : 'false'
     };
     // Add timeout override if specified via CLI
     if (timeout !== undefined) {
@@ -123,6 +131,7 @@ function runRepoTask(repoPath, configPath, options) {
             IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
             INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
             NO_MASK: options.mask === false ? 'true' : 'false',
+            FORCE_CLAIM: options.forceClaim ? 'true' : 'false',
             WORKSPACE_MODE: 'true',
             WORKSPACE_SINGLE_TASK: 'true', // Process only one task then exit
         };
@@ -406,6 +415,7 @@ function runWorkerTask(workerInfo, configPath, options, onProgress) {
             IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
             INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
             NO_MASK: options.mask === false ? 'true' : 'false',
+            FORCE_CLAIM: options.forceClaim ? 'true' : 'false',
             WORKSPACE_MODE: 'true',
             WORKSPACE_SINGLE_TASK: 'true',
             PARALLEL_WORKER_ID: String(workerInfo.id),

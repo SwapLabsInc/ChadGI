@@ -297,6 +297,8 @@ export interface IterationConfig {
  * ChadGI configuration structure
  */
 export interface ChadGIConfig {
+    /** Configuration schema version for migration support */
+    config_version?: string;
     task_source?: string;
     prompt_template?: string;
     generate_template?: string;
@@ -313,6 +315,80 @@ export interface ChadGIConfig {
         show_cost?: boolean;
         truncate_length?: number;
     };
+}
+/**
+ * Configuration migration function signature.
+ * Migrations are pure functions that transform config from one version to the next.
+ */
+export type MigrationFunction = (config: Record<string, unknown>) => Record<string, unknown>;
+/**
+ * A single migration definition
+ */
+export interface Migration {
+    /** Source version (e.g., "1.0") */
+    fromVersion: string;
+    /** Target version (e.g., "1.1") */
+    toVersion: string;
+    /** Description of changes in this migration */
+    description: string;
+    /** The migration function that transforms the config */
+    migrate: MigrationFunction;
+}
+/**
+ * Entry in the migration history log
+ */
+export interface MigrationHistoryEntry {
+    /** Timestamp when migration was applied */
+    timestamp: string;
+    /** Version before migration */
+    fromVersion: string;
+    /** Version after migration */
+    toVersion: string;
+    /** Path to backup file created before migration */
+    backupPath: string;
+    /** Whether migration was successful */
+    success: boolean;
+    /** Any error message if migration failed */
+    error?: string;
+}
+/**
+ * Migration history file structure (.chadgi/migration-history.json)
+ */
+export interface MigrationHistory {
+    /** List of migration entries */
+    migrations: MigrationHistoryEntry[];
+    /** Current config version after all migrations */
+    currentVersion: string;
+    /** Last updated timestamp */
+    lastUpdated: string;
+}
+/**
+ * Result of checking for pending migrations
+ */
+export interface MigrationCheckResult {
+    /** Whether there are pending migrations */
+    needsMigration: boolean;
+    /** Current config version (or null if missing) */
+    currentVersion: string | null;
+    /** Target version after all migrations */
+    targetVersion: string;
+    /** List of migrations that would be applied */
+    pendingMigrations: Migration[];
+}
+/**
+ * Result of running migrations
+ */
+export interface MigrationResult {
+    /** Whether all migrations succeeded */
+    success: boolean;
+    /** Number of migrations applied */
+    migrationsApplied: number;
+    /** Final config version */
+    finalVersion: string;
+    /** Path to backup file */
+    backupPath?: string;
+    /** Error message if migration failed */
+    error?: string;
 }
 /**
  * Failed task for display and replay
@@ -552,6 +628,79 @@ export interface UpdateCheckCache {
     checked_at: string;
     latest_version: string;
     current_version: string;
+}
+/**
+ * Task lock file data for preventing concurrent processing of same issue.
+ * Lock file format: issue-<number>.lock in .chadgi/locks/ directory
+ */
+export interface TaskLockData {
+    /** Issue number that is locked */
+    issue_number: number;
+    /** Unique session identifier to distinguish lock owners */
+    session_id: string;
+    /** Process ID of the session holding the lock */
+    pid: number;
+    /** Hostname of the machine holding the lock */
+    hostname: string;
+    /** ISO timestamp when the lock was acquired */
+    locked_at: string;
+    /** ISO timestamp of the last heartbeat (updated periodically while active) */
+    last_heartbeat: string;
+    /** Optional worker ID for parallel/workspace mode */
+    worker_id?: number;
+    /** Optional repository name for workspace mode */
+    repo_name?: string;
+}
+/**
+ * Result of attempting to acquire a task lock
+ */
+export interface TaskLockResult {
+    /** Whether the lock was successfully acquired */
+    acquired: boolean;
+    /** The lock data if acquired, or existing lock info if not */
+    lock?: TaskLockData;
+    /** Reason for lock acquisition failure */
+    reason?: 'already_locked' | 'stale_lock' | 'error';
+    /** Error message if acquisition failed */
+    error?: string;
+}
+/**
+ * Options for acquiring a task lock
+ */
+export interface TaskLockOptions {
+    /** Force acquisition even if lock exists (will check staleness) */
+    forceClaim?: boolean;
+    /** Custom timeout in minutes (overrides config) */
+    timeoutMinutes?: number;
+    /** Worker ID for parallel mode */
+    workerId?: number;
+    /** Repository name for workspace mode */
+    repoName?: string;
+}
+/**
+ * Task lock status information for display
+ */
+export interface TaskLockInfo {
+    /** Issue number */
+    issueNumber: number;
+    /** Session ID holding the lock */
+    sessionId: string;
+    /** PID of the locking process */
+    pid: number;
+    /** Hostname of the locking machine */
+    hostname: string;
+    /** When the lock was acquired */
+    lockedAt: string;
+    /** Seconds since lock was acquired */
+    lockedSeconds: number;
+    /** Seconds since last heartbeat */
+    heartbeatAgeSeconds: number;
+    /** Whether this lock is considered stale */
+    isStale: boolean;
+    /** Worker ID if in parallel mode */
+    workerId?: number;
+    /** Repository name if in workspace mode */
+    repoName?: string;
 }
 /**
  * Version info for JSON output

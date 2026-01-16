@@ -1,0 +1,17 @@
+/**
+ * Test fixtures for configuration files.
+ *
+ * Provides sample YAML configuration content for testing.
+ */
+export declare const validConfig = "# ChadGI Configuration\ntask_source: github-issues\n\n# Template files\nprompt_template: ./chadgi-task.md\ngenerate_template: ./chadgi-generate-task.md\nprogress_file: ./chadgi-progress.json\n\n# GitHub configuration\ngithub:\n  repo: SwapLabsInc/ChadGI\n  project_number: 7\n  ready_column: Ready\n  in_progress_column: In Progress\n  review_column: In Review\n  done_column: Done\n\n# Branch configuration\nbranch:\n  base: main\n  prefix: feature/issue-\n\n# Polling settings\npoll_interval: 10\nconsecutive_empty_threshold: 2\non_empty_queue: generate\n\n# Iteration settings\niteration:\n  max_iterations: 5\n  completion_promise: \"COMPLETE\"\n  ready_promise: \"READY_FOR_PR\"\n  test_command: \"npm test\"\n  build_command: \"npm run build\"\n  on_max_iterations: skip\n  gigachad_mode: false\n\n# Output settings\noutput:\n  show_tool_details: true\n  show_cost: true\n  truncate_length: 60\n\n# Budget limits\nbudget:\n  per_task_limit: 2.00\n  per_session_limit: 20.00\n  on_task_budget_exceeded: skip\n  on_session_budget_exceeded: stop\n  warning_threshold: 80\n";
+export declare const minimalConfig = "# Minimal ChadGI Configuration\ngithub:\n  repo: owner/repo\n  project_number: 1\n  ready_column: Ready\n";
+export declare const configWithPriority = "# ChadGI Configuration with Priority\ngithub:\n  repo: SwapLabsInc/ChadGI\n  project_number: 7\n  ready_column: Ready\n\npriority:\n  enabled: true\n  labels:\n    critical: [priority:critical, p0, urgent]\n    high: [priority:high, p1]\n    normal: [priority:normal, p2]\n    low: [priority:low, p3]\n";
+export declare const configWithDependencies = "# ChadGI Configuration with Dependencies\ngithub:\n  repo: SwapLabsInc/ChadGI\n  project_number: 7\n  ready_column: Ready\n  done_column: Done\n\ndependencies:\n  enabled: true\n  skip_blocked: true\n\ndependency_patterns: depends on blocked by requires\n";
+export declare const configWithCategory = "# ChadGI Configuration with Category\ngithub:\n  repo: SwapLabsInc/ChadGI\n  project_number: 7\n  ready_column: Ready\n\ncategory:\n  mappings:\n    bug: [bug, bugfix, fix]\n    feature: [feature, enhancement]\n    refactor: [refactor, cleanup]\n";
+export declare const configWithInheritance = "# ChadGI Configuration with Inheritance\nextends: ./base-config.yaml\n\ngithub:\n  project_number: 9\n\niteration:\n  max_iterations: 10\n";
+export declare const baseConfig = "# Base ChadGI Configuration\ngithub:\n  repo: SwapLabsInc/ChadGI\n  project_number: 7\n  ready_column: Ready\n\niteration:\n  max_iterations: 5\n";
+export declare const configWithCustomVariables = "# ChadGI Configuration with Custom Variables\ngithub:\n  repo: SwapLabsInc/ChadGI\n  project_number: 7\n\ncustom_template_variables:\n  - CUSTOM_VAR_ONE\n  - CUSTOM_VAR_TWO\n";
+export declare const invalidConfigMissingRepo = "# Invalid Config - Missing Repo\ngithub:\n  project_number: 7\n  ready_column: Ready\n";
+export declare const taskTemplate = "# Task Template\nIssue: #{{ISSUE_NUMBER}}\nTitle: {{ISSUE_TITLE}}\nURL: {{ISSUE_URL}}\nBranch: {{BRANCH_NAME}}\nBase: {{BASE_BRANCH}}\nRepo: {{REPO}}\n";
+export declare const taskTemplateWithUnknownVars = "# Task Template with Unknown Variables\nIssue: #{{ISSUE_NUMBER}}\nCustom: {{UNKNOWN_VARIABLE}}\nAnother: {{ANOTHER_UNKNOWN}}\n";
+//# sourceMappingURL=configs.d.ts.map

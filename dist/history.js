@@ -1,172 +1,12 @@
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve } from 'path';
-import { execSync } from 'child_process';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    purple: '\x1b[35m',
-    cyan: '\x1b[36m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    yellow: '\x1b[33m',
-    blue: '\x1b[34m',
-};
-function formatDuration(seconds) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.round(seconds % 60);
-    if (hours > 0) {
-        return `${hours}h ${minutes}m ${secs}s`;
-    }
-    else if (minutes > 0) {
-        return `${minutes}m ${secs}s`;
-    }
-    else {
-        return `${secs}s`;
-    }
-}
-function formatDate(isoDate) {
-    const date = new Date(isoDate);
-    return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-}
-function formatCost(cost) {
-    return `$${cost.toFixed(4)}`;
-}
-// Parse --since option: supports "7d", "2w", "1m", "2024-01-01"
-function parseSince(since) {
-    if (!since)
-        return null;
-    // Try relative format first (e.g., "7d", "2w", "1m")
-    const relativeMatch = since.match(/^(\d+)([dwmhDWMH])$/);
-    if (relativeMatch) {
-        const value = parseInt(relativeMatch[1], 10);
-        const unit = relativeMatch[2].toLowerCase();
-        const now = new Date();
-        switch (unit) {
-            case 'h':
-                now.setHours(now.getHours() - value);
-                break;
-            case 'd':
-                now.setDate(now.getDate() - value);
-                break;
-            case 'w':
-                now.setDate(now.getDate() - value * 7);
-                break;
-            case 'm':
-                now.setMonth(now.getMonth() - value);
-                break;
-            default:
-                return null;
-        }
-        return now;
-    }
-    // Try ISO date format (e.g., "2024-01-01")
-    const dateMatch = since.match(/^\d{4}-\d{2}-\d{2}$/);
-    if (dateMatch) {
-        const parsed = new Date(since);
-        if (!isNaN(parsed.getTime())) {
-            return parsed;
-        }
-    }
-    // Try full ISO datetime format
-    const parsed = new Date(since);
-    if (!isNaN(parsed.getTime())) {
-        return parsed;
-    }
-    return null;
-}
-// Parse YAML value (simple key: value extraction)
-function parseYamlNested(content, parent, key) {
-    const lines = content.split('\n');
-    let inParent = false;
-    for (const line of lines) {
-        if (line.match(new RegExp(`^${parent}:`))) {
-            inParent = true;
-            continue;
-        }
-        if (inParent && line.match(/^[a-z]/)) {
-            inParent = false;
-        }
-        if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-            const value = line.split(':')[1];
-            if (value) {
-                return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-            }
-        }
-    }
-    return null;
-}
-// Load session stats from chadgi-stats.json
-function loadSessionStats(chadgiDir) {
-    const statsFile = join(chadgiDir, 'chadgi-stats.json');
-    if (!existsSync(statsFile)) {
-        return [];
-    }
-    try {
-        const content = readFileSync(statsFile, 'utf-8');
-        return JSON.parse(content);
-    }
-    catch {
-        return [];
-    }
-}
-// Load task metrics from chadgi-metrics.json
-function loadTaskMetrics(chadgiDir) {
-    const metricsFile = join(chadgiDir, 'chadgi-metrics.json');
-    if (!existsSync(metricsFile)) {
-        return [];
-    }
-    try {
-        const content = readFileSync(metricsFile, 'utf-8');
-        const data = JSON.parse(content);
-        return data.tasks || [];
-    }
-    catch {
-        return [];
-    }
-}
-// Try to fetch PR URL for an issue from GitHub
-function fetchPrUrl(repo, issueNumber) {
-    try {
-        // Search for PRs that mention this issue in their title or body
-        const output = execSync(`gh pr list --repo "${repo}" --state merged --search "fixes #${issueNumber} OR closes #${issueNumber} OR resolves #${issueNumber} OR issue-${issueNumber}" --json number,url --limit 1`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
-        const prs = JSON.parse(output);
-        if (prs.length > 0) {
-            return prs[0].url;
-        }
-        // Also check by branch pattern
-        const branchOutput = execSync(`gh pr list --repo "${repo}" --state merged --search "head:feature/issue-${issueNumber}" --json url --limit 1`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
-        const branchPrs = JSON.parse(branchOutput);
-        if (branchPrs.length > 0) {
-            return branchPrs[0].url;
-        }
-    }
-    catch {
-        // Ignore errors - PR URL is optional
-    }
-    return null;
-}
-// Fetch issue title from GitHub
-function fetchIssueTitle(repo, issueNumber) {
-    try {
-        const output = execSync(`gh issue view ${issueNumber} --repo "${repo}" --json title`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
-        const data = JSON.parse(output);
-        return data.title || null;
-    }
-    catch {
-        return null;
-    }
-}
+// Import shared utilities
+import { colors } from './utils/colors.js';
+import { parseYamlNested, resolveConfigPath } from './utils/config.js';
+import { formatDuration, formatDate, formatCost, parseSince, horizontalLine, truncate } from './utils/formatting.js';
+import { loadSessionStats, loadTaskMetrics } from './utils/data.js';
+import { fetchIssueTitle, fetchPrUrl } from './utils/github.js';
 // Build unified history entries from both data sources
-function buildHistoryEntries(sessions, metrics, repo) {
+function buildHistoryEntries(sessions, metrics, _repo) {
     const entries = [];
     const processedIssues = new Set(); // Use issue+timestamp to avoid duplicates
     // Process detailed metrics first (more accurate data)
@@ -264,7 +104,7 @@ function applyFilters(entries, options) {
     return { filtered, sinceDate, statusFilter };
 }
 // Print formatted history output
-function printHistory(entries, total, sinceDate, statusFilter, repo) {
+function printHistory(entries, total, sinceDate, statusFilter, _repo) {
     console.log(`${colors.purple}${colors.bold}`);
     console.log('==========================================================');
     console.log('                  CHADGI TASK HISTORY                      ');
@@ -310,7 +150,7 @@ function printHistory(entries, total, sinceDate, statusFilter, repo) {
     console.log('');
     // Task list header
     console.log(`${colors.cyan}${colors.bold}Task History${colors.reset}`);
-    console.log(`${colors.dim}${'─'.repeat(78)}${colors.reset}`);
+    console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
     // Task entries
     for (const entry of entries) {
         const outcomeColor = entry.outcome === 'success'
@@ -327,7 +167,7 @@ function printHistory(entries, total, sinceDate, statusFilter, repo) {
         console.log(`${colors.bold}#${entry.issueNumber}${colors.reset} ${outcomeColor}[${outcomeText}]${colors.reset}`);
         // Title if available
         if (entry.issueTitle) {
-            console.log(`  ${colors.dim}${entry.issueTitle.substring(0, 60)}${entry.issueTitle.length > 60 ? '...' : ''}${colors.reset}`);
+            console.log(`  ${colors.dim}${truncate(entry.issueTitle, 60)}${colors.reset}`);
         }
         // Details
         console.log(`  Date:    ${formatDate(entry.startedAt)}`);
@@ -349,7 +189,7 @@ function printHistory(entries, total, sinceDate, statusFilter, repo) {
         if (entry.prUrl) {
             console.log(`  ${colors.blue}PR: ${entry.prUrl}${colors.reset}`);
         }
-        console.log(`${colors.dim}${'─'.repeat(78)}${colors.reset}`);
+        console.log(`${colors.dim}${horizontalLine(78)}${colors.reset}`);
     }
     console.log('');
     console.log(`${colors.purple}${colors.bold}==========================================================`);
@@ -358,9 +198,7 @@ function printHistory(entries, total, sinceDate, statusFilter, repo) {
 }
 export async function history(options = {}) {
     const cwd = process.cwd();
-    const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
-    const configPath = options.config ? resolve(options.config) : defaultConfigPath;
-    const chadgiDir = dirname(configPath);
+    const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
     // Check if .chadgi directory exists
     if (!existsSync(chadgiDir)) {
         console.error('Error: .chadgi directory not found.');
@@ -391,11 +229,11 @@ export async function history(options = {}) {
         for (const entry of filtered) {
             // Fetch issue title if not already set
             if (!entry.issueTitle) {
-                entry.issueTitle = fetchIssueTitle(repo, entry.issueNumber) || undefined;
+                entry.issueTitle = fetchIssueTitle(entry.issueNumber, repo) || undefined;
             }
             // Fetch PR URL for successful tasks
             if (entry.outcome === 'success' && !entry.prUrl) {
-                entry.prUrl = fetchPrUrl(repo, entry.issueNumber) || undefined;
+                entry.prUrl = fetchPrUrl(entry.issueNumber, repo) || undefined;
             }
         }
     }

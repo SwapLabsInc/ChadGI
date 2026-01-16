@@ -2,47 +2,11 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'fs'
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { validateTemplateVariables } from './validate.js';
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    dim: '\x1b[2m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    purple: '\x1b[35m',
-    blue: '\x1b[34m',
-};
-// Parse YAML value (simple key: value extraction)
-function parseYamlValue(content, key) {
-    const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'));
-    if (match) {
-        return match[1].replace(/["']/g, '').replace(/#.*$/, '').trim();
-    }
-    return null;
-}
-// Parse nested YAML value
-function parseYamlNested(content, parent, key) {
-    const lines = content.split('\n');
-    let inParent = false;
-    for (const line of lines) {
-        if (line.match(new RegExp(`^${parent}:`))) {
-            inParent = true;
-            continue;
-        }
-        if (inParent && line.match(/^[a-z]/)) {
-            inParent = false;
-        }
-        if (inParent && line.match(new RegExp(`^\\s+${key}:`))) {
-            const value = line.split(':')[1];
-            if (value) {
-                return value.replace(/["']/g, '').replace(/#.*$/, '').trim();
-            }
-        }
-    }
-    return null;
-}
+import { maskObject, setMaskingDisabled } from './utils/secrets.js';
+import { colors } from './utils/colors.js';
+import { parseYamlValue, parseYamlNested } from './utils/config.js';
+import { listTaskLocks, findStaleLocks, cleanupStaleLocks, DEFAULT_LOCK_TIMEOUT_MINUTES, } from './utils/locks.js';
+import { checkMigrations, CURRENT_CONFIG_VERSION, DEFAULT_CONFIG_VERSION } from './migrations/index.js';
 /**
  * Check GitHub API rate limit status
  */
@@ -114,6 +78,66 @@ async function checkRateLimit() {
             category: 'api',
             status: 'error',
             message: `Could not check rate limit: ${error.message}`,
+        });
+    }
+    return checks;
+}
+/**
+ * Check for stale task locks (issue-*.lock files)
+ */
+function checkStaleTaskLocks(chadgiDir, fix, timeoutMinutes = DEFAULT_LOCK_TIMEOUT_MINUTES) {
+    const checks = [];
+    try {
+        const allLocks = listTaskLocks(chadgiDir, timeoutMinutes);
+        const staleLocks = findStaleLocks(chadgiDir, timeoutMinutes);
+        if (allLocks.length === 0) {
+            checks.push({
+                name: 'Task Locks Check',
+                category: 'locks',
+                status: 'ok',
+                message: 'No task locks present',
+            });
+            return checks;
+        }
+        const activeLocks = allLocks.filter((l) => !l.isStale);
+        if (staleLocks.length === 0) {
+            checks.push({
+                name: 'Task Locks Check',
+                category: 'locks',
+                status: 'ok',
+                message: `${allLocks.length} active task lock(s) found`,
+            });
+            return checks;
+        }
+        if (fix) {
+            const removedCount = cleanupStaleLocks(chadgiDir, timeoutMinutes);
+            checks.push({
+                name: 'Task Locks Check',
+                category: 'locks',
+                status: 'warning',
+                message: `Removed ${removedCount} stale task lock(s). ${activeLocks.length} active lock(s) remain.`,
+                fixable: true,
+                fixed: true,
+            });
+        }
+        else {
+            const issueNumbers = staleLocks.map((l) => `#${l.issueNumber}`).join(', ');
+            checks.push({
+                name: 'Task Locks Check',
+                category: 'locks',
+                status: 'warning',
+                message: `${staleLocks.length} stale task lock(s) found (issues: ${issueNumbers}). Use --fix to remove.`,
+                fixable: true,
+                fixed: false,
+            });
+        }
+    }
+    catch (error) {
+        checks.push({
+            name: 'Task Locks Check',
+            category: 'locks',
+            status: 'error',
+            message: `Error checking task locks: ${error.message}`,
         });
     }
     return checks;
@@ -698,6 +722,7 @@ function calculateHealthScore(checks) {
         templates: 15,
         environment: 10,
         diagnostics: 5,
+        locks: 10,
     };
     // Penalty multipliers by status
     const statusPenalties = {
@@ -752,6 +777,12 @@ function generateRecommendations(checks) {
             }
             if (check.name.includes('Progress File') && check.message.includes('interrupted')) {
                 recommendations.push('Check if an interrupted task needs manual resolution');
+            }
+            if (check.name === 'Task Locks Check' && check.message.includes('stale')) {
+                recommendations.push('Run `chadgi unlock --stale` to clean up stale task locks');
+            }
+            if (check.name === 'Config Version Migration') {
+                recommendations.push('Run `chadgi config migrate` to update your configuration schema');
             }
         }
     }
@@ -835,6 +866,12 @@ function printReport(report) {
     console.log(`==========================================================${colors.reset}`);
 }
 export async function doctor(options = {}) {
+    // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
+    const noMask = options.mask === false;
+    if (noMask) {
+        setMaskingDisabled(true);
+        console.log(`${colors.yellow}WARNING: Secret masking is DISABLED. Sensitive data may be exposed in output.${colors.reset}\n`);
+    }
     const cwd = process.cwd();
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
@@ -890,6 +927,27 @@ export async function doctor(options = {}) {
             status: 'ok',
             message: `Loaded from ${configPath}`,
         });
+        // Check for pending migrations
+        const migrationCheck = checkMigrations(configPath);
+        if (migrationCheck.needsMigration) {
+            const currentVer = migrationCheck.currentVersion || DEFAULT_CONFIG_VERSION;
+            checks.push({
+                name: 'Config Version Migration',
+                category: 'files',
+                status: 'warning',
+                message: `Migration available: ${currentVer} -> ${CURRENT_CONFIG_VERSION}. Run 'chadgi config migrate'`,
+                fixable: true,
+                fixed: false,
+            });
+        }
+        else {
+            checks.push({
+                name: 'Config Version',
+                category: 'files',
+                status: 'ok',
+                message: `Version ${CURRENT_CONFIG_VERSION} (current)`,
+            });
+        }
     }
     else {
         checks.push({
@@ -905,6 +963,8 @@ export async function doctor(options = {}) {
     checks.push(...(await checkRateLimit()));
     // File checks
     checks.push(...checkStaleLockFiles(chadgiDir, fix));
+    // Task locks checks
+    checks.push(...checkStaleTaskLocks(chadgiDir, fix));
     // Git checks (only if repo is configured)
     if (repo !== 'owner/repo') {
         checks.push(...(await checkOrphanedBranches(repo, branchPrefix)));
@@ -944,12 +1004,13 @@ export async function doctor(options = {}) {
             errors: checks.filter(c => c.status === 'error').length,
         },
     };
-    // Output
+    // Output (apply secret masking to report messages)
+    const maskedReport = maskObject(report);
     if (options.json) {
-        console.log(JSON.stringify(report, null, 2));
+        console.log(JSON.stringify(maskedReport, null, 2));
     }
     else {
-        printReport(report);
+        printReport(maskedReport);
     }
     // Exit with error code if health score is critical
     if (healthScore < 50) {

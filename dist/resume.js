@@ -2,18 +2,9 @@ import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { colors } from './utils/colors.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-// Color codes for terminal output
-const colors = {
-    reset: '\x1b[0m',
-    bold: '\x1b[1m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    purple: '\x1b[35m',
-};
 export async function resume(options = {}) {
     const cwd = process.cwd();
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
