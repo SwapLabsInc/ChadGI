@@ -1,0 +1,10 @@
+{
+  "id": "custom-sample",
+  "name": "Sample Custom Task",
+  "description": "A sample custom benchmark task - edit or delete this file",
+  "category": "custom",
+  "complexity": "simple",
+  "prompt": "Write a simple \"Hello, World!\" function in JavaScript.",
+  "expectedOutcome": "A function that returns or logs \"Hello, World!\"",
+  "maxDuration": 30
+}
