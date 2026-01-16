@@ -344,3 +344,29 @@ export {
   keyValue,
   divider,
 } from './textui.js';
+
+// JSON Output (unified response wrapper)
+export {
+  // Types
+  type ResponseMeta,
+  type ResponseError,
+  type ResponsePagination,
+  type JsonResponse,
+  type CreateJsonResponseOptions,
+  type CreateJsonErrorOptions,
+  type ErrorCode,
+  // Factory functions
+  createResponseMeta,
+  createJsonResponse,
+  createJsonError,
+  // Error codes
+  ErrorCodes,
+  // Type guards
+  isJsonResponse,
+  isJsonErrorResponse,
+  isJsonSuccessResponse,
+  // Utilities
+  wrapLegacyResponse,
+  outputJsonResponse,
+  outputJsonData,
+} from './json-output.js';

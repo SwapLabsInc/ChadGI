@@ -21,6 +21,9 @@ import {
   withDirectoryValidation,
   type DirectoryContext,
   type CommandResult,
+  // JSON output utilities
+  createJsonResponse,
+  type JsonResponse,
 } from './utils/index.js';
 
 // Import shared types
@@ -33,6 +36,7 @@ interface HistoryOptions extends BaseCommandOptions {
   limit?: number;
   since?: string;
   status?: string;
+  jsonUnified?: boolean;  // Opt-in to unified JSON response wrapper
 }
 
 /**
@@ -345,6 +349,23 @@ async function historyHandler(
     if (statusFilter) {
       result.statusFilter = statusFilter;
     }
+
+    // Check if unified format is requested (opt-in)
+    const useUnified = options.jsonUnified || process.env.CHADGI_JSON_UNIFIED === '1';
+    if (useUnified) {
+      const response = createJsonResponse({
+        data: result,
+        command: 'history',
+        startTime: (ctx as any).startTime,
+        pagination: {
+          total: allEntries.length,
+          filtered: filtered.length,
+          limit: effectiveLimit,
+        },
+      });
+      return { data: response };
+    }
+    // Legacy format (backwards compatible)
     return { data: result };
   }
 
