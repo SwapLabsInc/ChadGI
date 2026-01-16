@@ -6,9 +6,6 @@ on:
       - master
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -26,6 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: npm clean-install
@@ -35,9 +33,6 @@ jobs:
 
       - name: Run tests
         run: npm run test:ci
-
-      - name: Setup npm for trusted publishing
-        uses: azu/setup-npm-trusted-publish@v1
 
       - name: Release (version bump, changelog, git tag)
         env:
@@ -59,6 +54,8 @@ jobs:
             echo "should_publish=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Publish to npm with OIDC
+      - name: Publish to npm
         if: steps.check.outputs.should_publish == 'true'
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
