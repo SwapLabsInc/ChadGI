@@ -265,3 +265,210 @@ export function hasOption<T extends Record<string, unknown>>(
 ): boolean {
   return optionName in options && options[optionName] !== undefined;
 }
+
+// ============================================================================
+// Option Conflict Detection
+// ============================================================================
+
+/**
+ * Defines a conflict rule between mutually exclusive options.
+ *
+ * @property exclusive - Array of option names that cannot be used together
+ * @property message - User-friendly error message explaining the conflict
+ */
+export interface ConflictRule {
+  /** Option names that are mutually exclusive */
+  exclusive: string[];
+  /** Error message to display when conflict is detected */
+  message: string;
+}
+
+/**
+ * Result of option conflict validation.
+ */
+export interface ConflictValidationResult {
+  /** Whether the options are valid (no conflicts) */
+  valid: boolean;
+  /** Array of conflict error messages if invalid */
+  errors: string[];
+}
+
+/**
+ * Declarative conflict rules for CLI commands.
+ *
+ * Each command can have multiple conflict rules that define which options
+ * cannot be used together and why.
+ *
+ * Option names should use camelCase as Commander.js converts kebab-case
+ * flags (--dry-run) to camelCase properties (dryRun).
+ */
+export const OPTION_CONFLICTS: Record<string, ConflictRule[]> = {
+  /**
+   * cleanup command conflicts:
+   * --all includes branches, diagnostics, and logs, so specifying them
+   * together is redundant and potentially confusing.
+   */
+  cleanup: [
+    {
+      exclusive: ['all', 'branches'],
+      message: '--all already includes branches cleanup',
+    },
+    {
+      exclusive: ['all', 'diagnostics'],
+      message: '--all already includes diagnostics cleanup',
+    },
+    {
+      exclusive: ['all', 'logs'],
+      message: '--all already includes logs cleanup',
+    },
+  ],
+
+  /**
+   * replay command conflicts:
+   * Only one task selector can be specified at a time.
+   */
+  replay: [
+    {
+      exclusive: ['last', 'allFailed'],
+      message: 'specify only one task selector: --last or --all-failed',
+    },
+    {
+      exclusive: ['last', 'issueNumber'],
+      message: 'specify only one task selector: --last or issue number',
+    },
+    {
+      exclusive: ['allFailed', 'issueNumber'],
+      message: 'specify only one task selector: --all-failed or issue number',
+    },
+  ],
+
+  /**
+   * diff command conflicts:
+   * PR number and issue number target different sources.
+   */
+  diff: [
+    {
+      exclusive: ['pr', 'issueNumber'],
+      message: '--pr and issue number cannot be used together; they specify different diff sources',
+    },
+  ],
+
+  /**
+   * unlock command conflicts:
+   * --all targets all locks, so specifying a specific issue is contradictory.
+   */
+  unlock: [
+    {
+      exclusive: ['all', 'issueNumber'],
+      message: '--all cannot be used with a specific issue number',
+    },
+  ],
+
+  /**
+   * logs view command conflicts:
+   * --follow streams real-time output which is incompatible with --json formatting.
+   */
+  'logs view': [
+    {
+      exclusive: ['follow', 'json'],
+      message: '--follow cannot be used with --json; follow mode streams real-time output',
+    },
+  ],
+};
+
+/**
+ * Checks if an option value is considered "set" (truthy or explicitly provided).
+ *
+ * @param value - The option value to check
+ * @returns True if the option is set/active
+ */
+function isOptionSet(value: unknown): boolean {
+  // For boolean flags, check if true
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  // For other values, check if defined and not null/undefined
+  return value !== undefined && value !== null;
+}
+
+/**
+ * Validates that no conflicting options are used together for a command.
+ *
+ * @param commandName - The name of the command being executed
+ * @param options - The parsed options object from Commander
+ * @returns Validation result with any conflict errors
+ *
+ * @example
+ * ```ts
+ * const result = validateOptionConflicts('cleanup', { all: true, branches: true });
+ * if (!result.valid) {
+ *   console.error(result.errors[0]); // "Options --all and --branches cannot be used together"
+ *   process.exit(1);
+ * }
+ * ```
+ */
+export function validateOptionConflicts(
+  commandName: string,
+  options: Record<string, unknown>
+): ConflictValidationResult {
+  const rules = OPTION_CONFLICTS[commandName];
+
+  // No conflict rules defined for this command
+  if (!rules || rules.length === 0) {
+    return { valid: true, errors: [] };
+  }
+
+  const errors: string[] = [];
+
+  for (const rule of rules) {
+    // Find which options from this exclusive group are actually set
+    const setOptions = rule.exclusive.filter((optName) =>
+      isOptionSet(options[optName])
+    );
+
+    // Conflict detected if more than one option in the exclusive group is set
+    if (setOptions.length > 1) {
+      // Convert camelCase back to CLI flag format for error message
+      const flagNames = setOptions.map((name) => {
+        // Convert camelCase to kebab-case and prepend --
+        const kebabCase = name.replace(/([A-Z])/g, '-$1').toLowerCase();
+        // Handle special case for positional arguments (e.g., issueNumber)
+        if (name === 'issueNumber') {
+          return '<issue-number>';
+        }
+        return `--${kebabCase}`;
+      });
+
+      errors.push(
+        `Options ${flagNames.join(' and ')} cannot be used together: ${rule.message}`
+      );
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
+ * Get the conflict rules for a specific command.
+ * Useful for documentation or testing.
+ *
+ * @param commandName - The command name to get rules for
+ * @returns Array of conflict rules, or empty array if none defined
+ */
+export function getConflictRules(commandName: string): ConflictRule[] {
+  return OPTION_CONFLICTS[commandName] || [];
+}
+
+/**
+ * Check if a command has any conflict rules defined.
+ *
+ * @param commandName - The command name to check
+ * @returns True if the command has conflict rules
+ */
+export function hasConflictRules(commandName: string): boolean {
+  const rules = OPTION_CONFLICTS[commandName];
+  return Array.isArray(rules) && rules.length > 0;
+}

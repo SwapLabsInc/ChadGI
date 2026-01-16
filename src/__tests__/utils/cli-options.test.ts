@@ -15,7 +15,12 @@ import {
   getOptionDefinition,
   isStandardOption,
   hasOption,
+  OPTION_CONFLICTS,
+  validateOptionConflicts,
+  getConflictRules,
+  hasConflictRules,
   type StandardOptionName,
+  type ConflictRule,
 } from '../../utils/cli-options.js';
 
 describe('OPTION_DEFINITIONS', () => {
@@ -410,5 +415,298 @@ describe('integration with Commander', () => {
     expect(opts.verbose).toBe(true);
     expect(opts.yes).toBe(true);
     expect(opts.force).toBe(true);
+  });
+});
+
+// ============================================================================
+// Option Conflict Detection Tests
+// ============================================================================
+
+describe('OPTION_CONFLICTS', () => {
+  it('should define conflict rules for cleanup command', () => {
+    expect(OPTION_CONFLICTS.cleanup).toBeDefined();
+    expect(Array.isArray(OPTION_CONFLICTS.cleanup)).toBe(true);
+    expect(OPTION_CONFLICTS.cleanup.length).toBeGreaterThan(0);
+  });
+
+  it('should define conflict rules for replay command', () => {
+    expect(OPTION_CONFLICTS.replay).toBeDefined();
+    expect(Array.isArray(OPTION_CONFLICTS.replay)).toBe(true);
+  });
+
+  it('should define conflict rules for diff command', () => {
+    expect(OPTION_CONFLICTS.diff).toBeDefined();
+    expect(Array.isArray(OPTION_CONFLICTS.diff)).toBe(true);
+  });
+
+  it('should define conflict rules for unlock command', () => {
+    expect(OPTION_CONFLICTS.unlock).toBeDefined();
+    expect(Array.isArray(OPTION_CONFLICTS.unlock)).toBe(true);
+  });
+
+  it('should define conflict rules for logs view subcommand', () => {
+    expect(OPTION_CONFLICTS['logs view']).toBeDefined();
+    expect(Array.isArray(OPTION_CONFLICTS['logs view'])).toBe(true);
+  });
+
+  it('should have valid structure for all rules', () => {
+    for (const [command, rules] of Object.entries(OPTION_CONFLICTS)) {
+      for (const rule of rules) {
+        expect(rule.exclusive).toBeDefined();
+        expect(Array.isArray(rule.exclusive)).toBe(true);
+        expect(rule.exclusive.length).toBeGreaterThanOrEqual(2);
+        expect(rule.message).toBeDefined();
+        expect(typeof rule.message).toBe('string');
+        expect(rule.message.length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('validateOptionConflicts', () => {
+  describe('cleanup command', () => {
+    it('should return valid when no conflicting options are used', () => {
+      const result = validateOptionConflicts('cleanup', { branches: true });
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should return valid when only --all is used', () => {
+      const result = validateOptionConflicts('cleanup', { all: true });
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should detect conflict between --all and --branches', () => {
+      const result = validateOptionConflicts('cleanup', { all: true, branches: true });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--all');
+      expect(result.errors[0]).toContain('--branches');
+    });
+
+    it('should detect conflict between --all and --diagnostics', () => {
+      const result = validateOptionConflicts('cleanup', { all: true, diagnostics: true });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--all');
+      expect(result.errors[0]).toContain('--diagnostics');
+    });
+
+    it('should detect conflict between --all and --logs', () => {
+      const result = validateOptionConflicts('cleanup', { all: true, logs: true });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--all');
+      expect(result.errors[0]).toContain('--logs');
+    });
+
+    it('should detect multiple conflicts when --all is used with multiple options', () => {
+      const result = validateOptionConflicts('cleanup', {
+        all: true,
+        branches: true,
+        diagnostics: true,
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('should allow non-conflicting combinations', () => {
+      const result = validateOptionConflicts('cleanup', {
+        branches: true,
+        diagnostics: true,
+        logs: true,
+      });
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+  });
+
+  describe('replay command', () => {
+    it('should return valid when no task selector is used', () => {
+      const result = validateOptionConflicts('replay', { fresh: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should return valid when only --last is used', () => {
+      const result = validateOptionConflicts('replay', { last: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should return valid when only --all-failed is used', () => {
+      const result = validateOptionConflicts('replay', { allFailed: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should return valid when only issue number is used', () => {
+      const result = validateOptionConflicts('replay', { issueNumber: 42 });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should detect conflict between --last and --all-failed', () => {
+      const result = validateOptionConflicts('replay', { last: true, allFailed: true });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--last');
+      expect(result.errors[0]).toContain('--all-failed');
+    });
+
+    it('should detect conflict between --last and issue number', () => {
+      const result = validateOptionConflicts('replay', { last: true, issueNumber: 42 });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--last');
+      expect(result.errors[0]).toContain('<issue-number>');
+    });
+
+    it('should detect conflict between --all-failed and issue number', () => {
+      const result = validateOptionConflicts('replay', { allFailed: true, issueNumber: 42 });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--all-failed');
+      expect(result.errors[0]).toContain('<issue-number>');
+    });
+  });
+
+  describe('diff command', () => {
+    it('should return valid when only --pr is used', () => {
+      const result = validateOptionConflicts('diff', { pr: 123 });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should return valid when only issue number is used', () => {
+      const result = validateOptionConflicts('diff', { issueNumber: 42 });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should detect conflict between --pr and issue number', () => {
+      const result = validateOptionConflicts('diff', { pr: 123, issueNumber: 42 });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--pr');
+      expect(result.errors[0]).toContain('<issue-number>');
+    });
+  });
+
+  describe('unlock command', () => {
+    it('should return valid when only --all is used', () => {
+      const result = validateOptionConflicts('unlock', { all: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should return valid when only issue number is used', () => {
+      const result = validateOptionConflicts('unlock', { issueNumber: 42 });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should detect conflict between --all and issue number', () => {
+      const result = validateOptionConflicts('unlock', { all: true, issueNumber: 42 });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--all');
+      expect(result.errors[0]).toContain('<issue-number>');
+    });
+  });
+
+  describe('logs view command', () => {
+    it('should return valid when only --follow is used', () => {
+      const result = validateOptionConflicts('logs view', { follow: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should return valid when only --json is used', () => {
+      const result = validateOptionConflicts('logs view', { json: true });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should detect conflict between --follow and --json', () => {
+      const result = validateOptionConflicts('logs view', { follow: true, json: true });
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('--follow');
+      expect(result.errors[0]).toContain('--json');
+    });
+  });
+
+  describe('unknown commands', () => {
+    it('should return valid for commands without conflict rules', () => {
+      const result = validateOptionConflicts('unknown-command', { any: true, option: true });
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should return valid for start command (no conflicts defined)', () => {
+      const result = validateOptionConflicts('start', { dryRun: true, workspace: true });
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle empty options object', () => {
+      const result = validateOptionConflicts('cleanup', {});
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should ignore undefined option values', () => {
+      const result = validateOptionConflicts('cleanup', { all: true, branches: undefined });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should ignore null option values', () => {
+      const result = validateOptionConflicts('cleanup', { all: true, branches: null });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should ignore false boolean option values', () => {
+      const result = validateOptionConflicts('cleanup', { all: true, branches: false });
+      expect(result.valid).toBe(true);
+    });
+
+    it('should treat numeric values as set when defined', () => {
+      // For numeric values like issue numbers, any defined value is considered "set"
+      // In practice, 0 is not a valid issue number but the validation still catches it
+      const result = validateOptionConflicts('unlock', { all: true, issueNumber: 0 });
+      // 0 is a number (not undefined/null), so it's considered "set"
+      expect(result.valid).toBe(false);
+
+      const result2 = validateOptionConflicts('unlock', { all: true, issueNumber: 42 });
+      expect(result2.valid).toBe(false);
+    });
+  });
+});
+
+describe('getConflictRules', () => {
+  it('should return conflict rules for defined commands', () => {
+    const rules = getConflictRules('cleanup');
+    expect(Array.isArray(rules)).toBe(true);
+    expect(rules.length).toBeGreaterThan(0);
+  });
+
+  it('should return empty array for undefined commands', () => {
+    const rules = getConflictRules('nonexistent');
+    expect(Array.isArray(rules)).toBe(true);
+    expect(rules).toHaveLength(0);
+  });
+
+  it('should return the same rules as OPTION_CONFLICTS', () => {
+    const rules = getConflictRules('replay');
+    expect(rules).toBe(OPTION_CONFLICTS.replay);
+  });
+});
+
+describe('hasConflictRules', () => {
+  it('should return true for commands with conflict rules', () => {
+    expect(hasConflictRules('cleanup')).toBe(true);
+    expect(hasConflictRules('replay')).toBe(true);
+    expect(hasConflictRules('diff')).toBe(true);
+    expect(hasConflictRules('unlock')).toBe(true);
+    expect(hasConflictRules('logs view')).toBe(true);
+  });
+
+  it('should return false for commands without conflict rules', () => {
+    expect(hasConflictRules('start')).toBe(false);
+    expect(hasConflictRules('init')).toBe(false);
+    expect(hasConflictRules('nonexistent')).toBe(false);
   });
 });
