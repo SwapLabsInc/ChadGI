@@ -235,3 +235,50 @@ export {
   type VerbosityLevel,
   type DebugConfig,
 } from './debug.js';
+
+// Command Context
+export {
+  createCoreContext,
+  hasDirectoryContext,
+  hasConfigContext,
+  hasTimingContext,
+  hasFullContext,
+  type CoreContext,
+  type DirectoryContext,
+  type ConfigContext,
+  type TimedContext,
+  type CommandContext,
+  type PartialContext,
+  type CommandResult,
+  type CreateContextOptions,
+} from './context.js';
+
+// Middleware
+export {
+  // Core middleware types
+  type Middleware,
+  type CommandHandler,
+  type WithCommandOptions,
+  // Exit codes
+  EXIT_CODES,
+  type ExitCode,
+  // Middleware composition
+  composeMiddleware,
+  // Built-in middlewares
+  withTiming,
+  withDirectory,
+  withDirectoryValidation,
+  withConfig,
+  withJsonOutput,
+  withErrorHandler,
+  // Higher-order command wrapper
+  withCommand,
+  // Convenience presets
+  standardDirectoryMiddleware,
+  standardConfigMiddleware,
+  withDirectoryCommand,
+  withConfigCommand,
+  // Opt-out helpers
+  conditionalMiddleware,
+  passthrough,
+} from './middleware.js';
