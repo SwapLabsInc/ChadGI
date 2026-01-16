@@ -71,13 +71,32 @@ What problem does this solve or what value does it add?
 
 ## Focus Areas
 
-Consider improvements in these areas:
-- Code quality and maintainability
-- Missing features that add value
-- Performance optimizations
-- Developer experience
-- Documentation gaps
-- Test coverage
+Consider improvements in these areas (balance between adding AND removing):
+
+**Adding Value:**
+- Missing features that solve real problems
+- Performance optimizations with measurable impact
+- Developer experience improvements
+
+**Simplification & Cleanup (equally important!):**
+- Dead code removal - unused functions, variables, imports, files
+- Redundant logic that can be consolidated
+- Over-engineered abstractions that can be simplified
+- Deprecated patterns that should be modernized
+- Config/options that are never used
+
+**Quality:**
+- Test coverage gaps (but don't test for the sake of testing)
+- Documentation that's outdated or misleading
+- Error handling improvements
+
+## Task Balance Guidelines
+
+- Aim for a MIX of feature and cleanup tasks (not all one type)
+- Cleanup tasks should have CONCRETE targets (e.g., "remove unused X" not "clean up code")
+- Avoid vague refactoring tasks - be specific about what changes and why
+- Don't suggest refactoring something that was just refactored recently
+- Prefer "remove X because Y" over "consider removing X"
 
 ## Constraints
 
@@ -85,3 +104,4 @@ Consider improvements in these areas:
 - Create exactly 2-3 issues, no more, no less
 - Make issues specific and actionable
 - Each issue should be completable in a single session
+- At least one task should involve simplification/removal (if opportunities exist)

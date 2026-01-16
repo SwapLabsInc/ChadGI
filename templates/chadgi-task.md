@@ -36,9 +36,14 @@ You are already on a fresh branch: **{{BRANCH_NAME}}** (created from {{BASE_BRAN
 1. **Understand** - Read and understand the issue requirements thoroughly
 2. **Explore** - Examine the codebase to understand context and patterns
 3. **Implement** - Make the requested changes following existing code style
-4. **Write Tests** - Add tests for any new functionality (don't rely only on existing tests)
-5. **Test Locally** - Run the verification commands below to confirm your changes work
-6. **Commit** - Commit changes with clear, descriptive messages
+4. **Simplify** - Look for opportunities to REMOVE or consolidate code:
+   - Can any existing code be deleted as part of this change?
+   - Are there redundant patterns that can be unified?
+   - Is there dead code nearby that should be cleaned up?
+5. **Write Tests** - Add/update tests for any functionality changes
+6. **Update README** - If your changes affect usage, CLI options, or features, update README.md
+7. **Test Locally** - Run the verification commands below to confirm your changes work
+8. **Commit** - Commit changes with clear, descriptive messages (use conventional commits: fix:, feat:, etc.)
 
 **Verification Commands** (run these before signaling ready):
 - Test: `{{TEST_COMMAND}}` *(if empty, discover from package.json or project config)*
@@ -55,19 +60,25 @@ Output this exact format with your answers filled in:
 ```
 ## Pre-PR Checklist
 
-### 1. Tests Added
-Files: [list test files you created/modified, or "NONE - adding now"]
+### 1. Tests Added/Updated
+Files: [list test files you created/modified, or "N/A - no testable changes"]
 
-### 2. Requirements Verification
+### 2. README Updated
+Updated: [yes - describe what / no - explain why not needed]
+
+### 3. Code Simplified
+Removed/consolidated: [list what you removed or "N/A - no opportunities found"]
+
+### 4. Requirements Verification
 - [ ] Requirement 1: [quote from issue] -> [where implemented]
 - [ ] Requirement 2: [quote from issue] -> [where implemented]
 (list ALL requirements from the issue above)
 
-### 3. Test Results
+### 5. Test Results
 Command: [your test command]
 Result: [PASS/FAIL - if FAIL, fix before continuing]
 
-### 4. Self-Review
+### 6. Self-Review
 Diff reviewed: [yes/no]
 Issue found: [describe one thing or "none"]
 Fixed: [yes/not applicable]
