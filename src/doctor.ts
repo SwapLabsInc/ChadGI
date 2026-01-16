@@ -2,11 +2,13 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'fs'
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { validateTemplateVariables, TemplateValidationResult } from './validate.js';
+import { maskSecrets, maskObject, setMaskingDisabled } from './utils/secrets.js';
 
 interface DoctorOptions {
   config?: string;
   fix?: boolean;
   json?: boolean;
+  mask?: boolean;  // --no-mask flag sets this to false
 }
 
 interface HealthCheck {
@@ -964,6 +966,13 @@ function printReport(report: HealthReport): void {
 }
 
 export async function doctor(options: DoctorOptions = {}): Promise<void> {
+  // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
+  const noMask = options.mask === false;
+  if (noMask) {
+    setMaskingDisabled(true);
+    console.log(`${colors.yellow}WARNING: Secret masking is DISABLED. Sensitive data may be exposed in output.${colors.reset}\n`);
+  }
+
   const cwd = process.cwd();
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;
@@ -1089,11 +1098,12 @@ export async function doctor(options: DoctorOptions = {}): Promise<void> {
     },
   };
 
-  // Output
+  // Output (apply secret masking to report messages)
+  const maskedReport = maskObject(report);
   if (options.json) {
-    console.log(JSON.stringify(report, null, 2));
+    console.log(JSON.stringify(maskedReport, null, 2));
   } else {
-    printReport(report);
+    printReport(maskedReport);
   }
 
   // Exit with error code if health score is critical

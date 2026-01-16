@@ -3,6 +3,7 @@ import { join, dirname, resolve, basename } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { fileURLToPath } from 'url';
+import { maskSecrets, maskObject } from './utils/secrets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -526,10 +527,10 @@ export async function configImport(options: ConfigImportOptions): Promise<void> 
 
   console.log('');
 
-  // Preview changes
+  // Preview changes (mask secrets in displayed config)
   console.log(`${colors.bold}Configuration to write:${colors.reset}`);
   console.log('');
-  console.log(objectToYaml(finalConfig));
+  console.log(maskSecrets(objectToYaml(finalConfig)));
   console.log('');
 
   // Templates

@@ -10,6 +10,7 @@ import {
   WorkspaceConfig,
   WorkspaceRepoConfig,
 } from './workspace.js';
+import { setMaskingDisabled } from './utils/secrets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -36,9 +37,17 @@ interface StartOptions {
   workspace?: boolean;
   repo?: string;
   interactive?: boolean;
+  mask?: boolean;  // --no-mask flag sets this to false
 }
 
 export async function start(options: StartOptions = {}): Promise<void> {
+  // Handle --no-mask flag (Commander sets mask=false when --no-mask is used)
+  const noMask = options.mask === false;
+  if (noMask) {
+    setMaskingDisabled(true);
+    console.log(`${colors.yellow}WARNING: Secret masking is DISABLED. Sensitive data may be exposed in logs.${colors.reset}\n`);
+  }
+
   // Check for workspace mode
   if (options.workspace) {
     await startWorkspace(options);
@@ -115,7 +124,8 @@ export async function start(options: StartOptions = {}): Promise<void> {
     DRY_RUN: dryRun ? 'true' : 'false',
     DEBUG_MODE: debugMode ? 'true' : 'false',
     IGNORE_DEPS: ignoreDeps ? 'true' : 'false',
-    INTERACTIVE_MODE: interactiveMode ? 'true' : 'false'
+    INTERACTIVE_MODE: interactiveMode ? 'true' : 'false',
+    NO_MASK: noMask ? 'true' : 'false'
   };
 
   // Add timeout override if specified via CLI
@@ -163,6 +173,7 @@ function runRepoTask(
       DEBUG_MODE: options.debug ? 'true' : 'false',
       IGNORE_DEPS: options.ignoreDeps ? 'true' : 'false',
       INTERACTIVE_MODE: options.interactive ? 'true' : 'false',
+      NO_MASK: options.mask === false ? 'true' : 'false',
       WORKSPACE_MODE: 'true',
       WORKSPACE_SINGLE_TASK: 'true', // Process only one task then exit
     };

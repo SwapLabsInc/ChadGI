@@ -60,6 +60,64 @@ DIM='\033[2m'
 NC='\033[0m' # No Color
 
 #------------------------------------------------------------------------------
+# Secret Masking System
+#------------------------------------------------------------------------------
+
+# Global flag to disable secret masking (set via --no-mask CLI flag)
+NO_MASK="${NO_MASK:-false}"
+
+# Mask secrets in the input string
+# Replaces sensitive patterns like webhook URLs, API tokens, etc. with [REDACTED]
+# Usage: mask_secrets "string with secrets"
+# Returns: masked string
+mask_secrets() {
+    local INPUT="$1"
+
+    # If masking is disabled, return input unchanged
+    if [ "$NO_MASK" = "true" ]; then
+        echo "$INPUT"
+        return
+    fi
+
+    echo "$INPUT" | sed -E \
+        -e 's|https://hooks\.slack\.com/[^[:space:]"'"'"']+|[REDACTED]|g' \
+        -e 's|https://discordapp\.com/api/webhooks/[^[:space:]"'"'"']+|[REDACTED]|g' \
+        -e 's|https://discord\.com/api/webhooks/[^[:space:]"'"'"']+|[REDACTED]|g' \
+        -e 's|gh[pousr]_[A-Za-z0-9_]{36,}|[REDACTED]|g' \
+        -e 's|github_pat_[A-Za-z0-9_]{22,}|[REDACTED]|g' \
+        -e 's|gho_[A-Za-z0-9_]{36,}|[REDACTED]|g' \
+        -e 's|ghu_[A-Za-z0-9_]{36,}|[REDACTED]|g' \
+        -e 's|Bearer [A-Za-z0-9_.~+/=+-]+|Bearer [REDACTED]|g' \
+        -e 's|Authorization:[[:space:]]*[^[:space:]"'"'"',]+|Authorization: [REDACTED]|g' \
+        -e 's|API_KEY=[^[:space:]"'"'"']+|API_KEY=[REDACTED]|g' \
+        -e 's|API_SECRET=[^[:space:]"'"'"']+|API_SECRET=[REDACTED]|g' \
+        -e 's|SECRET_KEY=[^[:space:]"'"'"']+|SECRET_KEY=[REDACTED]|g' \
+        -e 's|SECRET_TOKEN=[^[:space:]"'"'"']+|SECRET_TOKEN=[REDACTED]|g' \
+        -e 's|AUTH_TOKEN=[^[:space:]"'"'"']+|AUTH_TOKEN=[REDACTED]|g' \
+        -e 's|ACCESS_TOKEN=[^[:space:]"'"'"']+|ACCESS_TOKEN=[REDACTED]|g' \
+        -e 's|PRIVATE_KEY=[^[:space:]"'"'"']+|PRIVATE_KEY=[REDACTED]|g' \
+        -e 's|PASSWORD=[^[:space:]"'"'"']+|PASSWORD=[REDACTED]|g' \
+        -e 's|WEBHOOK_URL=[^[:space:]"'"'"']+|WEBHOOK_URL=[REDACTED]|g' \
+        -e 's|SLACK_WEBHOOK=[^[:space:]"'"'"']+|SLACK_WEBHOOK=[REDACTED]|g' \
+        -e 's|DISCORD_WEBHOOK=[^[:space:]"'"'"']+|DISCORD_WEBHOOK=[REDACTED]|g' \
+        -e 's|npm_[A-Za-z0-9]{36,}|[REDACTED]|g' \
+        -e 's|AKIA[A-Z0-9]{16}|[REDACTED]|g' \
+        -e 's|ASIA[A-Z0-9]{16}|[REDACTED]|g'
+}
+
+# Check if secret masking is disabled
+is_masking_disabled() {
+    [ "$NO_MASK" = "true" ]
+}
+
+# Print a warning if masking is disabled
+warn_if_masking_disabled() {
+    if is_masking_disabled; then
+        echo -e "${YELLOW}WARNING: Secret masking is DISABLED. Sensitive data may be exposed.${NC}"
+    fi
+}
+
+#------------------------------------------------------------------------------
 # Structured Logging System
 #------------------------------------------------------------------------------
 
@@ -215,13 +273,16 @@ _log() {
     local PREFIX=$3
     local MESSAGE=$4
 
+    # Apply secret masking to the message
+    local MASKED_MESSAGE=$(mask_secrets "$MESSAGE")
+
     # Check if we should output to terminal
     if [ $LEVEL -le $CURRENT_LOG_LEVEL ]; then
-        echo -e "${COLOR}${PREFIX} ${MESSAGE}${NC}"
+        echo -e "${COLOR}${PREFIX} ${MASKED_MESSAGE}${NC}"
     fi
 
     # Always write to log file (the write function checks level)
-    write_to_log_file $LEVEL "$MESSAGE"
+    write_to_log_file $LEVEL "$MASKED_MESSAGE"
 }
 
 #------------------------------------------------------------------------------
