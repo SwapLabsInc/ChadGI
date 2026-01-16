@@ -188,6 +188,55 @@ Commands:
 
 **Note:** The `skip` command requires a "Backlog" column in your project board. The `promote` command requires priority ordering to be enabled in your config.
 
+### `chadgi history`
+
+View task execution history with filtering and export options.
+
+```bash
+chadgi history                           # Show last 10 tasks
+chadgi history --limit 50                # Show more entries
+chadgi history --since 7d                # Tasks from last 7 days
+chadgi history --since 2024-01-01        # Tasks since specific date
+chadgi history --status failed           # Only show failed tasks
+chadgi history --since 7d --status failed  # Combine filters
+chadgi history --json                    # Machine-readable output
+```
+
+Example output:
+```
+==========================================================
+                  CHADGI TASK HISTORY
+==========================================================
+
+Showing 10 of 45 total tasks
+
+Summary
+  Success: 8
+  Failed:  2
+  Total Time: 1h 23m 45s
+  Total Cost: $0.8234
+
+Task History
+──────────────────────────────────────────────────────────────────────────────
+#42 [SUCCESS]
+  Add user authentication system
+  Date:    Jan 15, 2026, 10:30:45 AM
+  Elapsed: 12m 34s
+  Cost:    $0.1234
+  PR: https://github.com/owner/repo/pull/43
+──────────────────────────────────────────────────────────────────────────────
+#41 [FAILED]
+  Fix database connection timeout
+  Date:    Jan 15, 2026, 10:15:23 AM
+  Elapsed: 8m 12s
+  Reason: Build verification failed
+──────────────────────────────────────────────────────────────────────────────
+```
+
+Supported time formats for `--since`:
+- Relative: `7d` (days), `2w` (weeks), `1m` (months), `24h` (hours)
+- Absolute: `2024-01-01` (ISO date format)
+
 ## Configuration
 
 ### Configuration File (`chadgi-config.yaml`)
