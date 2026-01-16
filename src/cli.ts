@@ -5,18 +5,21 @@ import { init } from './init.js';
 import { setup } from './setup.js';
 import { start } from './start.js';
 import { setupProject } from './setup-project.js';
-import { validate } from './validate.js';
 import { stats } from './stats.js';
-import { history } from './history.js';
-import { insights } from './insights.js';
 import { pause } from './pause.js';
 import { resume } from './resume.js';
 import { status } from './status.js';
 import { watch } from './watch.js';
-import { doctor } from './doctor.js';
 import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
-import { queue, queueSkip, queuePromote } from './queue.js';
+// Middleware-based commands (refactored for reduced boilerplate)
+import { validateMiddleware } from './validate-middleware.js';
+import { historyMiddleware } from './history-middleware.js';
+import { insightsMiddleware } from './insights-middleware.js';
+import { doctorMiddleware } from './doctor-middleware.js';
+import { queueMiddleware } from './queue-middleware.js';
+// Keep queue skip/promote from old module for now (will be migrated later)
+import { queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
 import { configMigrate, printMigrationHistory } from './config-migrate.js';
 import { completion, getInstallationInstructions } from './completion.js';
@@ -144,9 +147,12 @@ program
   .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
   .option('-v, --verbose', 'Show detailed information including env var sources')
   .option('--env-prefix <prefix>', 'Custom environment variable prefix (default: CHADGI_)')
+  .option('-j, --json', 'Output validation results as JSON')
   .action(
     wrapCommand(async (options) => {
-      const isValid = await validate(options);
+      const result = await validateMiddleware(options) as { data?: unknown; success?: boolean } | void;
+      // Exit code based on validation success
+      const isValid = result && (result.data === true || result.success === true);
       process.exit(isValid ? 0 : 1);
     })
   );
@@ -167,7 +173,7 @@ program
   .option('-s, --since <time>', 'Show tasks since (e.g., 7d, 2w, 1m, 2024-01-01)')
   .option('--status <outcome>', 'Filter by outcome (success, failed, skipped)')
   .option('-j, --json', 'Output history as JSON')
-  .action(wrapCommand(history));
+  .action(wrapCommand(historyMiddleware));
 
 program
   .command('insights')
@@ -177,7 +183,7 @@ program
   .option('-e, --export <path>', 'Export metrics data to file')
   .option('-d, --days <n>', 'Show only data from the last N days', createNumericParser('days', 'days'))
   .option('--category <type>', 'Filter insights by task category (e.g., bug, feature, refactor)')
-  .action(wrapCommand(insights));
+  .action(wrapCommand(insightsMiddleware));
 
 program
   .command('pause')
@@ -217,7 +223,7 @@ program
   .option('-j, --json', 'Output health report as JSON')
   .option('--fix', 'Auto-remediate simple issues (clear stale locks, etc.)')
   .option('--no-mask', 'Disable secret masking in output (warning: exposes sensitive data)')
-  .action(wrapCommand(doctor));
+  .action(wrapCommand(doctorMiddleware));
 
 program
   .command('cleanup')
@@ -288,7 +294,7 @@ queueCommand
   .option('-c, --config <path>', 'Path to config file (default: ./.chadgi/chadgi-config.yaml)')
   .option('-j, --json', 'Output queue as JSON')
   .option('-l, --limit <n>', 'Show only the first N tasks', createNumericParser('limit', 'limit'))
-  .action(wrapCommand(queue));
+  .action(wrapCommand(queueMiddleware));
 
 queueCommand
   .command('skip <issue-number>')
