@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync, spawnSync } from 'child_process';
 import { colors } from './utils/colors.js';
-import { parseYamlNested } from './utils/config.js';
+import { parseYamlNested, ensureChadgiDirExists } from './utils/config.js';
 
 export interface DiffOptions {
   config?: string;
@@ -493,17 +493,7 @@ export async function diff(issueNumber?: number, options: DiffOptions = {}): Pro
   const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
   const configPath = options.config ? resolve(options.config) : defaultConfigPath;
   const chadgiDir = dirname(configPath);
-
-  // Check if .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    if (options.json) {
-      console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }, null, 2));
-    } else {
-      console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-      console.error(`Run ${colors.cyan}chadgi init${colors.reset} to initialize ChadGI.`);
-    }
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir, { json: options.json });
 
   // Load config
   let baseBranch = 'main';

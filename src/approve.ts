@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
 import { atomicWriteJson } from './utils/fileOps.js';
 import { toISOString } from './utils/formatting.js';
-import { resolveChadgiDir } from './utils/config.js';
+import { resolveChadgiDir, ensureChadgiDirExists } from './utils/config.js';
 
 // Import shared types
 import type {
@@ -108,17 +108,7 @@ function logApprovalToHistory(
  */
 export async function approve(options: ApproveOptions = {}): Promise<void> {
   const chadgiDir = resolveChadgiDir(options);
-
-  // Ensure .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    if (options.json) {
-      console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }));
-    } else {
-      console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-      console.error('Run `chadgi init` first to initialize ChadGI.');
-    }
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir, { json: options.json });
 
   // Find pending approval lock files
   const pendingFiles = findPendingApprovals(chadgiDir, options.issueNumber);
@@ -208,17 +198,7 @@ export async function approve(options: ApproveOptions = {}): Promise<void> {
  */
 export async function reject(options: RejectOptions = {}): Promise<void> {
   const chadgiDir = resolveChadgiDir(options);
-
-  // Ensure .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    if (options.json) {
-      console.log(JSON.stringify({ success: false, error: '.chadgi directory not found' }));
-    } else {
-      console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-      console.error('Run `chadgi init` first to initialize ChadGI.');
-    }
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir, { json: options.json });
 
   // Find pending approval lock files
   const pendingFiles = findPendingApprovals(chadgiDir, options.issueNumber);

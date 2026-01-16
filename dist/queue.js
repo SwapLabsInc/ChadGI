@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { colors } from './utils/colors.js';
-import { parseYamlValue, parseYamlNested, parseYamlBoolean } from './utils/config.js';
+import { parseYamlValue, parseYamlNested, parseYamlBoolean, ensureChadgiDirExists } from './utils/config.js';
 // Parse dependency patterns from config
 function parseDependencyPatterns(content) {
     const value = parseYamlValue(content, 'dependency_patterns');
@@ -373,12 +373,7 @@ export async function queue(options = {}) {
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
     const chadgiDir = dirname(configPath);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error('Error: .chadgi directory not found.');
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config
     let configContent = '';
     let repo = 'owner/repo';
@@ -428,12 +423,7 @@ export async function queueSkip(options) {
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
     const chadgiDir = dirname(configPath);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error('Error: .chadgi directory not found.');
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config
     let repo = 'owner/repo';
     let projectNumber = '1';
@@ -535,12 +525,7 @@ export async function queuePromote(options) {
     const defaultConfigPath = join(cwd, '.chadgi', 'chadgi-config.yaml');
     const configPath = options.config ? resolve(options.config) : defaultConfigPath;
     const chadgiDir = dirname(configPath);
-    // Check if .chadgi directory exists
-    if (!existsSync(chadgiDir)) {
-        console.error('Error: .chadgi directory not found.');
-        console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-        process.exit(1);
-    }
+    ensureChadgiDirExists(chadgiDir);
     // Load config
     let configContent = '';
     let repo = 'owner/repo';

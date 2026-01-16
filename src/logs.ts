@@ -10,7 +10,7 @@ import {
 import { join, dirname, basename } from 'path';
 import { createInterface } from 'readline';
 import { colors } from './utils/colors.js';
-import { parseYamlNested, resolveConfigPath } from './utils/config.js';
+import { parseYamlNested, resolveConfigPath, ensureChadgiDirExists } from './utils/config.js';
 import {
   formatDate,
   formatRelativeTime,
@@ -456,13 +456,7 @@ async function promptConfirmation(message: string): Promise<boolean> {
 export async function logs(options: LogsOptions = {}): Promise<void> {
   const cwd = process.cwd();
   const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-
-  // Check if .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-    console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir);
 
   // Load config
   const configContent = existsSync(configPath)
@@ -680,13 +674,7 @@ async function followLogs(logFilePath: string, options: LogsOptions): Promise<vo
 export async function logsList(options: LogsListOptions = {}): Promise<void> {
   const cwd = process.cwd();
   const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-
-  // Check if .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-    console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir);
 
   // Load config
   const configContent = existsSync(configPath)
@@ -759,13 +747,7 @@ export async function logsList(options: LogsListOptions = {}): Promise<void> {
 export async function logsClear(options: LogsClearOptions = {}): Promise<void> {
   const cwd = process.cwd();
   const { configPath, chadgiDir } = resolveConfigPath(options.config, cwd);
-
-  // Check if .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-    console.error('Run `chadgi init` to initialize ChadGI in this directory.');
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir);
 
   // Load config
   const configContent = existsSync(configPath)

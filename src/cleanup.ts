@@ -3,7 +3,7 @@ import { join, dirname, resolve } from 'path';
 import { execSync } from 'child_process';
 import { createInterface } from 'readline';
 import { colors } from './utils/colors.js';
-import { parseYamlNested } from './utils/config.js';
+import { parseYamlNested, ensureChadgiDirExists } from './utils/config.js';
 import { createProgressBar } from './utils/progress.js';
 
 export interface CleanupOptions {
@@ -337,13 +337,7 @@ export async function cleanup(options: CleanupOptions = {}): Promise<void> {
   const dryRun = options.dryRun || false;
   const skipConfirmation = options.yes || false;
   const retentionDays = options.days ?? 30;
-
-  // Validate .chadgi directory exists
-  if (!existsSync(chadgiDir)) {
-    console.error(`${colors.red}Error: .chadgi directory not found.${colors.reset}`);
-    console.error(`Run ${colors.cyan}chadgi init${colors.reset} to initialize ChadGI.`);
-    process.exit(1);
-  }
+  ensureChadgiDirExists(chadgiDir);
 
   // Load config
   if (!existsSync(configPath)) {
