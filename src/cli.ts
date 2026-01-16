@@ -18,6 +18,7 @@ import { cleanup } from './cleanup.js';
 import { estimate } from './estimate.js';
 import { queue, queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
+import { completion, getInstallationInstructions } from './completion.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -369,6 +370,54 @@ configCommand
       console.error('Error:', (error as Error).message);
       process.exit(1);
     }
+  });
+
+// Completion command with subcommands for each shell
+const completionCommand = program
+  .command('completion')
+  .description('Generate shell completion scripts');
+
+completionCommand
+  .command('bash')
+  .description('Generate Bash completion script')
+  .action(async () => {
+    try {
+      await completion('bash');
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+completionCommand
+  .command('zsh')
+  .description('Generate Zsh completion script')
+  .action(async () => {
+    try {
+      await completion('zsh');
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+completionCommand
+  .command('fish')
+  .description('Generate Fish completion script')
+  .action(async () => {
+    try {
+      await completion('fish');
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+completionCommand
+  .command('install-instructions')
+  .description('Show installation instructions for all shells')
+  .action(() => {
+    console.log(getInstallationInstructions());
   });
 
 program.parse();
