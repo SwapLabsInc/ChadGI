@@ -369,6 +369,36 @@ export interface MergePullRequestOptions {
   commitBody?: string;
 }
 
+/**
+ * Status check entry from PR status rollup
+ */
+export interface StatusCheckEntry {
+  __typename: string;
+  name?: string;
+  context?: string;
+  state?: string;
+  status?: string;
+  conclusion?: string;
+}
+
+/**
+ * Detailed PR status with CI checks, review decision, and merge status
+ */
+export interface PullRequestDetailedStatus {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  branch: string;
+  mergeable: string;
+  mergeStateStatus: string;
+  createdAt: string;
+  mergedAt?: string;
+  closedAt?: string;
+  statusCheckRollup: StatusCheckEntry[];
+  reviewDecision?: string;
+}
+
 // ============================================================================
 // Project Types
 // ============================================================================
@@ -1002,6 +1032,62 @@ export const prOperations = {
     } catch (error) {
       throw GhClientError.fromError(error, 'Failed to list pull requests');
     }
+  },
+
+  /**
+   * Get detailed PR status including CI checks, review status, and merge conflicts
+   *
+   * @param number - PR number
+   * @param repo - Repository in owner/repo format
+   * @param clientOptions - Client options
+   * @returns Detailed PR status or null if not found
+   */
+  async getDetailedStatus(
+    number: number,
+    repo: string,
+    clientOptions: GhClientOptions = {}
+  ): Promise<PullRequestDetailedStatus | null> {
+    const result = await safeExecGhJsonWithRetry<{
+      number: number;
+      title: string;
+      url: string;
+      state: string;
+      headRefName: string;
+      mergeable: string;
+      mergeStateStatus: string;
+      createdAt: string;
+      mergedAt: string | null;
+      closedAt: string | null;
+      statusCheckRollup: Array<{
+        __typename: string;
+        name?: string;
+        context?: string;
+        state?: string;
+        status?: string;
+        conclusion?: string;
+      }> | null;
+      reviewDecision: string | null;
+    }>(
+      `pr view ${number} --repo "${repo}" --json number,title,url,state,headRefName,mergeable,mergeStateStatus,createdAt,mergedAt,closedAt,statusCheckRollup,reviewDecision`,
+      { ...clientOptions, silent: clientOptions.silent ?? true }
+    );
+
+    if (!result) return null;
+
+    return {
+      number: result.number,
+      title: result.title,
+      url: result.url,
+      state: result.state.toUpperCase() as 'OPEN' | 'CLOSED' | 'MERGED',
+      branch: result.headRefName,
+      mergeable: result.mergeable,
+      mergeStateStatus: result.mergeStateStatus,
+      createdAt: result.createdAt,
+      mergedAt: result.mergedAt || undefined,
+      closedAt: result.closedAt || undefined,
+      statusCheckRollup: result.statusCheckRollup || [],
+      reviewDecision: result.reviewDecision || undefined,
+    };
   },
 };
 

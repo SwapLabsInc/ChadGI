@@ -302,3 +302,40 @@ export function parseDuration(duration: string): number | null {
 
   return ms > 0 ? ms : null;
 }
+
+/**
+ * Format an age in seconds to a compact string (e.g., "2h", "3d", "1w")
+ *
+ * @param seconds - Age in seconds
+ * @returns Compact age string
+ */
+export function formatAge(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+
+  if (weeks > 0) {
+    return `${weeks}w`;
+  } else if (days > 0) {
+    return `${days}d`;
+  } else if (hours > 0) {
+    return `${hours}h`;
+  } else if (minutes > 0) {
+    return `${minutes}m`;
+  } else {
+    return '<1m';
+  }
+}
+
+/**
+ * Calculate age in seconds from an ISO date string
+ *
+ * @param isoDate - ISO date string
+ * @returns Age in seconds
+ */
+export function getAgeSeconds(isoDate: string): number {
+  const date = new Date(isoDate);
+  const now = new Date();
+  return Math.floor((now.getTime() - date.getTime()) / 1000);
+}

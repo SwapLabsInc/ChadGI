@@ -18,6 +18,7 @@ import { historyMiddleware } from './history-middleware.js';
 import { insightsMiddleware } from './insights-middleware.js';
 import { doctorMiddleware } from './doctor-middleware.js';
 import { queueMiddleware } from './queue-middleware.js';
+import { prStatusMiddleware } from './pr-status-middleware.js';
 // Keep queue skip/promote from old module for now (will be migrated later)
 import { queueSkip, queuePromote } from './queue.js';
 import { configExport, configImport } from './config-export-import.js';
@@ -394,6 +395,20 @@ queueCommand
       await queuePromote({ ...options, issueNumber: result.value! });
     })
   );
+
+// PR Status command for monitoring ChadGI-created PRs
+addStandardOptions(
+  program
+    .command('pr-status')
+    .description('View status of PRs created by ChadGI'),
+  ['config', 'json']
+)
+  .option('-r, --repo <name>', 'Filter by repository (for workspace mode)')
+  .option('--failing', 'Show only PRs with failing CI')
+  .option('--needs-review', 'Show only PRs pending review')
+  .option('--has-conflicts', 'Show only PRs with merge conflicts')
+  .option('--sync', 'Auto-close merged PRs and move tasks to Done')
+  .action(wrapCommand(prStatusMiddleware));
 
 // Config command with subcommands
 const configCommand = program

@@ -75,6 +75,8 @@ export {
   horizontalLine,
   toISOString,
   parseDuration,
+  formatAge,
+  getAgeSeconds,
 } from './formatting.js';
 
 // GitHub
@@ -358,6 +360,8 @@ export {
   type CreatePullRequestOptions,
   type MergeStrategy,
   type MergePullRequestOptions,
+  type PullRequestDetailedStatus,
+  type StatusCheckEntry,
   // Project types
   type ProjectItem as GhProjectItem,
   type ProjectItemContent,

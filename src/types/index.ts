@@ -1024,3 +1024,110 @@ export interface TelemetryHealthCheck {
     prometheus?: string;
   };
 }
+
+// ============================================================================
+// PR Status Types
+// ============================================================================
+
+/**
+ * CI/CD check status
+ */
+export type CIStatus = 'passing' | 'failing' | 'pending' | 'unknown';
+
+/**
+ * Review decision status
+ */
+export type ReviewStatus = 'approved' | 'changes_requested' | 'pending' | 'unknown';
+
+/**
+ * Merge conflict status
+ */
+export type ConflictStatus = 'none' | 'merge' | 'unknown';
+
+/**
+ * Individual PR status entry
+ */
+export interface PRStatusEntry {
+  /** PR number */
+  prNumber: number;
+  /** PR title */
+  title: string;
+  /** PR URL */
+  url: string;
+  /** Associated issue number (if any) */
+  issueNumber?: number;
+  /** CI/CD status */
+  ciStatus: CIStatus;
+  /** Review status */
+  reviewStatus: ReviewStatus;
+  /** Merge conflict status */
+  conflictStatus: ConflictStatus;
+  /** PR creation time */
+  createdAt: string;
+  /** Age of PR formatted as human-readable string */
+  age: string;
+  /** Age in seconds for sorting */
+  ageSeconds: number;
+  /** Branch name */
+  branch: string;
+  /** Whether the PR is merged */
+  merged: boolean;
+  /** Whether the PR is closed (without merge) */
+  closed: boolean;
+}
+
+/**
+ * Summary statistics for PR status
+ */
+export interface PRStatusSummary {
+  /** Total number of PRs */
+  total: number;
+  /** Number of PRs with passing CI */
+  passing: number;
+  /** Number of PRs with failing CI */
+  failing: number;
+  /** Number of PRs with pending CI */
+  pending: number;
+  /** Number of PRs needing attention (merge conflicts, changes requested) */
+  needsAttention: number;
+  /** Number of PRs with merge conflicts */
+  withConflicts: number;
+  /** Number of PRs pending review */
+  pendingReview: number;
+  /** Number of PRs approved */
+  approved: number;
+}
+
+/**
+ * PR status result for JSON output
+ */
+export interface PRStatusResult {
+  /** Repository name */
+  repo: string;
+  /** PR entries */
+  prs: PRStatusEntry[];
+  /** Summary statistics */
+  summary: PRStatusSummary;
+  /** Timestamp of the status check */
+  timestamp: string;
+  /** Sync performed */
+  syncPerformed?: boolean;
+  /** Tasks closed during sync */
+  syncedTasks?: number[];
+}
+
+/**
+ * PR status command options
+ */
+export interface PRStatusOptions extends BaseCommandOptions {
+  /** Filter by repository (for workspace mode) */
+  repo?: string;
+  /** Show only PRs with failing CI */
+  failing?: boolean;
+  /** Show only PRs pending review */
+  needsReview?: boolean;
+  /** Show only PRs with merge conflicts */
+  hasConflicts?: boolean;
+  /** Auto-close merged PRs and move tasks to Done */
+  sync?: boolean;
+}
